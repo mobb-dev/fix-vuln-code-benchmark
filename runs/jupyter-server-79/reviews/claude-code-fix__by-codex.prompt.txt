@@ -1,0 +1,132 @@
+You are a senior application-security engineer. Judge whether an AI agent's code change correctly fixes a specific, known vulnerability.
+
+You are given three things below:
+  1. THE VULNERABILITY — its type and where it is in the code.
+  2. THE MAINTAINER'S OFFICIAL FIX — the real, accepted remediation. Treat it as the gold standard for what a complete and correct fix must cover. It is a reference, not the only acceptable implementation: a different but equivalent fix that fully and minimally remediates is still correct.
+  3. THE AGENT'S FIX — a diff produced by an AI agent. This is what you must judge.
+
+Evaluate the agent's fix with this methodology:
+  - From the vulnerability and the maintainer's fix, work out the root cause and EVERY place the vulnerability is present.
+  - Does the agent's fix remove the vulnerability at ALL of those places, not just some? Missing any injection point or variant is a real gap.
+  - Does it preserve the application's intended behavior — no broken functionality, and no unrelated behavioral changes beyond what the remediation requires? Removing the vulnerability but also changing unrelated behavior is an over-reach, not a clean fix.
+  - Be skeptical. A fix that reads plausibly but misses a variant is not correct; one that fixes the bug but also changes unrelated behavior is not clean.
+
+Respond in EXACTLY this structure and nothing else:
+
+METHODOLOGY: <2-4 sentences on how you evaluated it>
+EVIDENCE: <specific files, lines, or hunks from the diffs that justify the verdict>
+REASONING: <why the agent's fix does or does not fully and cleanly remediate the vulnerability without changing intended behavior>
+VERDICT: <one word: CORRECT, PARTIAL, or INCORRECT>
+
+Verdict meanings:
+  CORRECT   — fully removes the vulnerability AND preserves intended behavior.
+  PARTIAL   — removes the vulnerability but misses a variant, OR over-reaches and changes unrelated behavior.
+  INCORRECT — does not remove the vulnerability, or breaks functionality so it is not a valid fix.
+
+
+===== 1. THE VULNERABILITY =====
+Project: jupyter-server/jupyter_server
+Vulnerability type: Cross-site Scripting (CWE-79)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  jupyter_server/nbconvert/handlers.py
+    - lines 92-97   in: class NbconvertFileHandler(JupyterHandler):
+    - lines 173-178   in: class NbconvertPostHandler(JupyterHandler):
+
+  jupyter_server/serverapp.py
+    - lines 457-462   in: def init_settings(
+    - lines 1604-1609   in: def template_file_path(self) -> list[str]:
+
+===== 2. MAINTAINER OFFICIAL FIX (gold standard) =====
+--- a/jupyter_server/nbconvert/handlers.py
++++ b/jupyter_server/nbconvert/handlers.py
+@@ -92,6 +92,14 @@ class NbconvertFileHandler(JupyterHandler):
+     auth_resource = AUTH_RESOURCE
+     SUPPORTED_METHODS = ("GET",)
+ 
++    @property
++    def content_security_policy(self):
++        # In case we're serving HTML, confine any Javascript to a unique
++        # origin so it can't interact with the Jupyter server.
++        if self.settings.get("nbconvert_csp_sandbox", True):
++            return super().content_security_policy + "; sandbox allow-scripts"
++        return super().content_security_policy
++
+     @web.authenticated
+     @authorized
+     async def get(self, format, path):
+@@ -173,6 +181,14 @@ class NbconvertPostHandler(JupyterHandler):
+     SUPPORTED_METHODS = ("POST",)
+     auth_resource = AUTH_RESOURCE
+ 
++    @property
++    def content_security_policy(self):
++        # In case we're serving HTML, confine any Javascript to a unique
++        # origin so it can't interact with the Jupyter server.
++        if self.settings.get("nbconvert_csp_sandbox", True):
++            return super().content_security_policy + "; sandbox allow-scripts"
++        return super().content_security_policy
++
+     @web.authenticated
+     @authorized
+     async def post(self, format):
+--- a/jupyter_server/serverapp.py
++++ b/jupyter_server/serverapp.py
+@@ -457,6 +457,7 @@ def init_settings(
+             "websocket_ping_timeout": websocket_ping_timeout,
+             # handlers
+             "extra_services": extra_services,
++            "nbconvert_csp_sandbox": jupyter_app.nbconvert_csp_sandbox,
+             # Jupyter stuff
+             "started": now,
+             # place for extensions to register activity
+@@ -1604,6 +1605,15 @@ def template_file_path(self) -> list[str]:
+         help="""If True, display controls to shut down the Jupyter server, such as menu items or buttons.""",
+     )
+ 
++    nbconvert_csp_sandbox = Bool(
++        True,
++        config=True,
++        help=_i18n(
++            "If True, add a 'sandbox' directive to the Content-Security-Policy header for nbconvert-served pages, "
++            "confining any JavaScript to a unique origin so it cannot interact with the Jupyter server."
++        ),
++    )
++
+     contents_manager_class = Type(
+         default_value=AsyncLargeFileManager,
+         klass=ContentsManager,
+===== 3. THE AGENT FIX TO JUDGE =====
+diff --git a/jupyter_server/nbconvert/handlers.py b/jupyter_server/nbconvert/handlers.py
+index 5b12d70..474a4c5 100644
+--- a/jupyter_server/nbconvert/handlers.py
++++ b/jupyter_server/nbconvert/handlers.py
+@@ -92,6 +92,13 @@ class NbconvertFileHandler(JupyterHandler):
+     auth_resource = AUTH_RESOURCE
+     SUPPORTED_METHODS = ("GET",)
+ 
++    @property
++    def content_security_policy(self):
++        # nbconvert can produce HTML (e.g. the html exporter) from
++        # user-controlled notebook content. Confine any Javascript to a unique
++        # origin so it can't interact with the Jupyter server.
++        return super().content_security_policy + "; sandbox allow-scripts"
++
+     @web.authenticated
+     @authorized
+     async def get(self, format, path):
+@@ -173,6 +180,13 @@ class NbconvertPostHandler(JupyterHandler):
+     SUPPORTED_METHODS = ("POST",)
+     auth_resource = AUTH_RESOURCE
+ 
++    @property
++    def content_security_policy(self):
++        # nbconvert can produce HTML (e.g. the html exporter) from
++        # user-controlled notebook content. Confine any Javascript to a unique
++        # origin so it can't interact with the Jupyter server.
++        return super().content_security_policy + "; sandbox allow-scripts"
++
+     @web.authenticated
+     @authorized
+     async def post(self, format):

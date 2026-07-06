@@ -1,0 +1,10 @@
+{
+  "agent": "claude-code",
+  "model": "claude-opus-4-8",
+  "tool_calls": 17,
+  "turns": 18,
+  "cost_usd": 0.994547,
+  "usage": null,
+  "used_web": false,
+  "egress_attempts": []
+}

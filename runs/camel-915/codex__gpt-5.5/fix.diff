@@ -1,0 +1,279 @@
+diff --git a/components/camel-coap/src/generated/java/org/apache/camel/coap/CoAPComponentConfigurer.java b/components/camel-coap/src/generated/java/org/apache/camel/coap/CoAPComponentConfigurer.java
+index aa4a8a79..4ab0af19 100644
+--- a/components/camel-coap/src/generated/java/org/apache/camel/coap/CoAPComponentConfigurer.java
++++ b/components/camel-coap/src/generated/java/org/apache/camel/coap/CoAPComponentConfigurer.java
+@@ -27,7 +27,6 @@ public class CoAPComponentConfigurer extends PropertyConfigurerSupport implement
+         case "autowiredEnabled": target.setAutowiredEnabled(property(camelContext, boolean.class, value)); return true;
+         case "bridgeerrorhandler":
+         case "bridgeErrorHandler": target.setBridgeErrorHandler(property(camelContext, boolean.class, value)); return true;
+-        case "client": target.setClient(property(camelContext, org.eclipse.californium.core.CoapClient.class, value)); return true;
+         case "configurationfile":
+         case "configurationFile": target.setConfigurationFile(property(camelContext, java.lang.String.class, value)); return true;
+         case "lazystartproducer":
+@@ -43,7 +42,6 @@ public class CoAPComponentConfigurer extends PropertyConfigurerSupport implement
+         case "autowiredEnabled": return boolean.class;
+         case "bridgeerrorhandler":
+         case "bridgeErrorHandler": return boolean.class;
+-        case "client": return org.eclipse.californium.core.CoapClient.class;
+         case "configurationfile":
+         case "configurationFile": return java.lang.String.class;
+         case "lazystartproducer":
+@@ -60,7 +58,6 @@ public class CoAPComponentConfigurer extends PropertyConfigurerSupport implement
+         case "autowiredEnabled": return target.isAutowiredEnabled();
+         case "bridgeerrorhandler":
+         case "bridgeErrorHandler": return target.isBridgeErrorHandler();
+-        case "client": return target.getClient();
+         case "configurationfile":
+         case "configurationFile": return target.getConfigurationFile();
+         case "lazystartproducer":
+@@ -69,4 +66,3 @@ public class CoAPComponentConfigurer extends PropertyConfigurerSupport implement
+         }
+     }
+ }
+-
+diff --git a/components/camel-coap/src/generated/java/org/apache/camel/coap/CoAPEndpointConfigurer.java b/components/camel-coap/src/generated/java/org/apache/camel/coap/CoAPEndpointConfigurer.java
+index cce9f88d..1b00f5d2 100644
+--- a/components/camel-coap/src/generated/java/org/apache/camel/coap/CoAPEndpointConfigurer.java
++++ b/components/camel-coap/src/generated/java/org/apache/camel/coap/CoAPEndpointConfigurer.java
+@@ -32,7 +32,6 @@ public class CoAPEndpointConfigurer extends PropertyConfigurerSupport implements
+         case "bridgeErrorHandler": target.setBridgeErrorHandler(property(camelContext, boolean.class, value)); return true;
+         case "ciphersuites":
+         case "cipherSuites": target.setCipherSuites(property(camelContext, java.lang.String.class, value)); return true;
+-        case "client": target.setClient(property(camelContext, org.eclipse.californium.core.CoapClient.class, value)); return true;
+         case "clientauthentication":
+         case "clientAuthentication": target.setClientAuthentication(property(camelContext, org.eclipse.californium.elements.config.CertificateAuthenticationMode.class, value)); return true;
+         case "coapmethodrestrict":
+@@ -70,7 +69,6 @@ public class CoAPEndpointConfigurer extends PropertyConfigurerSupport implements
+         case "bridgeErrorHandler": return boolean.class;
+         case "ciphersuites":
+         case "cipherSuites": return java.lang.String.class;
+-        case "client": return org.eclipse.californium.core.CoapClient.class;
+         case "clientauthentication":
+         case "clientAuthentication": return org.eclipse.californium.elements.config.CertificateAuthenticationMode.class;
+         case "coapmethodrestrict":
+@@ -109,7 +107,6 @@ public class CoAPEndpointConfigurer extends PropertyConfigurerSupport implements
+         case "bridgeErrorHandler": return target.isBridgeErrorHandler();
+         case "ciphersuites":
+         case "cipherSuites": return target.getCipherSuites();
+-        case "client": return target.getClient();
+         case "clientauthentication":
+         case "clientAuthentication": return target.getClientAuthentication();
+         case "coapmethodrestrict":
+@@ -135,4 +132,3 @@ public class CoAPEndpointConfigurer extends PropertyConfigurerSupport implements
+         }
+     }
+ }
+-
+diff --git a/components/camel-coap/src/generated/java/org/apache/camel/coap/CoAPEndpointUriFactory.java b/components/camel-coap/src/generated/java/org/apache/camel/coap/CoAPEndpointUriFactory.java
+index 38524be0..eeffda70 100644
+--- a/components/camel-coap/src/generated/java/org/apache/camel/coap/CoAPEndpointUriFactory.java
++++ b/components/camel-coap/src/generated/java/org/apache/camel/coap/CoAPEndpointUriFactory.java
+@@ -24,13 +24,12 @@ public class CoAPEndpointUriFactory extends org.apache.camel.support.component.E
+     private static final Set<String> SECRET_PROPERTY_NAMES;
+     private static final Map<String, String> MULTI_VALUE_PREFIXES;
+     static {
+-        Set<String> props = new HashSet<>(19);
++        Set<String> props = new HashSet<>(18);
+         props.add("advancedCertificateVerifier");
+         props.add("advancedPskStore");
+         props.add("alias");
+         props.add("bridgeErrorHandler");
+         props.add("cipherSuites");
+-        props.add("client");
+         props.add("clientAuthentication");
+         props.add("coapMethodRestrict");
+         props.add("exceptionHandler");
+@@ -93,4 +92,3 @@ public class CoAPEndpointUriFactory extends org.apache.camel.support.component.E
+         return false;
+     }
+ }
+-
+diff --git a/components/camel-coap/src/generated/resources/META-INF/org/apache/camel/coap/coap+tcp.json b/components/camel-coap/src/generated/resources/META-INF/org/apache/camel/coap/coap+tcp.json
+index 162769ef..8c3e0841 100644
+--- a/components/camel-coap/src/generated/resources/META-INF/org/apache/camel/coap/coap+tcp.json
++++ b/components/camel-coap/src/generated/resources/META-INF/org/apache/camel/coap/coap+tcp.json
+@@ -28,7 +28,6 @@
+     "configurationFile": { "index": 0, "kind": "property", "displayName": "Configuration File", "group": "common", "label": "", "required": false, "type": "string", "javaType": "java.lang.String", "deprecated": false, "autowired": false, "secret": false, "description": "Name of COAP configuration file to load and use. Will by default load from classpath, so use file: as prefix to load from file system." },
+     "bridgeErrorHandler": { "index": 1, "kind": "property", "displayName": "Bridge Error Handler", "group": "consumer", "label": "consumer", "required": false, "type": "boolean", "javaType": "boolean", "deprecated": false, "autowired": false, "secret": false, "defaultValue": false, "description": "Allows for bridging the consumer to the Camel routing Error Handler, which mean any exceptions (if possible) occurred while the Camel consumer is trying to pickup incoming messages, or the likes, will now be processed as a message and handled by the routing Error Handler. Important: This is only possible if the 3rd party component allows Camel to be alerted if an exception was thrown. Some components handle this internally only, and therefore bridgeErrorHandler is not possible. In other situations we may improve the Camel component to hook into the 3rd party component and make this possible for future releases. By default the consumer will use the org.apache.camel.spi.ExceptionHandler to deal with exceptions, that will be logged at WARN or ERROR level and ignored." },
+     "lazyStartProducer": { "index": 2, "kind": "property", "displayName": "Lazy Start Producer", "group": "producer", "label": "producer", "required": false, "type": "boolean", "javaType": "boolean", "deprecated": false, "autowired": false, "secret": false, "defaultValue": false, "description": "Whether the producer should be started lazy (on the first message). By starting lazy you can use this to allow CamelContext and routes to startup in situations where a producer may otherwise fail during starting and cause the route to fail being started. By deferring this startup to be lazy then the startup failure can be handled during routing messages via Camel's routing error handlers. Beware that when the first message is processed then creating and starting the producer may take a little time and prolong the total processing time of the processing." },
+-    "client": { "index": 3, "kind": "property", "displayName": "Client", "group": "producer (advanced)", "label": "producer,advanced", "required": false, "type": "object", "javaType": "org.eclipse.californium.core.CoapClient", "deprecated": false, "autowired": false, "secret": false, "description": "To use a shared client for the producers" },
+     "autowiredEnabled": { "index": 4, "kind": "property", "displayName": "Autowired Enabled", "group": "advanced", "label": "advanced", "required": false, "type": "boolean", "javaType": "boolean", "deprecated": false, "autowired": false, "secret": false, "defaultValue": true, "description": "Whether autowiring is enabled. This is used for automatic autowiring options (the option must be marked as autowired) by looking up in the registry to find if there is a single instance of matching type, which then gets configured on the component. This can be used for automatic configuring JDBC data sources, JMS connection factories, AWS Clients, etc." }
+   },
+   "headers": {
+@@ -47,7 +46,6 @@
+     "exceptionHandler": { "index": 5, "kind": "parameter", "displayName": "Exception Handler", "group": "consumer (advanced)", "label": "consumer,advanced", "required": false, "type": "object", "javaType": "org.apache.camel.spi.ExceptionHandler", "optionalPrefix": "consumer.", "deprecated": false, "autowired": false, "secret": false, "description": "To let the consumer use a custom ExceptionHandler. Notice if the option bridgeErrorHandler is enabled then this option is not in use. By default the consumer will deal with exceptions, that will be logged at WARN or ERROR level and ignored." },
+     "exchangePattern": { "index": 6, "kind": "parameter", "displayName": "Exchange Pattern", "group": "consumer (advanced)", "label": "consumer,advanced", "required": false, "type": "enum", "javaType": "org.apache.camel.ExchangePattern", "enum": [ "InOnly", "InOut" ], "deprecated": false, "autowired": false, "secret": false, "description": "Sets the exchange pattern when the consumer creates an exchange." },
+     "notify": { "index": 7, "kind": "parameter", "displayName": "Notify", "group": "producer", "label": "producer", "required": false, "type": "boolean", "javaType": "boolean", "deprecated": false, "autowired": false, "secret": false, "defaultValue": false, "description": "Notify observers that the resource of this URI has changed, based on RFC 7641. Use this flag on a destination endpoint, with a URI that matches an existing source endpoint URI." },
+-    "client": { "index": 8, "kind": "parameter", "displayName": "Client", "group": "producer (advanced)", "label": "producer,advanced", "required": false, "type": "object", "javaType": "org.eclipse.californium.core.CoapClient", "deprecated": false, "autowired": false, "secret": false, "description": "To use a shared client for the producers" },
+     "lazyStartProducer": { "index": 9, "kind": "parameter", "displayName": "Lazy Start Producer", "group": "producer (advanced)", "label": "producer,advanced", "required": false, "type": "boolean", "javaType": "boolean", "deprecated": false, "autowired": false, "secret": false, "defaultValue": false, "description": "Whether the producer should be started lazy (on the first message). By starting lazy you can use this to allow CamelContext and routes to startup in situations where a producer may otherwise fail during starting and cause the route to fail being started. By deferring this startup to be lazy then the startup failure can be handled during routing messages via Camel's routing error handlers. Beware that when the first message is processed then creating and starting the producer may take a little time and prolong the total processing time of the processing." },
+     "advancedCertificateVerifier": { "index": 10, "kind": "parameter", "displayName": "Advanced Certificate Verifier", "group": "security", "label": "security", "required": false, "type": "object", "javaType": "org.eclipse.californium.scandium.dtls.x509.NewAdvancedCertificateVerifier", "deprecated": false, "autowired": false, "secret": false, "description": "Set the AdvancedCertificateVerifier to use to determine trust in raw public keys." },
+     "advancedPskStore": { "index": 11, "kind": "parameter", "displayName": "Advanced Psk Store", "group": "security", "label": "security", "required": false, "type": "object", "javaType": "org.eclipse.californium.scandium.dtls.pskstore.AdvancedPskStore", "deprecated": false, "autowired": false, "secret": false, "description": "Set the AdvancedPskStore to use for pre-shared key." },
+diff --git a/components/camel-coap/src/generated/resources/META-INF/org/apache/camel/coap/coap.json b/components/camel-coap/src/generated/resources/META-INF/org/apache/camel/coap/coap.json
+index 6506e161..57e569bb 100644
+--- a/components/camel-coap/src/generated/resources/META-INF/org/apache/camel/coap/coap.json
++++ b/components/camel-coap/src/generated/resources/META-INF/org/apache/camel/coap/coap.json
+@@ -28,7 +28,6 @@
+     "configurationFile": { "index": 0, "kind": "property", "displayName": "Configuration File", "group": "common", "label": "", "required": false, "type": "string", "javaType": "java.lang.String", "deprecated": false, "autowired": false, "secret": false, "description": "Name of COAP configuration file to load and use. Will by default load from classpath, so use file: as prefix to load from file system." },
+     "bridgeErrorHandler": { "index": 1, "kind": "property", "displayName": "Bridge Error Handler", "group": "consumer", "label": "consumer", "required": false, "type": "boolean", "javaType": "boolean", "deprecated": false, "autowired": false, "secret": false, "defaultValue": false, "description": "Allows for bridging the consumer to the Camel routing Error Handler, which mean any exceptions (if possible) occurred while the Camel consumer is trying to pickup incoming messages, or the likes, will now be processed as a message and handled by the routing Error Handler. Important: This is only possible if the 3rd party component allows Camel to be alerted if an exception was thrown. Some components handle this internally only, and therefore bridgeErrorHandler is not possible. In other situations we may improve the Camel component to hook into the 3rd party component and make this possible for future releases. By default the consumer will use the org.apache.camel.spi.ExceptionHandler to deal with exceptions, that will be logged at WARN or ERROR level and ignored." },
+     "lazyStartProducer": { "index": 2, "kind": "property", "displayName": "Lazy Start Producer", "group": "producer", "label": "producer", "required": false, "type": "boolean", "javaType": "boolean", "deprecated": false, "autowired": false, "secret": false, "defaultValue": false, "description": "Whether the producer should be started lazy (on the first message). By starting lazy you can use this to allow CamelContext and routes to startup in situations where a producer may otherwise fail during starting and cause the route to fail being started. By deferring this startup to be lazy then the startup failure can be handled during routing messages via Camel's routing error handlers. Beware that when the first message is processed then creating and starting the producer may take a little time and prolong the total processing time of the processing." },
+-    "client": { "index": 3, "kind": "property", "displayName": "Client", "group": "producer (advanced)", "label": "producer,advanced", "required": false, "type": "object", "javaType": "org.eclipse.californium.core.CoapClient", "deprecated": false, "autowired": false, "secret": false, "description": "To use a shared client for the producers" },
+     "autowiredEnabled": { "index": 4, "kind": "property", "displayName": "Autowired Enabled", "group": "advanced", "label": "advanced", "required": false, "type": "boolean", "javaType": "boolean", "deprecated": false, "autowired": false, "secret": false, "defaultValue": true, "description": "Whether autowiring is enabled. This is used for automatic autowiring options (the option must be marked as autowired) by looking up in the registry to find if there is a single instance of matching type, which then gets configured on the component. This can be used for automatic configuring JDBC data sources, JMS connection factories, AWS Clients, etc." }
+   },
+   "headers": {
+@@ -47,7 +46,6 @@
+     "exceptionHandler": { "index": 5, "kind": "parameter", "displayName": "Exception Handler", "group": "consumer (advanced)", "label": "consumer,advanced", "required": false, "type": "object", "javaType": "org.apache.camel.spi.ExceptionHandler", "optionalPrefix": "consumer.", "deprecated": false, "autowired": false, "secret": false, "description": "To let the consumer use a custom ExceptionHandler. Notice if the option bridgeErrorHandler is enabled then this option is not in use. By default the consumer will deal with exceptions, that will be logged at WARN or ERROR level and ignored." },
+     "exchangePattern": { "index": 6, "kind": "parameter", "displayName": "Exchange Pattern", "group": "consumer (advanced)", "label": "consumer,advanced", "required": false, "type": "enum", "javaType": "org.apache.camel.ExchangePattern", "enum": [ "InOnly", "InOut" ], "deprecated": false, "autowired": false, "secret": false, "description": "Sets the exchange pattern when the consumer creates an exchange." },
+     "notify": { "index": 7, "kind": "parameter", "displayName": "Notify", "group": "producer", "label": "producer", "required": false, "type": "boolean", "javaType": "boolean", "deprecated": false, "autowired": false, "secret": false, "defaultValue": false, "description": "Notify observers that the resource of this URI has changed, based on RFC 7641. Use this flag on a destination endpoint, with a URI that matches an existing source endpoint URI." },
+-    "client": { "index": 8, "kind": "parameter", "displayName": "Client", "group": "producer (advanced)", "label": "producer,advanced", "required": false, "type": "object", "javaType": "org.eclipse.californium.core.CoapClient", "deprecated": false, "autowired": false, "secret": false, "description": "To use a shared client for the producers" },
+     "lazyStartProducer": { "index": 9, "kind": "parameter", "displayName": "Lazy Start Producer", "group": "producer (advanced)", "label": "producer,advanced", "required": false, "type": "boolean", "javaType": "boolean", "deprecated": false, "autowired": false, "secret": false, "defaultValue": false, "description": "Whether the producer should be started lazy (on the first message). By starting lazy you can use this to allow CamelContext and routes to startup in situations where a producer may otherwise fail during starting and cause the route to fail being started. By deferring this startup to be lazy then the startup failure can be handled during routing messages via Camel's routing error handlers. Beware that when the first message is processed then creating and starting the producer may take a little time and prolong the total processing time of the processing." },
+     "advancedCertificateVerifier": { "index": 10, "kind": "parameter", "displayName": "Advanced Certificate Verifier", "group": "security", "label": "security", "required": false, "type": "object", "javaType": "org.eclipse.californium.scandium.dtls.x509.NewAdvancedCertificateVerifier", "deprecated": false, "autowired": false, "secret": false, "description": "Set the AdvancedCertificateVerifier to use to determine trust in raw public keys." },
+     "advancedPskStore": { "index": 11, "kind": "parameter", "displayName": "Advanced Psk Store", "group": "security", "label": "security", "required": false, "type": "object", "javaType": "org.eclipse.californium.scandium.dtls.pskstore.AdvancedPskStore", "deprecated": false, "autowired": false, "secret": false, "description": "Set the AdvancedPskStore to use for pre-shared key." },
+diff --git a/components/camel-coap/src/generated/resources/META-INF/org/apache/camel/coap/coaps+tcp.json b/components/camel-coap/src/generated/resources/META-INF/org/apache/camel/coap/coaps+tcp.json
+index bfbc4b50..92293c5c 100644
+--- a/components/camel-coap/src/generated/resources/META-INF/org/apache/camel/coap/coaps+tcp.json
++++ b/components/camel-coap/src/generated/resources/META-INF/org/apache/camel/coap/coaps+tcp.json
+@@ -28,7 +28,6 @@
+     "configurationFile": { "index": 0, "kind": "property", "displayName": "Configuration File", "group": "common", "label": "", "required": false, "type": "string", "javaType": "java.lang.String", "deprecated": false, "autowired": false, "secret": false, "description": "Name of COAP configuration file to load and use. Will by default load from classpath, so use file: as prefix to load from file system." },
+     "bridgeErrorHandler": { "index": 1, "kind": "property", "displayName": "Bridge Error Handler", "group": "consumer", "label": "consumer", "required": false, "type": "boolean", "javaType": "boolean", "deprecated": false, "autowired": false, "secret": false, "defaultValue": false, "description": "Allows for bridging the consumer to the Camel routing Error Handler, which mean any exceptions (if possible) occurred while the Camel consumer is trying to pickup incoming messages, or the likes, will now be processed as a message and handled by the routing Error Handler. Important: This is only possible if the 3rd party component allows Camel to be alerted if an exception was thrown. Some components handle this internally only, and therefore bridgeErrorHandler is not possible. In other situations we may improve the Camel component to hook into the 3rd party component and make this possible for future releases. By default the consumer will use the org.apache.camel.spi.ExceptionHandler to deal with exceptions, that will be logged at WARN or ERROR level and ignored." },
+     "lazyStartProducer": { "index": 2, "kind": "property", "displayName": "Lazy Start Producer", "group": "producer", "label": "producer", "required": false, "type": "boolean", "javaType": "boolean", "deprecated": false, "autowired": false, "secret": false, "defaultValue": false, "description": "Whether the producer should be started lazy (on the first message). By starting lazy you can use this to allow CamelContext and routes to startup in situations where a producer may otherwise fail during starting and cause the route to fail being started. By deferring this startup to be lazy then the startup failure can be handled during routing messages via Camel's routing error handlers. Beware that when the first message is processed then creating and starting the producer may take a little time and prolong the total processing time of the processing." },
+-    "client": { "index": 3, "kind": "property", "displayName": "Client", "group": "producer (advanced)", "label": "producer,advanced", "required": false, "type": "object", "javaType": "org.eclipse.californium.core.CoapClient", "deprecated": false, "autowired": false, "secret": false, "description": "To use a shared client for the producers" },
+     "autowiredEnabled": { "index": 4, "kind": "property", "displayName": "Autowired Enabled", "group": "advanced", "label": "advanced", "required": false, "type": "boolean", "javaType": "boolean", "deprecated": false, "autowired": false, "secret": false, "defaultValue": true, "description": "Whether autowiring is enabled. This is used for automatic autowiring options (the option must be marked as autowired) by looking up in the registry to find if there is a single instance of matching type, which then gets configured on the component. This can be used for automatic configuring JDBC data sources, JMS connection factories, AWS Clients, etc." }
+   },
+   "headers": {
+@@ -47,7 +46,6 @@
+     "exceptionHandler": { "index": 5, "kind": "parameter", "displayName": "Exception Handler", "group": "consumer (advanced)", "label": "consumer,advanced", "required": false, "type": "object", "javaType": "org.apache.camel.spi.ExceptionHandler", "optionalPrefix": "consumer.", "deprecated": false, "autowired": false, "secret": false, "description": "To let the consumer use a custom ExceptionHandler. Notice if the option bridgeErrorHandler is enabled then this option is not in use. By default the consumer will deal with exceptions, that will be logged at WARN or ERROR level and ignored." },
+     "exchangePattern": { "index": 6, "kind": "parameter", "displayName": "Exchange Pattern", "group": "consumer (advanced)", "label": "consumer,advanced", "required": false, "type": "enum", "javaType": "org.apache.camel.ExchangePattern", "enum": [ "InOnly", "InOut" ], "deprecated": false, "autowired": false, "secret": false, "description": "Sets the exchange pattern when the consumer creates an exchange." },
+     "notify": { "index": 7, "kind": "parameter", "displayName": "Notify", "group": "producer", "label": "producer", "required": false, "type": "boolean", "javaType": "boolean", "deprecated": false, "autowired": false, "secret": false, "defaultValue": false, "description": "Notify observers that the resource of this URI has changed, based on RFC 7641. Use this flag on a destination endpoint, with a URI that matches an existing source endpoint URI." },
+-    "client": { "index": 8, "kind": "parameter", "displayName": "Client", "group": "producer (advanced)", "label": "producer,advanced", "required": false, "type": "object", "javaType": "org.eclipse.californium.core.CoapClient", "deprecated": false, "autowired": false, "secret": false, "description": "To use a shared client for the producers" },
+     "lazyStartProducer": { "index": 9, "kind": "parameter", "displayName": "Lazy Start Producer", "group": "producer (advanced)", "label": "producer,advanced", "required": false, "type": "boolean", "javaType": "boolean", "deprecated": false, "autowired": false, "secret": false, "defaultValue": false, "description": "Whether the producer should be started lazy (on the first message). By starting lazy you can use this to allow CamelContext and routes to startup in situations where a producer may otherwise fail during starting and cause the route to fail being started. By deferring this startup to be lazy then the startup failure can be handled during routing messages via Camel's routing error handlers. Beware that when the first message is processed then creating and starting the producer may take a little time and prolong the total processing time of the processing." },
+     "advancedCertificateVerifier": { "index": 10, "kind": "parameter", "displayName": "Advanced Certificate Verifier", "group": "security", "label": "security", "required": false, "type": "object", "javaType": "org.eclipse.californium.scandium.dtls.x509.NewAdvancedCertificateVerifier", "deprecated": false, "autowired": false, "secret": false, "description": "Set the AdvancedCertificateVerifier to use to determine trust in raw public keys." },
+     "advancedPskStore": { "index": 11, "kind": "parameter", "displayName": "Advanced Psk Store", "group": "security", "label": "security", "required": false, "type": "object", "javaType": "org.eclipse.californium.scandium.dtls.pskstore.AdvancedPskStore", "deprecated": false, "autowired": false, "secret": false, "description": "Set the AdvancedPskStore to use for pre-shared key." },
+diff --git a/components/camel-coap/src/generated/resources/META-INF/org/apache/camel/coap/coaps.json b/components/camel-coap/src/generated/resources/META-INF/org/apache/camel/coap/coaps.json
+index fef25a48..72ac0aca 100644
+--- a/components/camel-coap/src/generated/resources/META-INF/org/apache/camel/coap/coaps.json
++++ b/components/camel-coap/src/generated/resources/META-INF/org/apache/camel/coap/coaps.json
+@@ -28,7 +28,6 @@
+     "configurationFile": { "index": 0, "kind": "property", "displayName": "Configuration File", "group": "common", "label": "", "required": false, "type": "string", "javaType": "java.lang.String", "deprecated": false, "autowired": false, "secret": false, "description": "Name of COAP configuration file to load and use. Will by default load from classpath, so use file: as prefix to load from file system." },
+     "bridgeErrorHandler": { "index": 1, "kind": "property", "displayName": "Bridge Error Handler", "group": "consumer", "label": "consumer", "required": false, "type": "boolean", "javaType": "boolean", "deprecated": false, "autowired": false, "secret": false, "defaultValue": false, "description": "Allows for bridging the consumer to the Camel routing Error Handler, which mean any exceptions (if possible) occurred while the Camel consumer is trying to pickup incoming messages, or the likes, will now be processed as a message and handled by the routing Error Handler. Important: This is only possible if the 3rd party component allows Camel to be alerted if an exception was thrown. Some components handle this internally only, and therefore bridgeErrorHandler is not possible. In other situations we may improve the Camel component to hook into the 3rd party component and make this possible for future releases. By default the consumer will use the org.apache.camel.spi.ExceptionHandler to deal with exceptions, that will be logged at WARN or ERROR level and ignored." },
+     "lazyStartProducer": { "index": 2, "kind": "property", "displayName": "Lazy Start Producer", "group": "producer", "label": "producer", "required": false, "type": "boolean", "javaType": "boolean", "deprecated": false, "autowired": false, "secret": false, "defaultValue": false, "description": "Whether the producer should be started lazy (on the first message). By starting lazy you can use this to allow CamelContext and routes to startup in situations where a producer may otherwise fail during starting and cause the route to fail being started. By deferring this startup to be lazy then the startup failure can be handled during routing messages via Camel's routing error handlers. Beware that when the first message is processed then creating and starting the producer may take a little time and prolong the total processing time of the processing." },
+-    "client": { "index": 3, "kind": "property", "displayName": "Client", "group": "producer (advanced)", "label": "producer,advanced", "required": false, "type": "object", "javaType": "org.eclipse.californium.core.CoapClient", "deprecated": false, "autowired": false, "secret": false, "description": "To use a shared client for the producers" },
+     "autowiredEnabled": { "index": 4, "kind": "property", "displayName": "Autowired Enabled", "group": "advanced", "label": "advanced", "required": false, "type": "boolean", "javaType": "boolean", "deprecated": false, "autowired": false, "secret": false, "defaultValue": true, "description": "Whether autowiring is enabled. This is used for automatic autowiring options (the option must be marked as autowired) by looking up in the registry to find if there is a single instance of matching type, which then gets configured on the component. This can be used for automatic configuring JDBC data sources, JMS connection factories, AWS Clients, etc." }
+   },
+   "headers": {
+@@ -47,7 +46,6 @@
+     "exceptionHandler": { "index": 5, "kind": "parameter", "displayName": "Exception Handler", "group": "consumer (advanced)", "label": "consumer,advanced", "required": false, "type": "object", "javaType": "org.apache.camel.spi.ExceptionHandler", "optionalPrefix": "consumer.", "deprecated": false, "autowired": false, "secret": false, "description": "To let the consumer use a custom ExceptionHandler. Notice if the option bridgeErrorHandler is enabled then this option is not in use. By default the consumer will deal with exceptions, that will be logged at WARN or ERROR level and ignored." },
+     "exchangePattern": { "index": 6, "kind": "parameter", "displayName": "Exchange Pattern", "group": "consumer (advanced)", "label": "consumer,advanced", "required": false, "type": "enum", "javaType": "org.apache.camel.ExchangePattern", "enum": [ "InOnly", "InOut" ], "deprecated": false, "autowired": false, "secret": false, "description": "Sets the exchange pattern when the consumer creates an exchange." },
+     "notify": { "index": 7, "kind": "parameter", "displayName": "Notify", "group": "producer", "label": "producer", "required": false, "type": "boolean", "javaType": "boolean", "deprecated": false, "autowired": false, "secret": false, "defaultValue": false, "description": "Notify observers that the resource of this URI has changed, based on RFC 7641. Use this flag on a destination endpoint, with a URI that matches an existing source endpoint URI." },
+-    "client": { "index": 8, "kind": "parameter", "displayName": "Client", "group": "producer (advanced)", "label": "producer,advanced", "required": false, "type": "object", "javaType": "org.eclipse.californium.core.CoapClient", "deprecated": false, "autowired": false, "secret": false, "description": "To use a shared client for the producers" },
+     "lazyStartProducer": { "index": 9, "kind": "parameter", "displayName": "Lazy Start Producer", "group": "producer (advanced)", "label": "producer,advanced", "required": false, "type": "boolean", "javaType": "boolean", "deprecated": false, "autowired": false, "secret": false, "defaultValue": false, "description": "Whether the producer should be started lazy (on the first message). By starting lazy you can use this to allow CamelContext and routes to startup in situations where a producer may otherwise fail during starting and cause the route to fail being started. By deferring this startup to be lazy then the startup failure can be handled during routing messages via Camel's routing error handlers. Beware that when the first message is processed then creating and starting the producer may take a little time and prolong the total processing time of the processing." },
+     "advancedCertificateVerifier": { "index": 10, "kind": "parameter", "displayName": "Advanced Certificate Verifier", "group": "security", "label": "security", "required": false, "type": "object", "javaType": "org.eclipse.californium.scandium.dtls.x509.NewAdvancedCertificateVerifier", "deprecated": false, "autowired": false, "secret": false, "description": "Set the AdvancedCertificateVerifier to use to determine trust in raw public keys." },
+     "advancedPskStore": { "index": 11, "kind": "parameter", "displayName": "Advanced Psk Store", "group": "security", "label": "security", "required": false, "type": "object", "javaType": "org.eclipse.californium.scandium.dtls.pskstore.AdvancedPskStore", "deprecated": false, "autowired": false, "secret": false, "description": "Set the AdvancedPskStore to use for pre-shared key." },
+diff --git a/components/camel-coap/src/main/java/org/apache/camel/coap/CamelCoapResource.java b/components/camel-coap/src/main/java/org/apache/camel/coap/CamelCoapResource.java
+index 25cd4fc1..f73de4d3 100644
+--- a/components/camel-coap/src/main/java/org/apache/camel/coap/CamelCoapResource.java
++++ b/components/camel-coap/src/main/java/org/apache/camel/coap/CamelCoapResource.java
+@@ -103,9 +103,9 @@ final class CamelCoapResource extends CoapResource {
+             for (String s : options.getUriQuery()) {
+                 int i = s.indexOf('=');
+                 if (i == -1) {
+-                    camelExchange.getIn().setHeader(s, "");
++                    setQueryHeader(camelExchange, s, "");
+                 } else {
+-                    camelExchange.getIn().setHeader(s.substring(0, i), s.substring(i + 1));
++                    setQueryHeader(camelExchange, s.substring(0, i), s.substring(i + 1));
+                 }
+             }
+ 
+@@ -135,7 +135,7 @@ final class CamelCoapResource extends CoapResource {
+             }
+ 
+             byte[] bytes = exchange.getRequest().getPayload();
+-            camelExchange.getIn().setBody(bytes);
++            camelExchange.getIn().setBody(bytes.clone());
+ 
+             consumer.getProcessor().process(camelExchange);
+             Message target = camelExchange.getMessage();
+@@ -147,7 +147,7 @@ final class CamelCoapResource extends CoapResource {
+ 
+             byte[] eTag = target.getHeader(CoAPConstants.COAP_ETAG, byte[].class);
+             if (eTag != null) {
+-                cexchange.setETag(eTag);
++                cexchange.setETag(eTag.clone());
+             }
+ 
+             int format = MediaTypeRegistry.parse(target.getHeader(CoAPConstants.CONTENT_TYPE, String.class));
+@@ -167,4 +167,16 @@ final class CamelCoapResource extends CoapResource {
+             }
+         }
+     }
++
++    private static void setQueryHeader(org.apache.camel.Exchange exchange, String name, String value) {
++        if (!isFilteredQueryHeader(name)) {
++            exchange.getIn().setHeader(name, value);
++        }
++    }
++
++    private static boolean isFilteredQueryHeader(String name) {
++        return name.startsWith("Camel")
++                || name.startsWith("camel")
++                || CoAPConstants.CONTENT_TYPE.equalsIgnoreCase(name);
++    }
+ }
+diff --git a/components/camel-coap/src/main/java/org/apache/camel/coap/CoAPComponent.java b/components/camel-coap/src/main/java/org/apache/camel/coap/CoAPComponent.java
+index 4b0b19cd..a747bee6 100644
+--- a/components/camel-coap/src/main/java/org/apache/camel/coap/CoAPComponent.java
++++ b/components/camel-coap/src/main/java/org/apache/camel/coap/CoAPComponent.java
+@@ -65,7 +65,6 @@ public class CoAPComponent extends DefaultComponent implements RestConsumerFacto
+ 
+     @Metadata
+     private String configurationFile;
+-    @Metadata(label = "producer,advanced")
+     private CoapClient client;
+ 
+     final Map<Integer, CoapServer> servers = new ConcurrentHashMap<>();
+diff --git a/components/camel-coap/src/main/java/org/apache/camel/coap/CoAPEndpoint.java b/components/camel-coap/src/main/java/org/apache/camel/coap/CoAPEndpoint.java
+index 40b694b0..54dd967d 100644
+--- a/components/camel-coap/src/main/java/org/apache/camel/coap/CoAPEndpoint.java
++++ b/components/camel-coap/src/main/java/org/apache/camel/coap/CoAPEndpoint.java
+@@ -107,7 +107,6 @@ public class CoAPEndpoint extends DefaultEndpoint implements EndpointServiceLoca
+     private boolean observable;
+     @UriParam(label = "producer", defaultValue = "false")
+     private boolean notify;
+-    @UriParam(label = "producer,advanced")
+     private CoapClient client;
+ 
+     private CoAPComponent component;
+diff --git a/components/camel-coap/src/test/java/org/apache/camel/coap/CoAPComponentTest.java b/components/camel-coap/src/test/java/org/apache/camel/coap/CoAPComponentTest.java
+index 454b11bd..b311c9c0 100644
+--- a/components/camel-coap/src/test/java/org/apache/camel/coap/CoAPComponentTest.java
++++ b/components/camel-coap/src/test/java/org/apache/camel/coap/CoAPComponentTest.java
+@@ -69,6 +69,20 @@ public class CoAPComponentTest extends CoAPTestSupport {
+         MockEndpoint.assertIsSatisfied(context);
+     }
+ 
++    @Test
++    void testCoAPQueryDoesNotSetInternalHeaders() throws Exception {
++        MockEndpoint mock = getMockEndpoint("mock:queryHeaders");
++        mock.expectedMessageCount(1);
++        mock.expectedHeaderReceived("id", "Ducky");
++        mock.message(0).header(CoAPConstants.COAP_MAX_AGE).isNull();
++
++        CoapClient client = createClient("/QueryHeaders?id=Ducky&CamelCoapMaxAge=10");
++        CoapResponse response = client.get();
++
++        assertEquals("ok", response.getResponseText());
++        MockEndpoint.assertIsSatisfied(context);
++    }
++
+     @Override
+     protected RouteBuilder createRouteBuilder() {
+         return new RouteBuilder() {
+@@ -80,6 +94,8 @@ public class CoAPComponentTest extends CoAPTestSupport {
+                 fromF("coap+tcp://localhost:%d/TestResource", TCP_PORT.getPort()).convertBodyTo(String.class)
+                         .transform(body().prepend("Hello "));
+ 
++                fromF("coap://localhost:%d/QueryHeaders", PORT.getPort()).to("mock:queryHeaders").setBody(constant("ok"));
++
+                 from("direct:start").toF("coap://localhost:%d/TestResource", PORT.getPort()).to("mock:result");
+ 
+                 from("direct:starttcp").toF("coap+tcp://localhost:%d/TestResource", TCP_PORT.getPort()).to("mock:result");

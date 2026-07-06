@@ -1,0 +1,7 @@
+METHODOLOGY: I compared the agent diff against the official remediation to identify the actual vulnerable behaviors and all affected locations. I treated the maintainer fix as the coverage baseline, then checked whether the agent removed the same race-condition sources without altering unrelated behavior.
+
+EVIDENCE: The official fix changes `upstream/plain.go` to avoid sending/mutating the caller’s original `*dns.Msg` for UDP zero-ID requests by introducing `setRequestForNetwork`, copying the request, assigning `dns.Id()`, and restoring `resp.Id = req.Id`. The agent changes only `upstream/doh.go` in `probeH3`, cloning `probeTLSCfg` before parallel QUIC/TLS probes. It does not touch `internal/cmd/proxy.go`, `proxy/errors*.go`, `upstream/doq.go`, `upstream/plain.go`, or `upstream/upstream.go`, all of which are covered by the official fix.
+
+REASONING: The agent may address a plausible concurrent `*tls.Config` use in `probeH3`, but it does not remediate the officially identified vulnerable sites. Most importantly, it misses the `plainDNS.dialExchange` request handling change, where the accepted fix avoids unsafe mutation/reuse of the original DNS request and preserves the response ID semantics. Since the known vulnerability remains present in at least one required location, the fix is not a valid remediation.
+
+VERDICT: INCORRECT

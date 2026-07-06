@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/googleapis/mcp-toolbox.git
+FIX_COMMIT=dfd66ee7de6fe9750d932d30bf3b67a2f4d2a176
+VULN_FILE=internal/auth/auth.go
+CWE_ID=CWE-287
+CWE_NAME="Improper Authentication"
+LANGUAGE=go
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="internal/auth/generic/generic_test.go internal/auth/google/google_test.go internal/server/mcp/util/auth_test.go internal/server/server_test.go"
+PREP_CMD="go mod download"
+TEST_CMD="go test ./internal/auth/generic/... ./internal/auth/google/... ./internal/server/... ./internal/server/mcp/util/..."

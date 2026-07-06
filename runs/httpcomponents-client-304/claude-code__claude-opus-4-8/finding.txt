@@ -1,0 +1,23 @@
+Project: apache/httpcomponents-client
+Vulnerability type: Missing Critical Step in Authentication (CWE-304)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  httpclient5/src/main/java/org/apache/hc/client5/http/impl/DefaultAuthenticationStrategy.java
+    - lines 69-75   in: public class DefaultAuthenticationStrategy implements AuthenticationStrategy {
+
+  httpclient5/src/main/java/org/apache/hc/client5/http/impl/auth/AuthenticationHandler.java
+    - lines 227-232   in: public boolean handleResponse(
+
+  httpclient5/src/main/java/org/apache/hc/client5/http/impl/auth/ScramScheme.java
+    - lines 80-85   in: public final class ScramScheme implements AuthScheme {
+    - lines 100-105   in: private enum State {
+    - lines 128-134   in: private enum State {
+    - lines 140-147   in: public ScramScheme() {
+    - lines 206-214   in: public void processChallenge(
+    - lines 232-241   in: public void processChallenge(
+    - lines 249-255   in: public void processChallenge(
+    - lines 274-298   in: public void processChallenge(
+    - lines 303-309   in: public void processChallenge(
+    - lines 335-341   in: public void processChallenge(
+    - lines 486-494   in: private String buildClientFinalAndExpectV() throws AuthenticationException {

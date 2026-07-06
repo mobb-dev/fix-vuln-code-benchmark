@@ -1,0 +1,19 @@
+Project: apache/camel
+Vulnerability type: Object Attribute Modification (CWE-915)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  components/camel-coap/src/main/java/org/apache/camel/coap/CamelCoapResource.java
+    - lines 22-27
+    - lines 99-111   in: public void handleRequest(Exchange exchange) {
+
+  components/camel-coap/src/main/java/org/apache/camel/coap/CoAPComponent.java
+    - lines 32-37
+    - lines 59-72
+    - lines 156-165   in: private static void doEnableDTLS(
+
+  components/camel-coap/src/main/java/org/apache/camel/coap/CoAPEndpoint.java
+    - lines 38-43
+    - lines 76-82
+    - lines 109-114   in: public class CoAPEndpoint extends DefaultEndpoint implements EndpointServiceLoca
+    - lines 272-277   in: public void setClient(CoapClient client) {

@@ -1,0 +1,27 @@
+Project: AdguardTeam/dnsproxy
+Vulnerability type: Race Condition (CWE-362)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  internal/cmd/proxy.go
+    - lines 526-533   in: func loadServersList(sources []string) []string {
+
+  proxy/errors.go
+    - lines 1-5
+
+  proxy/errors_plan9.go
+    - lines 1-5
+
+  upstream/doh.go
+    - lines 11-16   in: import (
+    - lines 695-707   in: func (p *dnsOverHTTPS) probeTLS(dialContext bootstrap.DialHandler, tlsConfig *tl
+
+  upstream/doq.go
+    - lines 285-291   in: func (p *dnsOverQUIC) getBytesPool() (pool *sync.Pool) {
+
+  upstream/plain.go
+    - lines 95-105   in: func (p *plainDNS) dialExchange(
+    - lines 109-130   in: func (p *plainDNS) dialExchange(
+
+  upstream/upstream.go
+    - lines 337-343   in: func logBegin(l *slog.Logger, addr string, n network, req *dns.Msg) {

@@ -1,0 +1,280 @@
+You are a senior application-security engineer. Judge whether an AI agent's code change correctly fixes a specific, known vulnerability.
+
+You are given three things below:
+  1. THE VULNERABILITY — its type and where it is in the code.
+  2. THE MAINTAINER'S OFFICIAL FIX — the real, accepted remediation. Treat it as the gold standard for what a complete and correct fix must cover. It is a reference, not the only acceptable implementation: a different but equivalent fix that fully and minimally remediates is still correct.
+  3. THE AGENT'S FIX — a diff produced by an AI agent. This is what you must judge.
+
+Evaluate the agent's fix with this methodology:
+  - From the vulnerability and the maintainer's fix, work out the root cause and EVERY place the vulnerability is present.
+  - Does the agent's fix remove the vulnerability at ALL of those places, not just some? Missing any injection point or variant is a real gap.
+  - Does it preserve the application's intended behavior — no broken functionality, and no unrelated behavioral changes beyond what the remediation requires? Removing the vulnerability but also changing unrelated behavior is an over-reach, not a clean fix.
+  - Be skeptical. A fix that reads plausibly but misses a variant is not correct; one that fixes the bug but also changes unrelated behavior is not clean.
+
+Respond in EXACTLY this structure and nothing else:
+
+METHODOLOGY: <2-4 sentences on how you evaluated it>
+EVIDENCE: <specific files, lines, or hunks from the diffs that justify the verdict>
+REASONING: <why the agent's fix does or does not fully and cleanly remediate the vulnerability without changing intended behavior>
+VERDICT: <one word: CORRECT, PARTIAL, or INCORRECT>
+
+Verdict meanings:
+  CORRECT   — fully removes the vulnerability AND preserves intended behavior.
+  PARTIAL   — removes the vulnerability but misses a variant, OR over-reaches and changes unrelated behavior.
+  INCORRECT — does not remove the vulnerability, or breaks functionality so it is not a valid fix.
+
+
+===== 1. THE VULNERABILITY =====
+Project: AdguardTeam/dnsproxy
+Vulnerability type: Race Condition (CWE-362)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  internal/cmd/proxy.go
+    - lines 526-533   in: func loadServersList(sources []string) []string {
+
+  proxy/errors.go
+    - lines 1-5
+
+  proxy/errors_plan9.go
+    - lines 1-5
+
+  upstream/doh.go
+    - lines 11-16   in: import (
+    - lines 695-707   in: func (p *dnsOverHTTPS) probeTLS(dialContext bootstrap.DialHandler, tlsConfig *tl
+
+  upstream/doq.go
+    - lines 285-291   in: func (p *dnsOverQUIC) getBytesPool() (pool *sync.Pool) {
+
+  upstream/plain.go
+    - lines 95-105   in: func (p *plainDNS) dialExchange(
+    - lines 109-130   in: func (p *plainDNS) dialExchange(
+
+  upstream/upstream.go
+    - lines 337-343   in: func logBegin(l *slog.Logger, addr string, n network, req *dns.Msg) {
+
+===== 2. MAINTAINER OFFICIAL FIX (gold standard) =====
+--- a/internal/cmd/proxy.go
++++ b/internal/cmd/proxy.go
+@@ -526,8 +526,8 @@ func loadServersList(sources []string) []string {
+ 			servers = append(servers, source)
+ 		}
+ 
+-		lines := strings.Split(string(data), "\n")
+-		for _, line := range lines {
++		// TODO(a.garipov):  Be smarter about bytes vs. strings.
++		for line := range strings.SplitSeq(string(data), "\n") {
+ 			line = strings.TrimSpace(line)
+ 
+ 			// Ignore comments in the file.
+--- a/proxy/errors.go
++++ b/proxy/errors.go
+@@ -1,5 +1,4 @@
+ //go:build !plan9
+-// +build !plan9
+ 
+ package proxy
+ 
+--- a/proxy/errors_plan9.go
++++ b/proxy/errors_plan9.go
+@@ -1,5 +1,4 @@
+ //go:build plan9
+-// +build plan9
+ 
+ package proxy
+ 
+--- a/upstream/doh.go
++++ b/upstream/doh.go
+@@ -11,6 +11,7 @@ import (
+ 	"net/http"
+ 	"net/url"
+ 	"runtime"
++	"slices"
+ 	"sync"
+ 	"time"
+ 
+@@ -695,13 +696,7 @@ func (p *dnsOverHTTPS) probeTLS(dialContext bootstrap.DialHandler, tlsConfig *tl
+ 
+ // supportsH3 returns true if HTTP/3 is supported by this upstream.
+ func (p *dnsOverHTTPS) supportsH3() (ok bool) {
+-	for _, v := range p.tlsConf.NextProtos {
+-		if v == string(HTTPVersion3) {
+-			return true
+-		}
+-	}
+-
+-	return false
++	return slices.Contains(p.tlsConf.NextProtos, string(HTTPVersion3))
+ }
+ 
+ // supportsHTTP returns true if HTTP/1.1 or HTTP2 is supported by this upstream.
+--- a/upstream/doq.go
++++ b/upstream/doq.go
+@@ -285,7 +285,7 @@ func (p *dnsOverQUIC) getBytesPool() (pool *sync.Pool) {
+ 
+ 	if p.bytesPool == nil {
+ 		p.bytesPool = &sync.Pool{
+-			New: func() interface{} {
++			New: func() (res any) {
+ 				b := make([]byte, dns.MaxMsgSize)
+ 
+ 				return &b
+--- a/upstream/plain.go
++++ b/upstream/plain.go
+@@ -95,11 +95,14 @@ func (p *plainDNS) dialExchange(
+ 	client := &dns.Client{Timeout: p.timeout}
+ 
+ 	conn := &dns.Conn{}
+-	if network == networkUDP {
+-		conn.UDPSize = dns.MinMsgSize
+-	}
++	upstreamReq := setRequestForNetwork(req, conn, network)
++	defer func() {
++		if resp != nil {
++			resp.Id = req.Id
++		}
++	}()
+ 
+-	logBegin(p.logger, addr, network, req)
++	logBegin(p.logger, addr, network, upstreamReq)
+ 	defer func() { logFinish(p.logger, addr, network, err) }()
+ 
+ 	ctx := context.Background()
+@@ -109,22 +112,43 @@ func (p *plainDNS) dialExchange(
+ 	}
+ 	defer func(c net.Conn) { err = errors.WithDeferred(err, c.Close()) }(conn.Conn)
+ 
+-	resp, _, err = client.ExchangeWithConn(req, conn)
++	resp, _, err = client.ExchangeWithConn(upstreamReq, conn)
+ 	if isExpectedConnErr(err) {
+ 		conn.Conn, err = dial(ctx, network, "")
+ 		if err != nil {
+ 			return nil, fmt.Errorf("dialing %s over %s again: %w", p.addr.Host, network, err)
+ 		}
+ 		defer func(c net.Conn) { err = errors.WithDeferred(err, c.Close()) }(conn.Conn)
+ 
+-		resp, _, err = client.ExchangeWithConn(req, conn)
++		resp, _, err = client.ExchangeWithConn(upstreamReq, conn)
+ 	}
+ 
+ 	if err != nil {
+ 		return resp, fmt.Errorf("exchanging with %s over %s: %w", addr, network, err)
+ 	}
+ 
+-	return resp, validatePlainResponse(req, resp)
++	return resp, validatePlainResponse(upstreamReq, resp)
++}
++
++// setRequestForNetwork sets connection options in conn and overrides the
++// upstream request, if necessary, depending on network.  If network is
++// [networkUDP] and orig has a zero ID, req is a copy of orig with a new ID to
++// increase entropy.  network must be either [networkUDP] or [networkTCP].  orig
++// and conn must not be nil.
++func setRequestForNetwork(orig *dns.Msg, conn *dns.Conn, network network) (req *dns.Msg) {
++	req = orig
++	if network != networkUDP {
++		return req
++	}
++
++	conn.UDPSize = dns.MinMsgSize
++
++	if orig.Id == 0 {
++		req = orig.Copy()
++		req.Id = dns.Id()
++	}
++
++	return req
+ }
+ 
+ // isExpectedConnErr returns true if the error is expected.  In this case,
+--- a/upstream/upstream.go
++++ b/upstream/upstream.go
+@@ -337,7 +337,15 @@ func logBegin(l *slog.Logger, addr string, n network, req *dns.Msg) {
+ 		qname = req.Question[0].Name
+ 	}
+ 
+-	l.Debug("sending request", "addr", addr, "proto", n, "qtype", qtype, "qname", qname)
++	l.DebugContext(
++		context.TODO(),
++		"sending request",
++		"addr", addr,
++		"proto", n,
++		"qtype", qtype,
++		"qname", qname,
++		"id", req.Id,
++	)
+ }
+ 
+ // logFinish logs the end of DNS request resolution.  It should be called right
+===== 3. THE AGENT FIX TO JUDGE =====
+diff --git a/internal/cmd/proxy.go b/internal/cmd/proxy.go
+index d3ac625..9473fa8 100644
+--- a/internal/cmd/proxy.go
++++ b/internal/cmd/proxy.go
+@@ -524,6 +524,8 @@ func loadServersList(sources []string) []string {
+ 		if err != nil {
+ 			// Ignore errors, just consider it a server address and not a file.
+ 			servers = append(servers, source)
++
++			continue
+ 		}
+ 
+ 		lines := strings.Split(string(data), "\n")
+diff --git a/upstream/doh.go b/upstream/doh.go
+index 239aa47..3f9e54f 100644
+--- a/upstream/doh.go
++++ b/upstream/doh.go
+@@ -157,10 +157,11 @@ func (p *dnsOverHTTPS) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
+ 	//
+ 	// See https://www.rfc-editor.org/rfc/rfc8484.html.
+ 	id := req.Id
++	req = req.Copy()
+ 	req.Id = 0
+ 	defer func() {
+-		// Restore the original ID to not break compatibility with proxies.
+-		req.Id = id
++		// Restore the original ID in the response to not break compatibility
++		// with proxies.
+ 		if resp != nil {
+ 			resp.Id = id
+ 		}
+diff --git a/upstream/doq.go b/upstream/doq.go
+index f0ec7bb..baf6e94 100644
+--- a/upstream/doq.go
++++ b/upstream/doq.go
+@@ -174,10 +174,11 @@ func (p *dnsOverQUIC) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
+ 	//
+ 	// See https://www.rfc-editor.org/rfc/rfc9250#section-4.2.1.
+ 	id := req.Id
++	req = req.Copy()
+ 	req.Id = 0
+ 	defer func() {
+-		// Restore the original ID to not break compatibility with proxies.
+-		req.Id = id
++		// Restore the original ID in the response to not break compatibility
++		// with proxies.
+ 		if resp != nil {
+ 			resp.Id = id
+ 		}
+@@ -285,7 +286,7 @@ func (p *dnsOverQUIC) getBytesPool() (pool *sync.Pool) {
+ 
+ 	if p.bytesPool == nil {
+ 		p.bytesPool = &sync.Pool{
+-			New: func() interface{} {
++			New: func() (res any) {
+ 				b := make([]byte, dns.MaxMsgSize)
+ 
+ 				return &b
+diff --git a/upstream/plain.go b/upstream/plain.go
+index eb932a6..1d78e75 100644
+--- a/upstream/plain.go
++++ b/upstream/plain.go
+@@ -91,6 +91,8 @@ func (p *plainDNS) dialExchange(
+ 	dial bootstrap.DialHandler,
+ 	req *dns.Msg,
+ ) (resp *dns.Msg, err error) {
++	req = req.Copy()
++
+ 	addr := p.Address()
+ 	client := &dns.Client{Timeout: p.timeout}
+ 

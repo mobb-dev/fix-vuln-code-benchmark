@@ -1,0 +1,148 @@
+diff --git a/jupyter_server/nbconvert/handlers.py b/jupyter_server/nbconvert/handlers.py
+index 5b12d70..b562fb6 100644
+--- a/jupyter_server/nbconvert/handlers.py
++++ b/jupyter_server/nbconvert/handlers.py
+@@ -86,7 +86,19 @@ def get_exporter(format, **kwargs):
+         raise web.HTTPError(500, "Could not construct Exporter: %s" % e) from e
+ 
+ 
+-class NbconvertFileHandler(JupyterHandler):
++class NbconvertBaseHandler(JupyterHandler):
++    """Base handler for nbconvert responses."""
++
++    @property
++    def content_security_policy(self) -> str:
++        # nbconvert may render user-authored HTML. Keep any scripts it contains
++        # confined to a unique origin without access to the Jupyter server.
++        if self.settings.get("nbconvert_csp_sandbox", True):
++            return super().content_security_policy + "; sandbox allow-scripts"
++        return super().content_security_policy
++
++
++class NbconvertFileHandler(NbconvertBaseHandler):
+     """An nbconvert file handler."""
+ 
+     auth_resource = AUTH_RESOURCE
+@@ -167,7 +179,7 @@ class NbconvertFileHandler(JupyterHandler):
+         self.finish(output)
+ 
+ 
+-class NbconvertPostHandler(JupyterHandler):
++class NbconvertPostHandler(NbconvertBaseHandler):
+     """An nbconvert post handler."""
+ 
+     SUPPORTED_METHODS = ("POST",)
+diff --git a/jupyter_server/serverapp.py b/jupyter_server/serverapp.py
+index a95e50e..32a9a31 100644
+--- a/jupyter_server/serverapp.py
++++ b/jupyter_server/serverapp.py
+@@ -457,6 +457,7 @@ class ServerWebApplication(web.Application):
+             "websocket_ping_timeout": websocket_ping_timeout,
+             # handlers
+             "extra_services": extra_services,
++            "nbconvert_csp_sandbox": jupyter_app.nbconvert_csp_sandbox,
+             # Jupyter stuff
+             "started": now,
+             # place for extensions to register activity
+@@ -1604,6 +1605,16 @@ class ServerApp(JupyterApp):
+         help="""If True, display controls to shut down the Jupyter server, such as menu items or buttons.""",
+     )
+ 
++    nbconvert_csp_sandbox = Bool(
++        True,
++        config=True,
++        help=_i18n(
++            "If True, add a 'sandbox' directive to the Content-Security-Policy header "
++            "for nbconvert-served pages, confining any JavaScript to a unique origin "
++            "so it cannot interact with the Jupyter server."
++        ),
++    )
++
+     contents_manager_class = Type(
+         default_value=AsyncLargeFileManager,
+         klass=ContentsManager,
+diff --git a/tests/nbconvert/test_handlers.py b/tests/nbconvert/test_handlers.py
+index b0d7da3..08387b3 100644
+--- a/tests/nbconvert/test_handlers.py
++++ b/tests/nbconvert/test_handlers.py
+@@ -7,6 +7,8 @@ from nbformat import writes
+ from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook, new_output
+ from tornado.httpclient import HTTPClientError
+ 
++from jupyter_server.utils import url_path_join
++
+ from ..utils import expected_http_error
+ 
+ png_green_pixel = encodebytes(
+@@ -83,6 +85,35 @@ async def test_from_file(jp_fetch, notebook):
+     assert "print(2*6)" in r.body.decode()
+ 
+ 
++@pytest.mark.parametrize(
++    "jp_server_config,expected",
++    [
++        ({"ServerApp": {"nbconvert_csp_sandbox": True}}, "sandbox allow-scripts"),
++        ({"ServerApp": {"nbconvert_csp_sandbox": False}}, None),
++    ],
++)
++async def test_from_file_sets_sandbox_csp(
++    jp_fetch, jp_base_url, jp_server_config, notebook, expected
++):
++    r = await jp_fetch(
++        "nbconvert",
++        "html",
++        "foo",
++        "testnb.ipynb",
++        method="GET",
++    )
++
++    report_uri = url_path_join(jp_base_url, "/api/security/csp-report")
++    base_csp = "; ".join(
++        ["frame-ancestors 'self'", "report-uri " + report_uri, "sandbox allow-scripts"]
++    )
++    csp = r.headers["Content-Security-Policy"]
++    if expected:
++        assert csp == base_csp
++    else:
++        assert "sandbox" not in csp
++
++
+ async def test_from_file_404(jp_fetch, notebook):
+     with pytest.raises(HTTPClientError) as e:
+         await jp_fetch(
+@@ -142,6 +173,35 @@ async def test_from_post(jp_fetch, notebook):
+     assert "print(2*6)" in r.body.decode()
+ 
+ 
++@pytest.mark.parametrize(
++    "jp_server_config,expected",
++    [
++        ({"ServerApp": {"nbconvert_csp_sandbox": True}}, "sandbox allow-scripts"),
++        ({"ServerApp": {"nbconvert_csp_sandbox": False}}, None),
++    ],
++)
++async def test_from_post_sets_sandbox_csp(
++    jp_fetch, jp_base_url, jp_server_config, notebook, expected
++):
++    r = await jp_fetch(
++        "api/contents/foo/testnb.ipynb",
++        method="GET",
++    )
++    nbmodel = json.loads(r.body.decode())
++
++    r = await jp_fetch("nbconvert", "html", method="POST", body=json.dumps(nbmodel))
++
++    report_uri = url_path_join(jp_base_url, "/api/security/csp-report")
++    base_csp = "; ".join(
++        ["frame-ancestors 'self'", "report-uri " + report_uri, "sandbox allow-scripts"]
++    )
++    csp = r.headers["Content-Security-Policy"]
++    if expected:
++        assert csp == base_csp
++    else:
++        assert "sandbox" not in csp
++
++
+ async def test_from_file_sanitize_html(jp_fetch, notebook):
+     # flag explicitly set to true
+     r = await jp_fetch(

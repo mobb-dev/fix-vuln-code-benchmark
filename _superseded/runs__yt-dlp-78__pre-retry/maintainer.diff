@@ -1,0 +1,142 @@
+--- a/yt_dlp/YoutubeDL.py
++++ b/yt_dlp/YoutubeDL.py
+@@ -112,6 +112,7 @@
+     RejectedVideoReached,
+     SameFileError,
+     UnavailableVideoError,
++    UnsafeExecExpansionError,
+     UserNotLive,
+     YoutubeDLError,
+     age_restricted,
+@@ -826,9 +827,14 @@ def check_deprecated(param, option, suggestion):
+         for pp_def_raw in self.params.get('postprocessors', []):
+             pp_def = dict(pp_def_raw)
+             when = pp_def.pop('when', 'post_process')
+-            self.add_post_processor(
+-                get_postprocessor(pp_def.pop('key'))(self, **pp_def),
+-                when=when)
++            # Handle errors for ExecPP command validation
++            try:
++                self.add_post_processor(
++                    get_postprocessor(pp_def.pop('key'))(self, **pp_def),
++                    when=when)
++            except UnsafeExecExpansionError as e:
++                self.report_error(e)
++                raise
+ 
+         def preload_download_archive(fn):
+             """Preload the archive, if any is specified"""
+@@ -1254,7 +1260,7 @@ def _copy_infodict(info_dict):
+         info_dict.pop('__pending_error', None)
+         return info_dict
+ 
+-    def prepare_outtmpl(self, outtmpl, info_dict, sanitize=False):
++    def prepare_outtmpl(self, outtmpl, info_dict, sanitize=False, *, _exec=False):
+         """ Make the outtmpl and info_dict suitable for substitution: ydl.escape_outtmpl(outtmpl) % info_dict
+         @param sanitize    Whether to sanitize the output as a filename
+         """
+@@ -1305,6 +1311,8 @@ def prepare_outtmpl(self, outtmpl, info_dict, sanitize=False):
+                 (?:&(?P<replacement>.*?))?
+                 (?:\|(?P<default>.*?))?
+             )$''')
++        SAFE_EXEC_CONVERSIONS = 'difq'
++        UNSAFE_DEFAULT_CHARS = '"\' \n\t;&|^$%*<>{}()[]`#\\'
+ 
+         def _from_user_input(field):
+             if field == ':':
+@@ -1429,6 +1437,16 @@ def create_key(outer_mobj):
+             if fmt == 's' and last_field in field_size_compat_map and isinstance(value, int):
+                 fmt = f'0{field_size_compat_map[last_field]:d}d'
+ 
++            # Validate safety of exec commands
++            if _exec:
++                if fmt[-1] not in SAFE_EXEC_CONVERSIONS:
++                    raise UnsafeExecExpansionError(f'Unsafe conversion(s) in exec command: {outtmpl!r}')
++                elif any(unsafe_char in default for unsafe_char in UNSAFE_DEFAULT_CHARS):
++                    if default == na:
++                        raise UnsafeExecExpansionError(f'Unsafe placeholder for exec command: {na!r}')
++                    else:
++                        raise UnsafeExecExpansionError(f'Unsafe default(s) in exec command: {outtmpl!r}')
++
+             flags = outer_mobj.group('conversion') or ''
+             str_fmt = f'{fmt[:-1]}s'
+             if value is None:
+--- a/yt_dlp/__init__.py
++++ b/yt_dlp/__init__.py
+@@ -44,6 +44,7 @@
+     GeoUtils,
+     PlaylistEntries,
+     SameFileError,
++    UnsafeExecExpansionError,
+     download_range_func,
+     expand_path,
+     float_or_none,
+@@ -1077,7 +1078,7 @@ def main(argv=None):
+     IN_CLI.value = True
+     try:
+         _exit(*variadic(_real_main(argv)))
+-    except (CookieLoadError, DownloadError):
++    except (CookieLoadError, DownloadError, UnsafeExecExpansionError):
+         _exit(1)
+     except SameFileError as e:
+         _exit(f'ERROR: {e}')
+--- a/yt_dlp/options.py
++++ b/yt_dlp/options.py
+@@ -568,9 +568,10 @@ def _preset_alias_callback(option, opt_str, value, parser):
+                 'embed-metadata', 'seperate-video-versions', 'no-clean-infojson', 'no-keep-subs', 'no-certifi',
+                 'no-youtube-channel-redirect', 'no-youtube-unavailable-videos', 'no-youtube-prefer-utc-upload-date',
+                 'prefer-legacy-http-handler', 'manifest-filesize-approx', 'allow-unsafe-ext', 'prefer-vp9-sort', 'mtime-by-default',
++                'allow-unsafe-exec-expansion',
+             }, 'aliases': {
+-                'youtube-dl': ['all', '-multistreams', '-playlist-match-filter', '-manifest-filesize-approx', '-allow-unsafe-ext', '-prefer-vp9-sort'],
+-                'youtube-dlc': ['all', '-no-youtube-channel-redirect', '-no-live-chat', '-playlist-match-filter', '-manifest-filesize-approx', '-allow-unsafe-ext', '-prefer-vp9-sort'],
++                'youtube-dl': ['all', '-multistreams', '-playlist-match-filter', '-manifest-filesize-approx', '-allow-unsafe-ext', '-prefer-vp9-sort', '-allow-unsafe-exec-expansion'],
++                'youtube-dlc': ['all', '-no-youtube-channel-redirect', '-no-live-chat', '-playlist-match-filter', '-manifest-filesize-approx', '-allow-unsafe-ext', '-prefer-vp9-sort', '-allow-unsafe-exec-expansion'],
+                 '2021': ['2022', 'no-certifi', 'filename-sanitization'],
+                 '2022': ['2023', 'no-external-downloader-progress', 'playlist-match-filter', 'prefer-legacy-http-handler', 'manifest-filesize-approx'],
+                 '2023': ['2024', 'prefer-vp9-sort'],
+@@ -1769,7 +1770,9 @@ def _preset_alias_callback(option, opt_str, value, parser):
+         help=(
+             'Execute a command, optionally prefixed with when to execute it, separated by a ":". '
+             'Supported values of "WHEN" are the same as that of --use-postprocessor (default: after_move). '
+-            'The same syntax as the output template can be used to pass any field as arguments to the command. '
++            'The same syntax as the output template can be used to pass any field as arguments to the command; '
++            'however, for security reasons the only allowed conversions are: '
++            '"i"/"d" (signed integer decimal), "f" (floating-point decimal) and "q" (shell-quoted). '
+             'If no fields are passed, %(filepath,_filename|)q is appended to the end of the command. '
+             'This option can be used multiple times'))
+     postproc.add_option(
+--- a/yt_dlp/postprocessor/exec.py
++++ b/yt_dlp/postprocessor/exec.py
+@@ -5,8 +5,17 @@
+ class ExecPP(PostProcessor):
+ 
+     def __init__(self, downloader, exec_cmd):
+-        PostProcessor.__init__(self, downloader)
++        # Need to set exec_cmd attribute before set_downloader is called by PostProcessor.__init__
+         self.exec_cmd = variadic(exec_cmd)
++        PostProcessor.__init__(self, downloader)
++
++    def set_downloader(self, downloader):
++        super().set_downloader(downloader)
++        # Validate safety of exec commands
++        params = getattr(self._downloader, 'params', None)
++        if params and 'allow-unsafe-exec-expansion' not in params['compat_opts']:
++            for cmd in self.exec_cmd:
++                _ = self._downloader.prepare_outtmpl(cmd, {}, _exec=True)
+ 
+     def parse_cmd(self, cmd, info):
+         tmpl, tmpl_dict = self._downloader.prepare_outtmpl(cmd, info)
+--- a/yt_dlp/utils/_utils.py
++++ b/yt_dlp/utils/_utils.py
+@@ -1182,6 +1182,10 @@ class XAttrUnavailableError(YoutubeDLError):
+     pass
+ 
+ 
++class UnsafeExecExpansionError(YoutubeDLError):
++    pass
++
++
+ def is_path_like(f):
+     return isinstance(f, (str, bytes, os.PathLike))
+ 

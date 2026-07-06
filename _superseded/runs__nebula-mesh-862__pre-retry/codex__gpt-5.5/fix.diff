@@ -1,0 +1,251 @@
+diff --git a/internal/api/authz.go b/internal/api/authz.go
+index 8acb9aa..a657f3c 100644
+--- a/internal/api/authz.go
++++ b/internal/api/authz.go
+@@ -3,6 +3,7 @@ package api
+ import (
+ 	"context"
+ 	"errors"
++	"net/http"
+ 
+ 	"github.com/juev/nebula-mesh/internal/models"
+ 	"github.com/juev/nebula-mesh/internal/store"
+@@ -35,6 +36,49 @@ func (s *Server) actorOwnsCA(ctx context.Context, caID string) (bool, error) {
+ 	return ca.OwnerOperatorID == actor.ID, nil
+ }
+ 
++// actorOwnedCAIDs returns the set of CA IDs owned by the authenticated actor.
++// Admin callers should not use this helper because they are intentionally not
++// scoped to ownership. Missing actors fail closed with an empty set.
++func (s *Server) actorOwnedCAIDs(ctx context.Context) (map[string]struct{}, error) {
++	actor := ActorOf(ctx)
++	if actor == nil {
++		return map[string]struct{}{}, nil
++	}
++	cas, err := s.store.ListCAsByOwner(ctx, actor.ID)
++	if err != nil {
++		return nil, err
++	}
++	owned := make(map[string]struct{}, len(cas))
++	for _, ca := range cas {
++		owned[ca.ID] = struct{}{}
++	}
++	return owned, nil
++}
++
++// canAccessCA checks ownership. Admins bypass.
++func (s *Server) canAccessCA(ctx context.Context, c *models.CA) bool {
++	if c == nil {
++		return false
++	}
++	if actorIsAdmin(ctx) {
++		return true
++	}
++	actor := ActorOf(ctx)
++	return actor != nil && actor.ID == c.OwnerOperatorID
++}
++
++func requireAdminRole(message string) func(http.Handler) http.Handler {
++	return func(next http.Handler) http.Handler {
++		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++			if !actorIsAdmin(r.Context()) {
++				writeError(w, http.StatusForbidden, message)
++				return
++			}
++			next.ServeHTTP(w, r)
++		})
++	}
++}
++
+ // canAccessHost returns true if the actor in ctx is admin, or owns the host's CA.
+ func (s *Server) canAccessHost(ctx context.Context, h *models.Host) (bool, error) {
+ 	if h == nil {
+diff --git a/internal/api/cas.go b/internal/api/cas.go
+index 0994114..565226f 100644
+--- a/internal/api/cas.go
++++ b/internal/api/cas.go
+@@ -40,7 +40,12 @@ func (s *Server) handleListCAs(w http.ResponseWriter, r *http.Request) {
+ 	if actorIsAdmin(r.Context()) {
+ 		cas, err = s.store.ListCAs(r.Context())
+ 	} else {
+-		cas, err = s.store.ListCAsByOwner(r.Context(), ActorOf(r.Context()).ID)
++		actor := ActorOf(r.Context())
++		if actor == nil {
++			writeJSON(w, http.StatusOK, []caResponse{})
++			return
++		}
++		cas, err = s.store.ListCAsByOwner(r.Context(), actor.ID)
+ 	}
+ 	if err != nil {
+ 		s.logger.Error("list CAs", "error", err)
+@@ -65,7 +70,7 @@ func (s *Server) handleGetCAByID(w http.ResponseWriter, r *http.Request) {
+ 		writeError(w, http.StatusInternalServerError, "failed to get CA")
+ 		return
+ 	}
+-	if !s.canAccessCA(r, c) {
++	if !s.canAccessCA(r.Context(), c) {
+ 		writeError(w, http.StatusForbidden, "you do not own this CA")
+ 		return
+ 	}
+@@ -74,6 +79,10 @@ func (s *Server) handleGetCAByID(w http.ResponseWriter, r *http.Request) {
+ 
+ func (s *Server) handleCreateCA(w http.ResponseWriter, r *http.Request) {
+ 	actor := ActorOf(r.Context())
++	if actor == nil {
++		writeError(w, http.StatusForbidden, "forbidden")
++		return
++	}
+ 	if s.master == nil {
+ 		writeError(w, http.StatusServiceUnavailable, "CA creation requires NEBULA_MGMT_MASTER_KEY to be configured")
+ 		return
+@@ -165,7 +174,7 @@ func (s *Server) handleDeleteCA(w http.ResponseWriter, r *http.Request) {
+ 		writeError(w, http.StatusInternalServerError, "failed to load CA")
+ 		return
+ 	}
+-	if !s.canAccessCA(r, c) {
++	if !s.canAccessCA(r.Context(), c) {
+ 		writeError(w, http.StatusForbidden, "you do not own this CA")
+ 		return
+ 	}
+@@ -181,14 +190,6 @@ func (s *Server) handleDeleteCA(w http.ResponseWriter, r *http.Request) {
+ 	w.WriteHeader(http.StatusNoContent)
+ }
+ 
+-// canAccessCA checks ownership. Admins bypass.
+-func (s *Server) canAccessCA(r *http.Request, c *models.CA) bool {
+-	if actorIsAdmin(r.Context()) {
+-		return true
+-	}
+-	return ActorOf(r.Context()).ID == c.OwnerOperatorID
+-}
+-
+ func (s *Server) handleRotateCA(w http.ResponseWriter, r *http.Request) {
+ 	id := chi.URLParam(r, "id")
+ 	oldCA, err := s.store.GetCA(r.Context(), id)
+@@ -201,7 +202,7 @@ func (s *Server) handleRotateCA(w http.ResponseWriter, r *http.Request) {
+ 		writeError(w, http.StatusInternalServerError, "failed to get CA")
+ 		return
+ 	}
+-	if !s.canAccessCA(r, oldCA) {
++	if !s.canAccessCA(r.Context(), oldCA) {
+ 		writeError(w, http.StatusForbidden, "you do not own this CA")
+ 		return
+ 	}
+diff --git a/internal/api/hosts.go b/internal/api/hosts.go
+index 3e1619a..12e4973 100644
+--- a/internal/api/hosts.go
++++ b/internal/api/hosts.go
+@@ -189,21 +189,12 @@ func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
+ 
+ 	// For non-admin, scope to owned CAs
+ 	if !actorIsAdmin(r.Context()) {
+-		actor := ActorOf(r.Context())
+-		if actor == nil {
+-			writeJSON(w, http.StatusOK, []*models.Host{})
+-			return
+-		}
+-		cas, err := s.store.ListCAsByOwner(r.Context(), actor.ID)
++		ownedCAIDs, err := s.actorOwnedCAIDs(r.Context())
+ 		if err != nil {
+ 			s.logger.Error("list cas by owner", "error", err)
+ 			writeError(w, http.StatusInternalServerError, "failed to check permissions")
+ 			return
+ 		}
+-		ownedCAIDs := make(map[string]struct{}, len(cas))
+-		for _, ca := range cas {
+-			ownedCAIDs[ca.ID] = struct{}{}
+-		}
+ 		// Filter hosts to only those under owned CAs
+ 		filtered := hosts[:0]
+ 		for _, h := range hosts {
+diff --git a/internal/api/networks.go b/internal/api/networks.go
+index 0c156e8..5a42cbf 100644
+--- a/internal/api/networks.go
++++ b/internal/api/networks.go
+@@ -61,21 +61,12 @@ func (s *Server) handleListNetworks(w http.ResponseWriter, r *http.Request) {
+ 		return
+ 	}
+ 	if !actorIsAdmin(r.Context()) {
+-		actor := ActorOf(r.Context())
+-		if actor == nil {
+-			writeJSON(w, http.StatusOK, []*models.Network{})
+-			return
+-		}
+-		cas, err := s.store.ListCAsByOwner(r.Context(), actor.ID)
++		owned, err := s.actorOwnedCAIDs(r.Context())
+ 		if err != nil {
+ 			s.logger.Error("list cas by owner", "error", err)
+ 			writeError(w, http.StatusInternalServerError, "failed to scope networks")
+ 			return
+ 		}
+-		owned := make(map[string]struct{}, len(cas))
+-		for _, ca := range cas {
+-			owned[ca.ID] = struct{}{}
+-		}
+ 		filtered := networks[:0]
+ 		for _, n := range networks {
+ 			if _, ok := owned[n.CAID]; ok {
+diff --git a/internal/api/server.go b/internal/api/server.go
+index efbe64c..4b05728 100644
+--- a/internal/api/server.go
++++ b/internal/api/server.go
+@@ -169,7 +169,6 @@ func (s *Server) setupRoutes() {
+ 	r.Group(func(r chi.Router) {
+ 		r.Use(s.rateLimitMiddleware("api"))
+ 		r.Use(bearerAuth(s.store))
+-		r.Post("/api/v1/networks", s.handleCreateNetwork)
+ 		r.Get("/api/v1/networks", s.handleListNetworks)
+ 		r.Get("/api/v1/networks/{id}", s.handleGetNetwork)
+ 		r.Post("/api/v1/hosts", s.handleCreateHost)
+@@ -183,24 +182,40 @@ func (s *Server) setupRoutes() {
+ 		r.Post("/api/v1/hosts/{id}/rotate-cert", s.handleRotateCert)
+ 		r.Post("/api/v1/hosts/{id}/reenroll", s.handleReenroll)
+ 		r.Post("/api/v1/hosts/{id}/mobile-bundle", s.handleMobileBundle)
+-		r.Get("/api/v1/blocklist", s.handleGetBlocklist)
+ 		r.Get("/api/v1/networks/{id}/firewall", s.handleGetFirewall)
+ 		r.Put("/api/v1/networks/{id}/firewall", s.handleUpdateFirewall)
+-		r.Get("/api/v1/audit-log", s.handleGetAuditLog)
+-		r.Get("/api/v1/operators", s.handleListOperators)
+-		r.Post("/api/v1/operators", s.handleCreateOperator)
+-		r.Post("/api/v1/operators/{id}/disable", s.handleDisableOperator)
+-		r.Post("/api/v1/operators/{id}/enable", s.handleEnableOperator)
+-		r.Get("/api/v1/operators/{id}/api-keys", s.handleListOperatorAPIKeys)
+-		r.Post("/api/v1/operators/{id}/api-keys", s.handleCreateOperatorAPIKey)
+-		r.Delete("/api/v1/operators/{id}/api-keys/{kid}", s.handleRevokeOperatorAPIKey)
+ 		r.Get("/api/v1/cas", s.handleListCAs)
+ 		r.Post("/api/v1/cas", s.handleCreateCA)
+ 		r.Get("/api/v1/cas/{id}", s.handleGetCAByID)
+ 		r.Delete("/api/v1/cas/{id}", s.handleDeleteCA)
+ 		r.Post("/api/v1/cas/{id}/rotate", s.handleRotateCA)
+-		r.Get("/api/v1/settings", s.handleGetSettings)
+-		r.Patch("/api/v1/settings", s.handlePatchSettings)
++		r.Group(func(r chi.Router) {
++			r.Use(requireAdminRole("network creation requires the admin role"))
++			r.Post("/api/v1/networks", s.handleCreateNetwork)
++		})
++		r.Group(func(r chi.Router) {
++			r.Use(requireAdminRole("blocklist access requires the admin role"))
++			r.Get("/api/v1/blocklist", s.handleGetBlocklist)
++		})
++		r.Group(func(r chi.Router) {
++			r.Use(requireAdminRole("audit log access requires the admin role"))
++			r.Get("/api/v1/audit-log", s.handleGetAuditLog)
++		})
++		r.Group(func(r chi.Router) {
++			r.Use(requireAdminRole("operator management requires the admin role"))
++			r.Get("/api/v1/operators", s.handleListOperators)
++			r.Post("/api/v1/operators", s.handleCreateOperator)
++			r.Post("/api/v1/operators/{id}/disable", s.handleDisableOperator)
++			r.Post("/api/v1/operators/{id}/enable", s.handleEnableOperator)
++			r.Get("/api/v1/operators/{id}/api-keys", s.handleListOperatorAPIKeys)
++			r.Post("/api/v1/operators/{id}/api-keys", s.handleCreateOperatorAPIKey)
++			r.Delete("/api/v1/operators/{id}/api-keys/{kid}", s.handleRevokeOperatorAPIKey)
++		})
++		r.Group(func(r chi.Router) {
++			r.Use(requireAdminRole("admin role required"))
++			r.Get("/api/v1/settings", s.handleGetSettings)
++			r.Patch("/api/v1/settings", s.handlePatchSettings)
++		})
+ 	})
+ 
+ 	s.router = r

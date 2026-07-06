@@ -1,0 +1,227 @@
+diff --git a/src/backend/base/langflow/api/v1/endpoints.py b/src/backend/base/langflow/api/v1/endpoints.py
+index 1781b0b..ed41d68 100644
+--- a/src/backend/base/langflow/api/v1/endpoints.py
++++ b/src/backend/base/langflow/api/v1/endpoints.py
+@@ -412,6 +412,22 @@ async def check_flow_user_permission(
+         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to run this flow")
+ 
+ 
++async def get_flow_by_id_or_endpoint_name_for_api_key(
++    flow_id_or_name: str,
++    api_key_user: Annotated[UserRead, Depends(api_key_security)],
++) -> FlowRead:
++    """Resolve a flow by ID or endpoint name scoped to the API key owner."""
++    return await get_flow_by_id_or_endpoint_name(flow_id_or_name, api_key_user.id)
++
++
++async def get_flow_by_id_or_endpoint_name_for_current_user(
++    flow_id_or_name: str,
++    current_user: CurrentActiveUser,
++) -> FlowRead:
++    """Resolve a flow by ID or endpoint name scoped to the current session user."""
++    return await get_flow_by_id_or_endpoint_name(flow_id_or_name, current_user.id)
++
++
+ async def _run_flow_internal(
+     *,
+     background_tasks: BackgroundTasks,
+@@ -556,7 +572,7 @@ async def _run_flow_internal(
+ async def simplified_run_flow(
+     *,
+     background_tasks: BackgroundTasks,
+-    flow: Annotated[FlowRead, Depends(get_flow_by_id_or_endpoint_name)],
++    flow: Annotated[FlowRead, Depends(get_flow_by_id_or_endpoint_name_for_api_key)],
+     input_request: SimplifiedAPIRequest | None = None,
+     stream: bool = False,
+     api_key_user: Annotated[UserRead, Depends(api_key_security)],
+@@ -616,7 +632,7 @@ async def simplified_run_flow(
+ async def simplified_run_flow_session(
+     *,
+     background_tasks: BackgroundTasks,
+-    flow: Annotated[FlowRead, Depends(get_flow_by_id_or_endpoint_name)],
++    flow: Annotated[FlowRead, Depends(get_flow_by_id_or_endpoint_name_for_current_user)],
+     input_request: SimplifiedAPIRequest | None = None,
+     stream: bool = False,
+     api_key_user: CurrentActiveUser,
+@@ -740,14 +756,12 @@ async def webhook_events_stream(
+ @router.post("/webhook/{flow_id_or_name}", response_model=dict, status_code=HTTPStatus.ACCEPTED)  # noqa: RUF100, FAST003
+ async def webhook_run_flow(
+     flow_id_or_name: str,
+-    flow: Annotated[Flow, Depends(get_flow_by_id_or_endpoint_name)],
+     request: Request,
+ ):
+     """Run a flow using a webhook request.
+ 
+     Args:
+         flow_id_or_name: The flow ID or endpoint name (used by dependency).
+-        flow: The flow to be executed.
+         request: The incoming HTTP request.
+ 
+     Returns:
+@@ -763,6 +777,7 @@ async def webhook_run_flow(
+ 
+     # Get the appropriate user for webhook execution based on auth settings
+     webhook_user = await get_auth_service().get_webhook_user(flow_id_or_name, request)
++    flow = await get_flow_by_id_or_endpoint_name(flow_id_or_name, webhook_user.id)
+ 
+     try:
+         data = await request.body()
+@@ -826,7 +841,7 @@ async def webhook_run_flow(
+ async def experimental_run_flow(
+     *,
+     session: DbSession,
+-    flow: Annotated[Flow, Depends(get_flow_by_id_or_endpoint_name)],
++    flow: Annotated[Flow, Depends(get_flow_by_id_or_endpoint_name_for_api_key)],
+     inputs: list[InputValueRequest] | None = None,
+     outputs: list[str] | None = None,
+     tweaks: Annotated[Tweaks | None, Body(embed=True)] = None,
+diff --git a/src/backend/base/langflow/helpers/flow.py b/src/backend/base/langflow/helpers/flow.py
+index 417d9a9..cd5ca25 100644
+--- a/src/backend/base/langflow/helpers/flow.py
++++ b/src/backend/base/langflow/helpers/flow.py
+@@ -399,17 +399,17 @@ def get_arg_names(inputs: list[Vertex]) -> list[dict[str, str]]:
+ async def get_flow_by_id_or_endpoint_name(flow_id_or_name: str, user_id: str | UUID | None = None) -> FlowRead:
+     async with session_scope() as session:
+         endpoint_name = None
++        uuid_user_id = UUID(user_id) if isinstance(user_id, str) else user_id
+         try:
+             flow_id = UUID(flow_id_or_name)
+             flow = await session.get(Flow, flow_id)
+         except ValueError:
+             endpoint_name = flow_id_or_name
+             stmt = select(Flow).where(Flow.endpoint_name == endpoint_name)
+-            if user_id:
+-                uuid_user_id = UUID(user_id) if isinstance(user_id, str) else user_id
++            if uuid_user_id:
+                 stmt = stmt.where(Flow.user_id == uuid_user_id)
+             flow = (await session.exec(stmt)).first()
+-        if flow is None:
++        if flow is None or (uuid_user_id and flow.user_id != uuid_user_id):
+             raise HTTPException(status_code=404, detail=f"Flow identifier {flow_id_or_name} not found")
+         return FlowRead.model_validate(flow, from_attributes=True)
+ 
+diff --git a/src/backend/base/langflow/helpers/user.py b/src/backend/base/langflow/helpers/user.py
+index 34417ac..dccd155 100644
+--- a/src/backend/base/langflow/helpers/user.py
++++ b/src/backend/base/langflow/helpers/user.py
+@@ -8,16 +8,21 @@ from langflow.services.database.models.flow.model import Flow
+ from langflow.services.database.models.user.model import User, UserRead
+ 
+ 
+-async def get_user_by_flow_id_or_endpoint_name(flow_id_or_name: str) -> UserRead | None:
++async def get_user_by_flow_id_or_endpoint_name(
++    flow_id_or_name: str, user_id: str | UUID | None = None
++) -> UserRead | None:
+     async with session_scope_readonly() as session:
++        uuid_user_id = UUID(user_id) if isinstance(user_id, str) else user_id
+         try:
+             flow_id = UUID(flow_id_or_name)
+             flow = await session.get(Flow, flow_id)
+         except ValueError:
+             stmt = select(Flow).where(Flow.endpoint_name == flow_id_or_name)
++            if uuid_user_id:
++                stmt = stmt.where(Flow.user_id == uuid_user_id)
+             flow = (await session.exec(stmt)).first()
+ 
+-        if flow is None:
++        if flow is None or (uuid_user_id and flow.user_id != uuid_user_id):
+             raise HTTPException(status_code=404, detail=f"Flow identifier {flow_id_or_name} not found")
+ 
+         user = await session.get(User, flow.user_id)
+diff --git a/src/backend/base/langflow/services/auth/service.py b/src/backend/base/langflow/services/auth/service.py
+index 7d20bd8..945ee88 100644
+--- a/src/backend/base/langflow/services/auth/service.py
++++ b/src/backend/base/langflow/services/auth/service.py
+@@ -429,7 +429,7 @@ class AuthService(BaseAuthService):
+             raise HTTPException(status_code=403, detail="API key authentication failed") from exc
+ 
+         try:
+-            flow_owner = await get_user_by_flow_id_or_endpoint_name(flow_id)
++            flow_owner = await get_user_by_flow_id_or_endpoint_name(flow_id, authenticated_user.id)
+             if flow_owner is None:
+                 raise HTTPException(status_code=404, detail="Flow not found")
+         except HTTPException:
+diff --git a/src/backend/tests/unit/helpers/test_flow.py b/src/backend/tests/unit/helpers/test_flow.py
+index 94e1b31..abc5e1a 100644
+--- a/src/backend/tests/unit/helpers/test_flow.py
++++ b/src/backend/tests/unit/helpers/test_flow.py
+@@ -1,7 +1,13 @@
+ """Unit tests for the langflow.helpers.flow module."""
+ 
++from uuid import uuid4
++
+ import pytest
++from fastapi import HTTPException
+ from lfx.utils.langflow_utils import has_langflow_memory
++from langflow.helpers.flow import get_flow_by_id_or_endpoint_name
++from langflow.services.database.models.flow.model import Flow
++from langflow.services.deps import session_scope
+ 
+ # Globals
+ 
+@@ -85,3 +91,65 @@ class TestDynamicImport:
+ 
+         # Helper module should be the langflow implementation
+         assert is_helper_module(run_flow, _LANGFLOW_HELPER_MODULE_FLOW)
++
++
++async def test_get_flow_by_endpoint_name_scopes_to_user(active_user, user_two):
++    endpoint_name = f"shared_endpoint_{uuid4().hex}"
++    user_one_flow_id = uuid4()
++    user_two_flow_id = uuid4()
++
++    async with session_scope() as session:
++        session.add(
++            Flow(
++                id=user_one_flow_id,
++                name=f"User One Flow {uuid4()}",
++                endpoint_name=endpoint_name,
++                user_id=active_user.id,
++                data={},
++            )
++        )
++        session.add(
++            Flow(
++                id=user_two_flow_id,
++                name=f"User Two Flow {uuid4()}",
++                endpoint_name=endpoint_name,
++                user_id=user_two.id,
++                data={},
++            )
++        )
++
++    try:
++        flow = await get_flow_by_id_or_endpoint_name(endpoint_name, user_two.id)
++
++        assert flow.id == user_two_flow_id
++        assert flow.user_id == user_two.id
++    finally:
++        async with session_scope() as session:
++            for flow_id in (user_one_flow_id, user_two_flow_id):
++                if flow := await session.get(Flow, flow_id):
++                    await session.delete(flow)
++
++
++async def test_get_flow_by_id_rejects_other_user(active_user, user_two):
++    flow_id = uuid4()
++
++    async with session_scope() as session:
++        session.add(
++            Flow(
++                id=flow_id,
++                name=f"User One Flow {uuid4()}",
++                endpoint_name=f"user_one_endpoint_{uuid4().hex}",
++                user_id=active_user.id,
++                data={},
++            )
++        )
++
++    try:
++        with pytest.raises(HTTPException) as exc_info:
++            await get_flow_by_id_or_endpoint_name(str(flow_id), user_two.id)
++
++        assert exc_info.value.status_code == 404
++    finally:
++        async with session_scope() as session:
++            if flow := await session.get(Flow, flow_id):
++                await session.delete(flow)

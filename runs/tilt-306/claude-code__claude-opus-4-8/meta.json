@@ -1,0 +1,14 @@
+{
+  "agent": "claude-code",
+  "model": "claude-opus-4-8",
+  "tool_calls": 42,
+  "turns": 43,
+  "cost_usd": 3.3256530000000004,
+  "usage": null,
+  "used_web": false,
+  "egress_attempts": [
+    "go version 2>/dev/null; echo \"---tilt version---\"; grep -i \"version\" pkg/model/build.go 2>/dev/null | head; cat version/version.txt 2>/dev/null; git log -1 --format=%ci; echo \"---try net---\"; timeout ",
+    "cd /tmp && timeout 60 bash -c 'GOFLAGS=-mod=mod go mod download github.com/tilt-dev/tilt@latest 2>&1 | head; ls $(go env GOMODCACHE)/github.com/tilt-dev/ 2>/dev/null' || echo \"fail\"; echo \"==try git c",
+    "cd /work; sed -n '30,60p' web/src/AppController.ts; echo \"=== other fetch/api calls in web ===\"; grep -rn \"fetch(\\|/api/\\|/proxy\" web/src/*.ts web/src/*.tsx 2>/dev/null | grep -i \"fetch\\|http://\\|http"
+  ]
+}

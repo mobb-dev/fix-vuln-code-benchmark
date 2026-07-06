@@ -1,0 +1,471 @@
+diff --git a/cli/cmd/configserver/auth_test.go b/cli/cmd/configserver/auth_test.go
+new file mode 100644
+index 00000000..bbb2904c
+--- /dev/null
++++ b/cli/cmd/configserver/auth_test.go
+@@ -0,0 +1,135 @@
++package configserver
++
++import (
++	"net/http"
++	"net/http/httptest"
++	"testing"
++
++	"github.com/99designs/gqlgen/graphql/handler/transport"
++	"github.com/gin-gonic/gin"
++)
++
++func TestAdminSecretAuth(t *testing.T) {
++	gin.SetMode(gin.TestMode)
++
++	cases := []struct {
++		name       string
++		path       string
++		method     string
++		header     string
++		wantStatus int
++	}{
++		{
++			name:       "allows matching admin secret",
++			path:       "/v1/configserver/graphql",
++			method:     http.MethodPost,
++			header:     "secret",
++			wantStatus: http.StatusOK,
++		},
++		{
++			name:       "rejects missing admin secret",
++			path:       "/v1/configserver/graphql",
++			method:     http.MethodPost,
++			wantStatus: http.StatusUnauthorized,
++		},
++		{
++			name:       "rejects wrong admin secret",
++			path:       "/v1/configserver/graphql",
++			method:     http.MethodPost,
++			header:     "wrong",
++			wantStatus: http.StatusUnauthorized,
++		},
++		{
++			name:       "allows health checks",
++			path:       "/healthz",
++			method:     http.MethodGet,
++			wantStatus: http.StatusOK,
++		},
++		{
++			name:       "allows preflight requests",
++			path:       "/v1/configserver/graphql",
++			method:     http.MethodOptions,
++			wantStatus: http.StatusOK,
++		},
++	}
++
++	for _, tc := range cases {
++		t.Run(tc.name, func(t *testing.T) {
++			r := gin.New()
++			r.Use(adminSecretAuth("secret"))
++			r.Any("/*path", func(c *gin.Context) {
++				c.Status(http.StatusOK)
++			})
++
++			req := httptest.NewRequest(tc.method, tc.path, nil)
++			if tc.header != "" {
++				req.Header.Set(adminSecretHeader, tc.header)
++			}
++
++			w := httptest.NewRecorder()
++			r.ServeHTTP(w, req)
++
++			if w.Code != tc.wantStatus {
++				t.Fatalf("status = %d, want %d", w.Code, tc.wantStatus)
++			}
++		})
++	}
++}
++
++func TestWebSocketAdminSecretAuth(t *testing.T) {
++	t.Parallel()
++
++	init := webSocketAdminSecretAuth("secret")
++
++	if _, _, err := init(t.Context(), transport.InitPayload{
++		"headers": map[string]any{
++			"X-Hasura-Admin-Secret": "secret",
++		},
++	}); err != nil {
++		t.Fatalf("expected matching secret to pass: %v", err)
++	}
++
++	if _, _, err := init(t.Context(), transport.InitPayload{
++		"headers": map[string]any{
++			"X-Hasura-Admin-Secret": "wrong",
++		},
++	}); err == nil {
++		t.Fatal("expected wrong secret to fail")
++	}
++}
++
++func TestIsAllowedDashboardOrigin(t *testing.T) {
++	t.Parallel()
++
++	cases := []struct {
++		name   string
++		origin string
++		want   bool
++	}{
++		{
++			name:   "allows local dashboard host",
++			origin: "https://local.dashboard.local.nhost.run",
++			want:   true,
++		},
++		{
++			name:   "allows localhost development",
++			origin: "http://localhost:3000",
++			want:   true,
++		},
++		{
++			name:   "rejects arbitrary origin",
++			origin: "https://example.com",
++			want:   false,
++		},
++	}
++
++	for _, tc := range cases {
++		t.Run(tc.name, func(t *testing.T) {
++			t.Parallel()
++
++			if got := isAllowedDashboardOrigin(tc.origin); got != tc.want {
++				t.Fatalf("isAllowedDashboardOrigin() = %t, want %t", got, tc.want)
++			}
++		})
++	}
++}
+diff --git a/cli/cmd/configserver/configserver.go b/cli/cmd/configserver/configserver.go
+index 18fa8273..d6d3cc78 100644
+--- a/cli/cmd/configserver/configserver.go
++++ b/cli/cmd/configserver/configserver.go
+@@ -2,10 +2,16 @@ package configserver
+ 
+ import (
+ 	"context"
++	"crypto/subtle"
++	"errors"
+ 	"fmt"
++	"net/http"
++	"net/url"
+ 	"os"
++	"strings"
+ 
+ 	"github.com/99designs/gqlgen/graphql"
++	"github.com/99designs/gqlgen/graphql/handler/transport"
+ 	"github.com/docker/docker/client"
+ 	"github.com/gin-gonic/gin"
+ 	"github.com/google/uuid"
+@@ -21,12 +27,16 @@ const (
+ 	debugFlag                   = "debug"
+ 	logFormatJSONFlag           = "log-format-json"
+ 	enablePlaygroundFlag        = "enable-playground"
++	adminSecretFlag             = "admin-secret"
+ 	storageLocalConfigPath      = "storage-local-config-path"
+ 	storageLocalSecretsPath     = "storage-local-secrets-path"
+ 	storageLocalRunServicesPath = "storage-local-run-services-path"
+ 	dockerComposeProjectEnv     = "DOCKER_COMPOSE_PROJECT"
++	adminSecretHeader           = "x-hasura-admin-secret"
+ )
+ 
++var ErrInvalidAdminSecret = errors.New("invalid admin secret")
++
+ func Command() *cli.Command {
+ 	return &cli.Command{ //nolint: exhaustruct
+ 		Name:   "configserver",
+@@ -55,6 +65,12 @@ func Command() *cli.Command {
+ 				Category: "server",
+ 				Sources:  cli.EnvVars("ENABLE_PLAYGROUND"),
+ 			},
++			&cli.StringFlag{ //nolint: exhaustruct
++				Name:     adminSecretFlag,
++				Usage:    "admin secret required to access the config server",
++				Category: "server",
++				Sources:  cli.EnvVars("NHOST_ADMIN_SECRET"),
++			},
+ 			&cli.StringFlag{ //nolint: exhaustruct
+ 				Name:     storageLocalConfigPath,
+ 				Usage:    "Path to the local mimir config file",
+@@ -108,11 +124,99 @@ func runServicesFiles(runServices ...string) map[string]string {
+ 	return m
+ }
+ 
++func validAdminSecret(got, want string) bool {
++	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
++}
++
++func isWebSocketUpgrade(c *gin.Context) bool {
++	return strings.EqualFold(c.GetHeader("Upgrade"), "websocket") &&
++		strings.Contains(strings.ToLower(c.GetHeader("Connection")), "upgrade")
++}
++
++func isAllowedDashboardOrigin(origin string) bool {
++	if origin == "" {
++		return false
++	}
++
++	u, err := url.Parse(origin)
++	if err != nil {
++		return false
++	}
++
++	host := u.Hostname()
++
++	return strings.HasSuffix(host, ".dashboard.local.nhost.run") ||
++		host == "local.dashboard.nhost.run" ||
++		host == "localhost" ||
++		host == "127.0.0.1" ||
++		host == "::1"
++}
++
++func adminSecretAuth(adminSecret string) gin.HandlerFunc {
++	return func(c *gin.Context) {
++		switch {
++		case c.Request.Method == http.MethodOptions:
++			c.Next()
++			return
++		case c.Request.URL.Path == "/healthz" || c.Request.URL.Path == "/metrics":
++			c.Next()
++			return
++		case isWebSocketUpgrade(c):
++			c.Next()
++			return
++		}
++
++		if !validAdminSecret(c.GetHeader(adminSecretHeader), adminSecret) {
++			c.AbortWithStatus(http.StatusUnauthorized)
++			return
++		}
++
++		c.Next()
++	}
++}
++
++func getInitPayloadHeader(initPayload transport.InitPayload, name string) string {
++	raw, ok := initPayload["headers"]
++	if !ok {
++		return initPayload.GetString(name)
++	}
++
++	headers, ok := raw.(map[string]any)
++	if !ok {
++		return ""
++	}
++
++	for k, v := range headers {
++		if strings.EqualFold(k, name) {
++			s, ok := v.(string)
++			if ok {
++				return s
++			}
++		}
++	}
++
++	return ""
++}
++
++func webSocketAdminSecretAuth(adminSecret string) transport.WebsocketInitFunc {
++	return func(
++		ctx context.Context,
++		initPayload transport.InitPayload,
++	) (context.Context, *transport.InitPayload, error) {
++		if !validAdminSecret(getInitPayloadHeader(initPayload, adminSecretHeader), adminSecret) {
++			return ctx, nil, ErrInvalidAdminSecret
++		}
++
++		return ctx, nil, nil
++	}
++}
++
+ func setupLogsAPI(
+ 	r *gin.Engine,
+ 	logger logrus.FieldLogger,
+ 	enablePlayground bool,
+ 	version string,
++	adminSecret string,
+ ) error {
+ 	dockerClient, err := client.NewClientWithOpts(
+ 		client.FromEnv,
+@@ -130,7 +234,14 @@ func setupLogsAPI(
+ 		Logger:      logger,
+ 	}
+ 
+-	logsapi.AddRoutes(r, "/v1/logs", logsResolver, enablePlayground, version)
++	logsapi.AddRoutes(
++		r,
++		"/v1/logs",
++		logsResolver,
++		enablePlayground,
++		version,
++		webSocketAdminSecretAuth(adminSecret),
++	)
+ 
+ 	return nil
+ }
+@@ -151,6 +262,14 @@ func serve(_ context.Context, cmd *cli.Command) error {
+ 		return fmt.Errorf("failed to get data from plugin: %w", err)
+ 	}
+ 
++	adminSecret := cmd.String(adminSecretFlag)
++	if adminSecret == "" && len(data) > 0 && data[0].Config != nil {
++		adminSecret = data[0].Config.GetHasura().GetAdminSecret()
++	}
++	if adminSecret == "" {
++		return errors.New("admin secret is required") //nolint:err113
++	}
++
+ 	plugins := []graph.Plugin{st}
+ 
+ 	resolver, err := graph.NewResolver(graph.NewMapStoreFromData(data), nil, Querier{}, plugins)
+@@ -167,11 +286,20 @@ func serve(_ context.Context, cmd *cli.Command) error {
+ 		cmd.Root().Version,
+ 		[]graphql.FieldMiddleware{},
+ 		gin.Recovery(),
+-		cors.Default(),
++		cors.New(cors.Options{
++			AllowOriginFunc: isAllowedDashboardOrigin,
++			AllowedHeaders:  []string{"Content-Type", adminSecretHeader},
++			AllowedMethods: []string{
++				http.MethodGet,
++				http.MethodPost,
++				http.MethodOptions,
++			},
++		}),
++		adminSecretAuth(adminSecret),
+ 	)
+ 
+ 	if err := setupLogsAPI(
+-		r, logger, cmd.Bool(enablePlaygroundFlag), cmd.Root().Version,
++		r, logger, cmd.Bool(enablePlaygroundFlag), cmd.Root().Version, adminSecret,
+ 	); err != nil {
+ 		return err
+ 	}
+diff --git a/cli/cmd/configserver/logsapi/router.go b/cli/cmd/configserver/logsapi/router.go
+index 22328f3b..0120933f 100644
+--- a/cli/cmd/configserver/logsapi/router.go
++++ b/cli/cmd/configserver/logsapi/router.go
+@@ -50,6 +50,7 @@ func AddRoutes(
+ 	resolver *Resolver,
+ 	enablePlayground bool,
+ 	version string,
++	webSocketInit transport.WebsocketInitFunc,
+ ) {
+ 	srv := handler.New(
+ 		generated.NewExecutableSchema(generated.Config{ //nolint:exhaustruct
+@@ -59,6 +60,7 @@ func AddRoutes(
+ 	srv.AddTransport(transport.POST{})    //nolint:exhaustruct
+ 	srv.AddTransport(transport.Websocket{ //nolint:exhaustruct
+ 		KeepAlivePingInterval: wsKeepAlivePingPeriod,
++		InitFunc:              webSocketInit,
+ 		Upgrader: websocket.Upgrader{ //nolint:exhaustruct
+ 			CheckOrigin: checkWebSocketOrigin,
+ 		},
+diff --git a/cli/dockercompose/compose.go b/cli/dockercompose/compose.go
+index 7b89a43c..4363fca6 100644
+--- a/cli/dockercompose/compose.go
++++ b/cli/dockercompose/compose.go
+@@ -628,6 +628,7 @@ func getServices( //nolint: funlen,cyclop
+ 		nhostFolder,
+ 		projectName,
+ 		useTLS,
++		cfg.GetHasura().GetAdminSecret(),
+ 		runServices...,
+ 	)
+ 	if err != nil {
+diff --git a/cli/dockercompose/compose_cloud.go b/cli/dockercompose/compose_cloud.go
+index ce89a8c5..fa5b9edd 100644
+--- a/cli/dockercompose/compose_cloud.go
++++ b/cli/dockercompose/compose_cloud.go
+@@ -129,6 +129,7 @@ func getServicesCloud(
+ 		nhostFolder,
+ 		projectName,
+ 		useTLS,
++		cloudAdminSecret,
+ 	)
+ 	if err != nil {
+ 		return nil, err
+diff --git a/cli/dockercompose/configserver.go b/cli/dockercompose/configserver.go
+index 2547dc84..1204a3d7 100644
+--- a/cli/dockercompose/configserver.go
++++ b/cli/dockercompose/configserver.go
+@@ -12,6 +12,7 @@ func configserver( //nolint: funlen
+ 	nhostPath,
+ 	projectName string,
+ 	useTLS bool,
++	adminSecret string,
+ 	runServices ...*RunService,
+ ) (*Service, error) {
+ 	bindings := make([]Volume, 0, len(runServices))
+@@ -81,10 +82,12 @@ func configserver( //nolint: funlen
+ 			"configserver",
+ 			"--enable-playground",
+ 			"--debug",
++			"--admin-secret=" + adminSecret,
+ 		}, extraArgs...),
+ 		Environment: map[string]string{
+ 			"DOCKER_HOST":            dockerEndpoint,
+ 			"DOCKER_COMPOSE_PROJECT": projectName,
++			"NHOST_ADMIN_SECRET":     adminSecret,
+ 		},
+ 		ExtraHosts:  []string{},
+ 		HealthCheck: nil,
+diff --git a/dashboard/src/features/orgs/projects/hooks/useLocalMimirClient/useLocalMimirClient.ts b/dashboard/src/features/orgs/projects/hooks/useLocalMimirClient/useLocalMimirClient.ts
+index b27ede09..8adf48f6 100644
+--- a/dashboard/src/features/orgs/projects/hooks/useLocalMimirClient/useLocalMimirClient.ts
++++ b/dashboard/src/features/orgs/projects/hooks/useLocalMimirClient/useLocalMimirClient.ts
+@@ -1,6 +1,6 @@
+ import { ApolloClient, HttpLink, InMemoryCache } from '@apollo/client';
+ import { useMemo } from 'react';
+-import { getConfigServerUrl } from '@/utils/env';
++import { getConfigServerUrl, getHasuraAdminSecret } from '@/utils/env';
+ 
+ /**
+  * It creates a new Apollo Client instance that connects to the local mimir when running the a local nhost project
+@@ -13,6 +13,9 @@ export default function useLocalMimirClient() {
+         cache: new InMemoryCache(),
+         link: new HttpLink({
+           uri: getConfigServerUrl(),
++          headers: {
++            'x-hasura-admin-secret': getHasuraAdminSecret(),
++          },
+         }),
+       }),
+     [],
+diff --git a/dashboard/src/utils/localLogsClient/localLogsClient.ts b/dashboard/src/utils/localLogsClient/localLogsClient.ts
+index db7748ff..cf6185d1 100644
+--- a/dashboard/src/utils/localLogsClient/localLogsClient.ts
++++ b/dashboard/src/utils/localLogsClient/localLogsClient.ts
+@@ -7,13 +7,27 @@ import {
+ import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
+ import { getMainDefinition } from '@apollo/client/utilities';
+ import { createClient } from 'graphql-ws';
+-import { getGraphqlLogsServiceUrl, getLogsWebsocketUrl } from '@/utils/env';
++import {
++  getGraphqlLogsServiceUrl,
++  getHasuraAdminSecret,
++  getLogsWebsocketUrl,
++} from '@/utils/env';
++
++const getAdminSecretHeaders = () => ({
++  'x-hasura-admin-secret': getHasuraAdminSecret(),
++});
+ 
+-const httpLink = createHttpLink({ uri: getGraphqlLogsServiceUrl() });
++const httpLink = createHttpLink({
++  uri: getGraphqlLogsServiceUrl(),
++  headers: getAdminSecretHeaders(),
++});
+ 
+ const wsLink = new GraphQLWsLink(
+   createClient({
+     url: getLogsWebsocketUrl(),
++    connectionParams: () => ({
++      headers: getAdminSecretHeaders(),
++    }),
+     webSocketImpl: WebSocket,
+   }),
+ );

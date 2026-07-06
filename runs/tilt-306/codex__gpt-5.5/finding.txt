@@ -1,0 +1,32 @@
+Project: tilt-dev/tilt
+Vulnerability type: Missing Authentication (CWE-306)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  internal/cli/flags.go
+    - lines 63-75   in: func addConnectServerFlags(cmd *cobra.Command) {
+
+  internal/cli/utils.go
+    - lines 7-12   in: import (
+    - lines 18-26   in: func apiURL(path string) string {
+    - lines 33-39   in: func apiGet(path string) (body io.ReadCloser) {
+
+  internal/hud/server/controller.go
+    - lines 6-11   in: import (
+    - lines 141-147   in: func (s *HeadsUpServerController) setUpHelper(ctx context.Context, st store.RSto
+    - lines 157-166   in: func (s *HeadsUpServerController) setUpHelper(ctx context.Context, st store.RSto
+    - lines 292-296   in: func newAPIServerProxyHandler(config *rest.Config) (http.Handler, error) {
+
+  internal/hud/server/gorilla/origin.go
+    - lines 1-50
+
+  internal/hud/server/server.go
+    - lines 7-12   in: import (
+    - lines 29-34   in: import (
+    - lines 72-77   in: func ProvideHeadsUpServer(
+    - lines 81-97   in: func ProvideHeadsUpServer(
+    - lines 106-120   in: func (fh funcHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+
+  internal/hud/server/websocket.go
+    - lines 15-21   in: import (
+    - lines 38-58   in: var upgrader = websocket.Upgrader{

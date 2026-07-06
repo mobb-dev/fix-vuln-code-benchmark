@@ -1,0 +1,35 @@
+Project: forgekeep/nebula-mesh
+Vulnerability type: Missing Authorization (CWE-862)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  internal/api/audit.go
+    - lines 10-16   in: import (
+
+  internal/api/authz.go
+    - lines 8-17   in: import (
+
+  internal/api/cas.go
+    - lines 37-43   in: func (s *Server) handleListCAs(w http.ResponseWriter, r *http.Request) {
+    - lines 183-189   in: func (s *Server) handleDeleteCA(w http.ResponseWriter, r *http.Request) {
+
+  internal/api/hosts.go
+    - lines 188-194   in: func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
+    - lines 354-360   in: func (s *Server) handleUnblockHost(w http.ResponseWriter, r *http.Request) {
+
+  internal/api/networks.go
+    - lines 18-24   in: type createNetworkRequest struct {
+    - lines 60-66   in: func (s *Server) handleListNetworks(w http.ResponseWriter, r *http.Request) {
+
+  internal/api/operators.go
+    - lines 25-31   in: type createOperatorRequest struct {
+    - lines 65-71   in: func (s *Server) handleCreateOperator(w http.ResponseWriter, r *http.Request) {
+    - lines 82-88   in: func (s *Server) handleListOperators(w http.ResponseWriter, r *http.Request) {
+    - lines 101-107   in: func (s *Server) handleDisableOperator(w http.ResponseWriter, r *http.Request) {
+    - lines 129-135   in: type createAPIKeyResponse struct {
+    - lines 172-178   in: func (s *Server) handleCreateOperatorAPIKey(w http.ResponseWriter, r *http.Reque
+    - lines 229-235   in: func (s *Server) handleRevokeOperatorAPIKey(w http.ResponseWriter, r *http.Reque
+
+  internal/api/settings.go
+    - lines 22-28   in: type settingsResponse struct {
+    - lines 33-39   in: func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {

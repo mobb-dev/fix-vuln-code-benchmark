@@ -1,0 +1,214 @@
+diff --git a/api/src/main/java/org/openmrs/util/ConceptReferenceRangeUtility.java b/api/src/main/java/org/openmrs/util/ConceptReferenceRangeUtility.java
+index 6ece9de..1d227a2 100644
+--- a/api/src/main/java/org/openmrs/util/ConceptReferenceRangeUtility.java
++++ b/api/src/main/java/org/openmrs/util/ConceptReferenceRangeUtility.java
+@@ -19,6 +19,9 @@ import java.util.Date;
+ import java.util.List;
+ import java.util.Locale;
+ import java.util.Properties;
++import java.util.Set;
++import java.util.regex.Matcher;
++import java.util.regex.Pattern;
+ 
+ import org.apache.commons.lang3.StringUtils;
+ import org.apache.velocity.VelocityContext;
+@@ -45,6 +48,21 @@ public class ConceptReferenceRangeUtility {
+ 
+ 	private final long NULL_DATE_RETURN_VALUE = -1;
+ 
++	private static final Pattern REFERENCE_PATTERN = Pattern.compile("\\$([A-Za-z_][A-Za-z0-9_]*)([^$]*)");
++
++	private static final Pattern MEMBER_PATTERN = Pattern.compile("\\.\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*(\\()?");
++
++	private static final Set<String> ALLOWED_REFERENCES = Set.of("patient", "fn", "context", "obs", "encounter",
++	    "date");
++
++	private static final Set<String> DISALLOWED_MEMBERS = Set.of("class", "getClass", "forName", "newInstance",
++	    "getClassLoader", "getSystemClassLoader", "getConstructor", "getConstructors", "getDeclaredConstructor",
++	    "getDeclaredConstructors", "getDeclaredMethod", "getDeclaredMethods", "getMethod", "getMethods", "getRuntime",
++	    "exec", "exit", "invoke", "load", "loadLibrary", "notify", "notifyAll", "wait", "waitFor");
++
++	private static final Set<String> DISALLOWED_METHOD_PREFIXES = Set.of("add", "clear", "delete", "purge", "remove",
++	    "retire", "save", "set", "void");
++
+ 	public ConceptReferenceRangeUtility() {
+ 	}
+ 
+@@ -96,6 +114,8 @@ public class ConceptReferenceRangeUtility {
+ 			throw new IllegalArgumentException("Failed to evaluate criteria with reason: criteria is empty");
+ 		}
+ 
++		validateCriteria(criteria);
++
+ 		VelocityContext velocityContext = new VelocityContext();
+ 		velocityContext.put("fn", this);
+ 		velocityContext.put("patient", HibernateUtil.getRealObjectFromProxy(context.getPerson()));
+@@ -110,6 +130,10 @@ public class ConceptReferenceRangeUtility {
+ 			Properties props = new Properties();
+ 			props.put("runtime.log.logsystem.log4j.category", "velocity");
+ 			props.put("runtime.log.logsystem.log4j.logger", "velocity");
++			props.put("runtime.introspector.uberspect",
++			    "org.apache.velocity.util.introspection.SecureUberspector");
++			props.put("introspector.uberspect.class",
++			    "org.apache.velocity.util.introspection.SecureUberspector");
+ 			velocityEngine.init(props);
+ 		} catch (Exception e) {
+ 			throw new APIException("Failed to create the velocity engine: " + e.getMessage(), e);
+@@ -119,15 +143,108 @@ public class ConceptReferenceRangeUtility {
+ 		String wrappedCriteria = "#set( $criteria = " + criteria + " )$criteria";
+ 
+ 		try {
+-			velocityEngine.evaluate(velocityContext, writer, ConceptReferenceRangeUtility.class.getName(), wrappedCriteria);
+-			return Boolean.parseBoolean(writer.toString());
++			velocityEngine.evaluate(velocityContext, writer, ConceptReferenceRangeUtility.class.getName(),
++			    wrappedCriteria);
++			String result = writer.toString().trim();
++			if (!"true".equalsIgnoreCase(result) && !"false".equalsIgnoreCase(result)) {
++				throw new APIException("An error occurred while evaluating criteria. Invalid criteria: " + criteria);
++			}
++			return Boolean.parseBoolean(result);
+ 		} catch (ParseErrorException e) {
+ 			throw new APIException("An error occurred while evaluating criteria. Invalid criteria: " + criteria, e);
++		} catch (APIException e) {
++			throw e;
+ 		} catch (Exception e) {
+ 			throw new APIException("An error occurred while evaluating criteria: ", e);
+ 		}
+ 	}
+ 
++	private void validateCriteria(String criteria) {
++		String criteriaWithoutStrings = removeStringLiterals(criteria);
++		if (StringUtils.containsAny(criteriaWithoutStrings, '#', '{', '}', '[', ']', ';')) {
++			throw new APIException("An error occurred while evaluating criteria. Invalid criteria: " + criteria);
++		}
++		validateReferenceTokens(criteria, criteriaWithoutStrings);
++
++		Matcher referenceMatcher = REFERENCE_PATTERN.matcher(criteriaWithoutStrings);
++		while (referenceMatcher.find()) {
++			String reference = referenceMatcher.group(1);
++			if (!ALLOWED_REFERENCES.contains(reference)) {
++				throw new APIException("An error occurred while evaluating criteria. Invalid criteria: " + criteria);
++			}
++
++			validateMembers(criteria, referenceMatcher.group(2));
++		}
++	}
++
++	private void validateReferenceTokens(String criteria, String criteriaWithoutStrings) {
++		for (int i = 0; i < criteriaWithoutStrings.length(); i++) {
++			if (criteriaWithoutStrings.charAt(i) == '$'
++			        && (i + 1 >= criteriaWithoutStrings.length()
++			                || !isValidReferenceStart(criteriaWithoutStrings.charAt(i + 1)))) {
++				throw new APIException("An error occurred while evaluating criteria. Invalid criteria: " + criteria);
++			}
++		}
++	}
++
++	private boolean isValidReferenceStart(char c) {
++		return Character.isLetter(c) || c == '_';
++	}
++
++	private void validateMembers(String criteria, String expressionFragment) {
++		Matcher memberMatcher = MEMBER_PATTERN.matcher(expressionFragment);
++		while (memberMatcher.find()) {
++			String memberName = memberMatcher.group(1);
++			boolean isMethod = memberMatcher.group(2) != null;
++			if (DISALLOWED_MEMBERS.contains(memberName) || isUnsafeMethod(memberName, isMethod)) {
++				throw new APIException("An error occurred while evaluating criteria. Invalid criteria: " + criteria);
++			}
++		}
++	}
++
++	private boolean isUnsafeMethod(String memberName, boolean isMethod) {
++		return isMethod
++		        && DISALLOWED_METHOD_PREFIXES.stream().anyMatch(memberName::startsWith);
++	}
++
++	private String removeStringLiterals(String criteria) {
++		StringBuilder sanitizedCriteria = new StringBuilder(criteria.length());
++		boolean inSingleQuotedString = false;
++		boolean inDoubleQuotedString = false;
++		boolean escaped = false;
++
++		for (int i = 0; i < criteria.length(); i++) {
++			char c = criteria.charAt(i);
++			if (escaped) {
++				sanitizedCriteria.append(' ');
++				escaped = false;
++				continue;
++			}
++
++			if ((inSingleQuotedString || inDoubleQuotedString) && c == '\\') {
++				sanitizedCriteria.append(' ');
++				escaped = true;
++				continue;
++			}
++
++			if (!inDoubleQuotedString && c == '\'') {
++				inSingleQuotedString = !inSingleQuotedString;
++				sanitizedCriteria.append(' ');
++			} else if (!inSingleQuotedString && c == '"') {
++				inDoubleQuotedString = !inDoubleQuotedString;
++				sanitizedCriteria.append(' ');
++			} else {
++				sanitizedCriteria.append(inSingleQuotedString || inDoubleQuotedString ? ' ' : c);
++			}
++		}
++
++		if (inSingleQuotedString || inDoubleQuotedString) {
++			throw new APIException("An error occurred while evaluating criteria. Invalid criteria: " + criteria);
++		}
++
++		return sanitizedCriteria.toString();
++	}
++
+ 	/**
+ 	 * Gets the latest Obs by concept.
+ 	 *
+diff --git a/api/src/test/java/org/openmrs/util/ConceptReferenceRangeUtilityTest.java b/api/src/test/java/org/openmrs/util/ConceptReferenceRangeUtilityTest.java
+index 6a27441..804ada7 100644
+--- a/api/src/test/java/org/openmrs/util/ConceptReferenceRangeUtilityTest.java
++++ b/api/src/test/java/org/openmrs/util/ConceptReferenceRangeUtilityTest.java
+@@ -122,6 +122,42 @@ class ConceptReferenceRangeUtilityTest extends BaseContextSensitiveTest {
+ 		assertThrows(APIException.class, () -> conceptReferenceRangeUtility.evaluateCriteria("invalidCriteria", obs));
+ 	}
+ 
++	@Test
++	public void evaluateCriteria_shouldThrowExceptionIfCriteriaContainsVelocityDirective() {
++		Obs obs = buildObs();
++		obs.setPerson(person);
++
++		assertThrows(APIException.class,
++		    () -> conceptReferenceRangeUtility.evaluateCriteria("#set($criteria = true)", obs));
++	}
++
++	@Test
++	public void evaluateCriteria_shouldThrowExceptionIfCriteriaAccessesReflectionMethods() {
++		Obs obs = buildObs();
++		obs.setPerson(person);
++
++		assertThrows(APIException.class,
++		    () -> conceptReferenceRangeUtility.evaluateCriteria("$patient.getClass().forName('java.lang.Runtime')", obs));
++	}
++
++	@Test
++	public void evaluateCriteria_shouldThrowExceptionIfCriteriaUsesQuietReferenceSyntax() {
++		Obs obs = buildObs();
++		obs.setPerson(person);
++
++		assertThrows(APIException.class,
++		    () -> conceptReferenceRangeUtility.evaluateCriteria("$!patient.getAge() > 1", obs));
++	}
++
++	@Test
++	public void evaluateCriteria_shouldThrowExceptionIfCriteriaCallsMutatingMethods() {
++		Obs obs = buildObs();
++		obs.setPerson(person);
++
++		assertThrows(APIException.class,
++		    () -> conceptReferenceRangeUtility.evaluateCriteria("$patient.setGender('F') == null", obs));
++	}
++
+ 	@Test
+ 	public void testAgeInRange_shouldThrowAnExceptionIfCriteriaIsEmpty() {
+ 		calendar = Calendar.getInstance();

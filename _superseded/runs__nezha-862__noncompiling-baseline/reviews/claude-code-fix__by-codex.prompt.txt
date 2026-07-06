@@ -1,0 +1,325 @@
+You are a senior application-security engineer. Judge whether an AI agent's code change correctly fixes a specific, known vulnerability.
+
+You are given three things below:
+  1. THE VULNERABILITY — its type and where it is in the code.
+  2. THE MAINTAINER'S OFFICIAL FIX — the real, accepted remediation. Treat it as the gold standard for what a complete and correct fix must cover. It is a reference, not the only acceptable implementation: a different but equivalent fix that fully and minimally remediates is still correct.
+  3. THE AGENT'S FIX — a diff produced by an AI agent. This is what you must judge.
+
+Evaluate the agent's fix with this methodology:
+  - From the vulnerability and the maintainer's fix, work out the root cause and EVERY place the vulnerability is present.
+  - Does the agent's fix remove the vulnerability at ALL of those places, not just some? Missing any injection point or variant is a real gap.
+  - Does it preserve the application's intended behavior — no broken functionality, and no unrelated behavioral changes beyond what the remediation requires? Removing the vulnerability but also changing unrelated behavior is an over-reach, not a clean fix.
+  - Be skeptical. A fix that reads plausibly but misses a variant is not correct; one that fixes the bug but also changes unrelated behavior is not clean.
+
+Respond in EXACTLY this structure and nothing else:
+
+METHODOLOGY: <2-4 sentences on how you evaluated it>
+EVIDENCE: <specific files, lines, or hunks from the diffs that justify the verdict>
+REASONING: <why the agent's fix does or does not fully and cleanly remediate the vulnerability without changing intended behavior>
+VERDICT: <one word: CORRECT, PARTIAL, or INCORRECT>
+
+Verdict meanings:
+  CORRECT   — fully removes the vulnerability AND preserves intended behavior.
+  PARTIAL   — removes the vulnerability but misses a variant, OR over-reaches and changes unrelated behavior.
+  INCORRECT — does not remove the vulnerability, or breaks functionality so it is not a valid fix.
+
+
+===== 1. THE VULNERABILITY =====
+Project: nezhahq/nezha
+Vulnerability type: Missing Authorization (CWE-862)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  service/singleton/crontask.go
+    - lines 5-10   in: import (
+    - lines 15-23   in: import (
+    - lines 64-70   in: func NewCronClass() *CronClass {
+    - lines 78-83   in: func (c *CronClass) Update(cr *model.Cron) {
+    - lines 92-97   in: func (c *CronClass) Delete(idList []uint64) {
+    - lines 130-135   in: func cronCanBeTriggeredByOwner(cr *model.Cron, triggerOwner uint64) bool {
+    - lines 149-159   in: func CronTrigger(cr *model.Cron, triggerServer ...uint64) func() {
+
+  service/singleton/servicesentinel.go
+    - lines 472-487   in: func (ss *ServiceSentinel) CheckPermission(c *gin.Context, idList iter.Seq[uint6
+    - lines 607-613   in: func (ss *ServiceSentinel) worker() {
+
+===== 2. MAINTAINER OFFICIAL FIX (gold standard) =====
+--- a/service/singleton/crontask.go
++++ b/service/singleton/crontask.go
+@@ -5,6 +5,8 @@ import (
+ 	"fmt"
+ 	"slices"
+ 	"strings"
++	"sync"
++	"time"
+ 
+ 	"github.com/jinzhu/copier"
+ 
+@@ -15,9 +17,13 @@ import (
+ 	pb "github.com/nezhahq/nezha/proto"
+ )
+ 
++const alertTriggerCronResultAuthorizationTTL = 24 * time.Hour
++
+ type CronClass struct {
+ 	class[uint64, *model.Cron]
+ 	*cron.Cron
++	pendingAlertTriggerTasksMu sync.Mutex
++	pendingAlertTriggerTasks   map[uint64]map[uint64][]time.Time
+ }
+ 
+ func NewCronClass() *CronClass {
+@@ -64,7 +70,8 @@ func NewCronClass() *CronClass {
+ 			list:       list,
+ 			sortedList: sortedList,
+ 		},
+-		Cron: cronx,
++		Cron:                     cronx,
++		pendingAlertTriggerTasks: make(map[uint64]map[uint64][]time.Time),
+ 	}
+ }
+ 
+@@ -78,6 +85,7 @@ func (c *CronClass) Update(cr *model.Cron) {
+ 	delete(c.list, cr.ID)
+ 	c.list[cr.ID] = cr
+ 	c.listMu.Unlock()
++	c.deleteAlertTriggerCronResultAuthorizations([]uint64{cr.ID})
+ 
+ 	c.sortList()
+ }
+@@ -92,6 +100,7 @@ func (c *CronClass) Delete(idList []uint64) {
+ 		delete(c.list, id)
+ 	}
+ 	c.listMu.Unlock()
++	c.deleteAlertTriggerCronResultAuthorizations(idList)
+ 
+ 	c.sortList()
+ }
+@@ -130,6 +139,113 @@ func cronCanBeTriggeredByOwner(cr *model.Cron, triggerOwner uint64) bool {
+ 	return cr.UserID == triggerOwner || userIsAdmin(triggerOwner)
+ }
+ 
++func CanReportCronResult(cr *model.Cron, reporter *model.Server) bool {
++	if cr == nil || reporter == nil || !cronCanSendToServer(cr, reporter) {
++		return false
++	}
++	if cr.Cover == model.CronCoverAll {
++		return !slices.Contains(cr.Servers, reporter.ID)
++	}
++	if cr.Cover == model.CronCoverIgnoreAll {
++		return slices.Contains(cr.Servers, reporter.ID)
++	}
++	if cr.Cover == model.CronCoverAlertTrigger {
++		return CronShared != nil && CronShared.consumeAlertTriggerCronResult(cr.ID, reporter.ID)
++	}
++	return false
++}
++
++func (c *CronClass) reserveAlertTriggerCronResult(cronID uint64, serverID uint64) {
++	c.pendingAlertTriggerTasksMu.Lock()
++	defer c.pendingAlertTriggerTasksMu.Unlock()
++
++	now := time.Now()
++	c.pruneExpiredAlertTriggerCronResultsLocked(now)
++	if c.pendingAlertTriggerTasks == nil {
++		c.pendingAlertTriggerTasks = make(map[uint64]map[uint64][]time.Time)
++	}
++	if c.pendingAlertTriggerTasks[cronID] == nil {
++		c.pendingAlertTriggerTasks[cronID] = make(map[uint64][]time.Time)
++	}
++	c.pendingAlertTriggerTasks[cronID][serverID] = append(c.pendingAlertTriggerTasks[cronID][serverID], now.Add(alertTriggerCronResultAuthorizationTTL))
++}
++
++func (c *CronClass) revokeAlertTriggerCronResult(cronID uint64, serverID uint64) {
++	c.pendingAlertTriggerTasksMu.Lock()
++	defer c.pendingAlertTriggerTasksMu.Unlock()
++
++	serverTasks := c.pendingAlertTriggerTasks[cronID]
++	expiresAtList := serverTasks[serverID]
++	if len(expiresAtList) == 0 {
++		return
++	}
++	expiresAtList = expiresAtList[:len(expiresAtList)-1]
++	if len(expiresAtList) == 0 {
++		delete(serverTasks, serverID)
++	} else {
++		serverTasks[serverID] = expiresAtList
++	}
++	if len(serverTasks) == 0 {
++		delete(c.pendingAlertTriggerTasks, cronID)
++	}
++}
++
++func (c *CronClass) consumeAlertTriggerCronResult(cronID uint64, serverID uint64) bool {
++	c.pendingAlertTriggerTasksMu.Lock()
++	defer c.pendingAlertTriggerTasksMu.Unlock()
++
++	c.pruneExpiredAlertTriggerCronResultsLocked(time.Now())
++	return c.consumeAlertTriggerCronResultLocked(cronID, serverID)
++}
++
++func (c *CronClass) consumeAlertTriggerCronResultLocked(cronID uint64, serverID uint64) bool {
++	serverTasks := c.pendingAlertTriggerTasks[cronID]
++	expiresAtList := serverTasks[serverID]
++	if len(expiresAtList) == 0 {
++		return false
++	}
++	expiresAtList = expiresAtList[1:]
++	if len(expiresAtList) == 0 {
++		delete(serverTasks, serverID)
++	} else {
++		serverTasks[serverID] = expiresAtList
++	}
++	if len(serverTasks) == 0 {
++		delete(c.pendingAlertTriggerTasks, cronID)
++	}
++	return true
++}
++
++func (c *CronClass) pruneExpiredAlertTriggerCronResultsLocked(now time.Time) {
++	for cronID, serverTasks := range c.pendingAlertTriggerTasks {
++		for serverID, expiresAtList := range serverTasks {
++			validExpiresAtList := expiresAtList[:0]
++			for _, expiresAt := range expiresAtList {
++				if expiresAt.After(now) {
++					validExpiresAtList = append(validExpiresAtList, expiresAt)
++				}
++			}
++			if len(validExpiresAtList) == 0 {
++				delete(serverTasks, serverID)
++			} else {
++				serverTasks[serverID] = validExpiresAtList
++			}
++		}
++		if len(serverTasks) == 0 {
++			delete(c.pendingAlertTriggerTasks, cronID)
++		}
++	}
++}
++
++func (c *CronClass) deleteAlertTriggerCronResultAuthorizations(cronIDs []uint64) {
++	c.pendingAlertTriggerTasksMu.Lock()
++	defer c.pendingAlertTriggerTasksMu.Unlock()
++
++	for _, cronID := range cronIDs {
++		delete(c.pendingAlertTriggerTasks, cronID)
++	}
++}
++
+ func ManualTrigger(cr *model.Cron) {
+ 	CronTrigger(cr)()
+ }
+@@ -149,11 +265,17 @@ func CronTrigger(cr *model.Cron, triggerServer ...uint64) func() {
+ 					return
+ 				}
+ 				if s.TaskStream != nil {
+-					s.TaskStream.Send(&pb.Task{
++					cronShared := CronShared
++					if cronShared != nil {
++						cronShared.reserveAlertTriggerCronResult(cr.ID, s.ID)
++					}
++					if err := s.TaskStream.Send(&pb.Task{
+ 						Id:   cr.ID,
+ 						Data: cr.Command,
+ 						Type: model.TaskTypeCommand,
+-					})
++					}); err != nil && cronShared != nil {
++						cronShared.revokeAlertTriggerCronResult(cr.ID, s.ID)
++					}
+ 				} else {
+ 					// 保存当前服务器状态信息
+ 					curServer := model.Server{}
+--- a/service/singleton/servicesentinel.go
++++ b/service/singleton/servicesentinel.go
+@@ -472,16 +472,37 @@ func (ss *ServiceSentinel) CheckPermission(c *gin.Context, idList iter.Seq[uint6
+ 	return true
+ }
+ 
++func canReportServiceResult(service *model.Service, reporter *model.Server, taskType uint64) bool {
++	if service == nil || reporter == nil || uint64(service.Type) != taskType {
++		return false
++	}
++	switch service.Cover {
++	case model.ServiceCoverAll:
++		if service.SkipServers[reporter.ID] {
++			return false
++		}
++	case model.ServiceCoverIgnoreAll:
++		if !service.SkipServers[reporter.ID] {
++			return false
++		}
++	default:
++		return false
++	}
++
++	return service.UserID == reporter.UserID || userIsAdmin(service.UserID)
++}
++
+ // worker 服务监控的实际工作流程
+ func (ss *ServiceSentinel) worker() {
+ 	// 从服务状态汇报管道获取汇报的服务数据
+ 	for r := range ss.serviceReportChannel {
+-		css, _ := ss.Get(r.Data.GetId())
+-		if css == nil || css.ID == 0 {
++		cs, _ := ss.Get(r.Data.GetId())
++		reporter, _ := ServerShared.Get(r.Reporter)
++		// 入站结果必须匹配出站任务派发边界，避免 agent 伪造其他服务 ID 写入监控状态。
++		if !canReportServiceResult(cs, reporter, r.Data.GetType()) {
+ 			log.Printf("NEZHA>> Incorrect service monitor report %+v", r)
+ 			continue
+ 		}
+-		css = nil
+ 
+ 		mh := r.Data
+ 		if mh.Type == model.TaskTypeTCPPing || mh.Type == model.TaskTypeICMPPing {
+@@ -607,7 +628,7 @@ func (ss *ServiceSentinel) worker() {
+ 			ss.serviceCurrentStatusData[mh.GetId()].result = ss.serviceCurrentStatusData[mh.GetId()].result[:0]
+ 		}
+ 
+-		cs, _ := ss.Get(mh.GetId())
++		cs, _ = ss.Get(mh.GetId())
+ 		m := ServerShared.GetList()
+ 		// 延迟报警
+ 		if mh.Delay > 0 {
+===== 3. THE AGENT FIX TO JUDGE =====
+diff --git a/service/singleton/crontask.go b/service/singleton/crontask.go
+index ce73c08..a7adbf2 100644
+--- a/service/singleton/crontask.go
++++ b/service/singleton/crontask.go
+@@ -194,6 +194,36 @@ func cronCanSendToServer(cr *model.Cron, server *model.Server) bool {
+ 	return cr.UserID == server.UserID || userIsAdmin(cr.UserID)
+ }
+ 
++// CanReportCronResult 校验某台服务器是否有权上报该计划任务的执行结果。
++// 任务结果 ID 来自 agent，因此必须确认该 cron 确实本应派发给当前 reporter，
++// 否则任何 agent 都能伪造任意计划任务的结果（越权 / 缺失鉴权 CWE-862）。
++// 判定逻辑与 CronTrigger 的派发逻辑保持一致。
++func CanReportCronResult(cr *model.Cron, server *model.Server) bool {
++	if cr == nil || cr.ID == 0 || server == nil {
++		return false
++	}
++
++	// 任务与服务器必须满足归属关系（同一用户，或任务属于管理员）
++	if !cronCanSendToServer(cr, server) {
++		return false
++	}
++
++	inList := slices.Contains(cr.Servers, server.ID)
++	switch cr.Cover {
++	case model.CronCoverAll:
++		// 覆盖全部服务器，但忽略列表中的服务器
++		return !inList
++	case model.CronCoverIgnoreAll:
++		// 仅覆盖列表中的服务器
++		return inList
++	case model.CronCoverAlertTrigger:
++		// 由触发该任务的服务器执行，归属校验已足够
++		return true
++	default:
++		return false
++	}
++}
++
+ func userIsAdmin(userID uint64) bool {
+ 	if userID == 0 {
+ 		return true

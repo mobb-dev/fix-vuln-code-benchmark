@@ -1,0 +1,87 @@
+diff --git a/internal/api/delete.go b/internal/api/delete.go
+index f6f7f3d..d55e761 100644
+--- a/internal/api/delete.go
++++ b/internal/api/delete.go
+@@ -472,6 +472,17 @@ func (h *DeleteHandler) validateWhereClause(where string) (bool, error) {
+ 		}
+ 	}
+ 
++	// SECURITY: reject DuckDB file-reading functions (read_csv, read_text,
++	// read_blob, glob, parquet_scan, …). The WHERE clause is interpolated
++	// into `read_parquet('<file>') WHERE NOT (<where>)`, so a scalar call
++	// like `length(read_blob('/etc/passwd')) >= 0` reads arbitrary local
++	// files (CWE-22 path traversal) without tripping any of the keyword
++	// checks above — none of these functions are SQL keywords. Legitimate
++	// delete predicates only reference columns, so this is safe to reject.
++	if userSQLFileFunctionPattern.MatchString(where) {
++		return false, fmt.Errorf("WHERE clause contains forbidden file-reading function")
++	}
++
+ 	// Check for unmatched quotes
+ 	if strings.Count(where, "'")%2 != 0 {
+ 		return false, fmt.Errorf("WHERE clause has unmatched quotes")
+diff --git a/internal/api/query.go b/internal/api/query.go
+index a1dbc58..1d8f392 100644
+--- a/internal/api/query.go
++++ b/internal/api/query.go
+@@ -720,6 +720,17 @@ func validateWhereClauseQuery(where string) error {
+ 		}
+ 	}
+ 
++	// SECURITY: reject DuckDB file-reading functions (read_csv, read_text,
++	// read_blob, glob, parquet_scan, …). This WHERE clause is interpolated
++	// into `... FROM db.measurement WHERE <where>` which is then rewritten
++	// to a read_parquet() query, so a scalar call such as
++	// `length(read_blob('/etc/passwd')) >= 0` performs an arbitrary local
++	// file read (CWE-22 path traversal) — none of these functions are SQL
++	// keywords, so the keyword denylist above does not catch them.
++	if userSQLFileFunctionPattern.MatchString(where) {
++		return fmt.Errorf("where clause contains forbidden file-reading function")
++	}
++
+ 	// Check for unmatched quotes
+ 	if strings.Count(where, "'")%2 != 0 {
+ 		return fmt.Errorf("where clause has unmatched single quotes")
+@@ -1859,6 +1870,23 @@ func ValidateSQLRequest(sql string) error {
+ 		return &SQLValidationError{Message: "Direct read_parquet() calls are not allowed in user SQL"}
+ 	}
+ 
++	// SECURITY: reject user SQL that calls any DuckDB file-reading table
++	// function directly. Blocking read_parquet alone (above) is not enough:
++	// DuckDB exposes a whole family of functions — read_csv, read_csv_auto,
++	// read_json[_auto], read_ndjson, read_text, read_blob, parquet_scan,
++	// parquet_metadata/schema, glob, sniff_csv, delta_scan, iceberg_scan,
++	// etc. — that read arbitrary filesystem (and remote) paths *directly*,
++	// bypassing the storage backend and its path-traversal guards. Without
++	// this block a query like `SELECT * FROM read_csv_auto('/etc/passwd')`
++	// or `SELECT content FROM read_text('/data/db2/secrets/...')` performs
++	// arbitrary local file reads (CWE-22 path traversal) and routes around
++	// the table-name → storage-path mapping that RBAC depends on. Arc's own
++	// query rewriter only ever emits read_parquet (handled specially), so
++	// any of these functions in user input is illegitimate.
++	if userSQLFileFunctionPattern.MatchString(normalised) {
++		return &SQLValidationError{Message: "Direct file-reading function calls are not allowed in user SQL"}
++	}
++
+ 	// SECURITY: reject user SQL that calls arcx's table functions
+ 	// directly. arc_partition_agg(db, m, unit) takes raw database and
+ 	// measurement strings and globs the filesystem; without this block,
+@@ -1884,6 +1912,18 @@ var userSQLReadParquetPattern = regexp.MustCompile(`(?i)\bread_parquet\s*\(`)
+ // must route through Arc's rewriter so RBAC stays load-bearing.
+ var userSQLArcPartitionAggPattern = regexp.MustCompile(`(?i)\barc_partition_agg\s*\(`)
+ 
++// userSQLFileFunctionPattern matches any DuckDB file-reading function
++// call (case-insensitive, allowing whitespace before the open paren).
++// These functions read arbitrary filesystem/remote paths directly,
++// bypassing the storage backend's path-traversal validation, so they
++// must never appear in user-supplied SQL. `read_\w+` covers the whole
++// read_* reader family (read_csv, read_csv_auto, read_json, read_ndjson,
++// read_text, read_blob, read_parquet, …); the remaining alternatives
++// cover readers that do not share the read_ prefix. Only runs against
++// masked/comment-stripped SQL so a string literal or comment mentioning
++// one of these names does not false-positive.
++var userSQLFileFunctionPattern = regexp.MustCompile(`(?i)\b(?:read_\w+|parquet_scan|parquet_metadata|parquet_schema|parquet_file_metadata|parquet_kv_metadata|parquet_bloom_probe|glob|sniff_csv|delta_scan|iceberg_scan|iceberg_metadata|iceberg_snapshots|scan_arrow_ipc)\s*\(`)
++
+ // getTransformedSQL returns the transformed SQL with caching.
+ // If headerDB is non-empty, uses the optimized path with that database for all tables.
+ // Returns the transformed SQL and whether it was a cache hit.

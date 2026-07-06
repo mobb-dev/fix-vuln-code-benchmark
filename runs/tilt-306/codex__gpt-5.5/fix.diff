@@ -1,0 +1,331 @@
+diff --git a/internal/cli/utils.go b/internal/cli/utils.go
+index 8f3adc1..06c70e7 100644
+--- a/internal/cli/utils.go
++++ b/internal/cli/utils.go
+@@ -2,11 +2,16 @@ package cli
+ 
+ import (
+ 	"bytes"
++	"context"
+ 	"fmt"
+ 	"io"
+ 	"net/http"
+ 	"os"
+ 	"strings"
++
++	"github.com/tilt-dev/tilt/internal/hud/server"
++	"github.com/tilt-dev/tilt/internal/token"
++	"github.com/tilt-dev/wmclient/pkg/dirs"
+ )
+ 
+ func apiHost() string {
+@@ -20,7 +25,11 @@ func apiURL(path string) string {
+ 
+ func apiGet(path string) (body io.ReadCloser) {
+ 	url := apiURL(path)
+-	res, err := http.Get(url)
++	req, err := newAPIRequest(context.Background(), http.MethodGet, url, nil)
++	if err != nil {
++		cmdFail(err)
++	}
++	res, err := http.DefaultClient.Do(req)
+ 	if err != nil {
+ 		cmdFail(fmt.Errorf("Could not connect to Tilt at %s: %v", url, err))
+ 	}
+@@ -33,7 +42,12 @@ func apiGet(path string) (body io.ReadCloser) {
+ 
+ func apiPostJson(path string, payload []byte) (body io.ReadCloser, status int) {
+ 	url := apiURL(path)
+-	res, err := http.Post(url, "application/json", bytes.NewBuffer(payload))
++	req, err := newAPIRequest(context.Background(), http.MethodPost, url, bytes.NewBuffer(payload))
++	if err != nil {
++		cmdFail(err)
++	}
++	req.Header.Set("Content-Type", "application/json")
++	res, err := http.DefaultClient.Do(req)
+ 	if err != nil {
+ 		cmdFail(fmt.Errorf("Could not connect to Tilt at %s: %v", url, err))
+ 	}
+@@ -41,6 +55,25 @@ func apiPostJson(path string, payload []byte) (body io.ReadCloser, status int) {
+ 	return res.Body, res.StatusCode
+ }
+ 
++func newAPIRequest(ctx context.Context, method, url string, body io.Reader) (*http.Request, error) {
++	req, err := http.NewRequestWithContext(ctx, method, url, body)
++	if err != nil {
++		return nil, err
++	}
++
++	tiltDevDir, err := dirs.UseTiltDevDir()
++	if err != nil {
++		return nil, err
++	}
++	tok, err := token.GetOrCreateToken(tiltDevDir)
++	if err != nil {
++		return nil, err
++	}
++	req.Header.Set(server.TiltTokenHeaderName, tok.String())
++	req.AddCookie(&http.Cookie{Name: server.TiltTokenCookieName, Value: tok.String()})
++	return req, nil
++}
++
+ func cmdFail(err error) {
+ 	_, _ = fmt.Fprintf(os.Stderr, "%v\n", err)
+ 	os.Exit(1)
+diff --git a/internal/hud/server/apiserver_test.go b/internal/hud/server/apiserver_test.go
+index 3b08f72..6e1ddd4 100644
+--- a/internal/hud/server/apiserver_test.go
++++ b/internal/hud/server/apiserver_test.go
+@@ -32,6 +32,7 @@ import (
+ 	"github.com/tilt-dev/tilt/internal/store"
+ 	"github.com/tilt-dev/tilt/internal/testutils"
+ 	"github.com/tilt-dev/tilt/internal/testutils/tempdir"
++	"github.com/tilt-dev/tilt/internal/token"
+ 	"github.com/tilt-dev/tilt/pkg/apis/core/v1alpha1"
+ 	"github.com/tilt-dev/tilt/pkg/assets"
+ 	"github.com/tilt-dev/tilt/pkg/model"
+@@ -142,6 +143,7 @@ func TestAPIServerProxy(t *testing.T) {
+ 	reqURL := fmt.Sprintf("http://%s/proxy/apis/tilt.dev/v1alpha1/uibuttons", f.webListener.Addr())
+ 	req, err := http.NewRequestWithContext(f.ctx, http.MethodGet, reqURL, nil)
+ 	require.NoError(t, err, "Failed to create request")
++	req.Header.Set(TiltTokenHeaderName, "test-token")
+ 
+ 	resp, err := http.DefaultClient.Do(req)
+ 	require.NoError(t, err, "Request failed")
+@@ -172,7 +174,7 @@ type apiserverFixture struct {
+ 	webListenerHost string
+ 	webListenerPort int
+ 	webURL          model.WebURL
+-	st              *store.TestingStore
++	st              *store.Store
+ 	dynamic         DynamicInterface
+ }
+ 
+@@ -212,6 +214,11 @@ func newAPIServerFixture(t testing.TB) *apiserverFixture {
+ 	dynamic, err := ProvideTiltDynamic(cfg)
+ 	require.NoError(t, err)
+ 
++	st, _ := store.NewStoreWithFakeReducer()
++	state := st.LockMutableStateForTesting()
++	state.Token = token.Token("test-token")
++	st.UnlockMutableState()
++
+ 	f := &apiserverFixture{
+ 		TempDirFixture:  tmpdir,
+ 		t:               t,
+@@ -223,7 +230,7 @@ func newAPIServerFixture(t testing.TB) *apiserverFixture {
+ 		webListenerHost: webListenerHost,
+ 		webListenerPort: webListenerPort,
+ 		webURL:          model.WebURL(*webURL),
+-		st:              store.NewTestingStore(),
++		st:              st,
+ 		dynamic:         dynamic,
+ 	}
+ 	return f
+@@ -231,8 +238,9 @@ func newAPIServerFixture(t testing.TB) *apiserverFixture {
+ 
+ func (f *apiserverFixture) start() *HeadsUpServerController {
+ 	f.t.Helper()
++	hudServer := &HeadsUpServer{store: f.st}
+ 	hudsc := ProvideHeadsUpServerController(f.configAccess, "tilt-default",
+-		f.webListener, f.serverConfig, &HeadsUpServer{}, assets.NewFakeServer(), f.webURL)
++		f.webListener, f.serverConfig, hudServer, assets.NewFakeServer(), f.webURL)
+ 	require.NoError(f.t, hudsc.SetUp(f.ctx, f.st))
+ 	f.t.Cleanup(func() {
+ 		hudsc.TearDown(f.ctx)
+diff --git a/internal/hud/server/controller.go b/internal/hud/server/controller.go
+index 99e5a7a..6e5fd2f 100644
+--- a/internal/hud/server/controller.go
++++ b/internal/hud/server/controller.go
+@@ -157,10 +157,10 @@ func (s *HeadsUpServerController) setUpHelper(ctx context.Context, st store.RSto
+ 	}
+ 
+ 	webRouter := mux.NewRouter()
+-	webRouter.PathPrefix("/debug").Handler(http.DefaultServeMux) // for /debug/pprof
++	webRouter.PathPrefix("/debug").Handler(s.hudServer.RequireToken(http.DefaultServeMux)) // for /debug/pprof
+ 	// the path prefix here must be kept in sync with the prefix configured in the proxy handler
+ 	// (it needs to know what to strip before forwarding the request)
+-	webRouter.PathPrefix(apiServerProxyPrefix).Handler(proxyHandler)
++	webRouter.PathPrefix(apiServerProxyPrefix).Handler(s.hudServer.RequireToken(proxyHandler))
+ 	webRouter.PathPrefix("/").Handler(s.hudServer.Router())
+ 
+ 	s.webServer = &http.Server{
+diff --git a/internal/hud/server/server.go b/internal/hud/server/server.go
+index b2d83f8..53a6c8e 100644
+--- a/internal/hud/server/server.go
++++ b/internal/hud/server/server.go
+@@ -2,6 +2,7 @@ package server
+ 
+ import (
+ 	"context"
++	"crypto/subtle"
+ 	"encoding/json"
+ 	"fmt"
+ 	"log"
+@@ -29,6 +30,7 @@ import (
+ )
+ 
+ const TiltTokenCookieName = "Tilt-Token"
++const TiltTokenHeaderName = "X-Tilt-Token"
+ 
+ // CSRF token to protect the websocket. See:
+ // https://dev.solita.fi/2018/11/07/securing-websocket-endpoints.html
+@@ -81,17 +83,17 @@ func ProvideHeadsUpServer(
+ 		ctrlClient: ctrlClient,
+ 	}
+ 
+-	r.HandleFunc("/api/view", s.ViewJSON)
+-	r.HandleFunc("/api/dump/engine", s.DumpEngineJSON)
+-	r.HandleFunc("/api/analytics", s.HandleAnalytics)
+-	r.HandleFunc("/api/analytics_opt", s.HandleAnalyticsOpt)
+-	r.HandleFunc("/api/trigger", s.HandleTrigger)
+-	r.HandleFunc("/api/override/trigger_mode", s.HandleOverrideTriggerMode)
++	r.HandleFunc("/api/view", s.requireToken(s.ViewJSON))
++	r.HandleFunc("/api/dump/engine", s.requireToken(s.DumpEngineJSON))
++	r.HandleFunc("/api/analytics", s.requireToken(s.HandleAnalytics))
++	r.HandleFunc("/api/analytics_opt", s.requireToken(s.HandleAnalyticsOpt))
++	r.HandleFunc("/api/trigger", s.requireToken(s.HandleTrigger))
++	r.HandleFunc("/api/override/trigger_mode", s.requireToken(s.HandleOverrideTriggerMode))
+ 	// this endpoint is only used for testing snapshots in development
+-	r.HandleFunc("/api/snapshot/{snapshot_id}", s.SnapshotJSON)
+-	r.HandleFunc("/api/websocket_token", s.WebsocketToken)
+-	r.HandleFunc("/ws/view", s.ViewWebsocket)
+-	r.HandleFunc("/api/set_tiltfile_args", s.HandleSetTiltfileArgs).Methods("POST")
++	r.HandleFunc("/api/snapshot/{snapshot_id}", s.requireToken(s.SnapshotJSON))
++	r.HandleFunc("/api/websocket_token", s.requireToken(s.WebsocketToken))
++	r.HandleFunc("/ws/view", s.requireToken(s.ViewWebsocket))
++	r.HandleFunc("/api/set_tiltfile_args", s.requireToken(s.HandleSetTiltfileArgs)).Methods("POST")
+ 
+ 	r.PathPrefix("/").Handler(s.cookieWrapper(assetServer))
+ 
+@@ -109,7 +111,12 @@ func (fh funcHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+ func (s *HeadsUpServer) cookieWrapper(handler http.Handler) http.Handler {
+ 	return funcHandler{f: func(w http.ResponseWriter, r *http.Request) {
+ 		state := s.store.RLockState()
+-		http.SetCookie(w, &http.Cookie{Name: TiltTokenCookieName, Value: string(state.Token), Path: "/"})
++		http.SetCookie(w, &http.Cookie{
++			Name:     TiltTokenCookieName,
++			Value:    string(state.Token),
++			Path:     "/",
++			SameSite: http.SameSiteStrictMode,
++		})
+ 		s.store.RUnlockState()
+ 		handler.ServeHTTP(w, r)
+ 	}}
+@@ -119,6 +126,42 @@ func (s *HeadsUpServer) Router() http.Handler {
+ 	return s.router
+ }
+ 
++func (s *HeadsUpServer) requireToken(handler http.HandlerFunc) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		s.RequireToken(handler).ServeHTTP(w, r)
++	}
++}
++
++func (s *HeadsUpServer) RequireToken(handler http.Handler) http.Handler {
++	return funcHandler{f: func(w http.ResponseWriter, r *http.Request) {
++		if !s.validToken(r) {
++			http.Error(w, "Unauthorized", http.StatusUnauthorized)
++			return
++		}
++
++		handler.ServeHTTP(w, r)
++	}}
++}
++
++func (s *HeadsUpServer) validToken(r *http.Request) bool {
++	state := s.store.RLockState()
++	expected := string(state.Token)
++	s.store.RUnlockState()
++	if expected == "" {
++		return false
++	}
++
++	provided := r.Header.Get(TiltTokenHeaderName)
++	if provided == "" {
++		cookie, err := r.Cookie(TiltTokenCookieName)
++		if err == nil {
++			provided = cookie.Value
++		}
++	}
++
++	return subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) == 1
++}
++
+ func (s *HeadsUpServer) ViewJSON(w http.ResponseWriter, req *http.Request) {
+ 	view, err := webview.CompleteView(req.Context(), s.ctrlClient, s.store)
+ 	if err != nil {
+diff --git a/internal/hud/server/server_test.go b/internal/hud/server/server_test.go
+index d30a21f..d2dc877 100644
+--- a/internal/hud/server/server_test.go
++++ b/internal/hud/server/server_test.go
+@@ -25,6 +25,7 @@ import (
+ 	"github.com/tilt-dev/tilt/internal/sliceutils"
+ 	"github.com/tilt-dev/tilt/internal/store"
+ 	"github.com/tilt-dev/tilt/internal/testutils"
++	"github.com/tilt-dev/tilt/internal/token"
+ 	"github.com/tilt-dev/tilt/pkg/apis/core/v1alpha1"
+ 	"github.com/tilt-dev/tilt/pkg/assets"
+ 	"github.com/tilt-dev/tilt/pkg/model"
+@@ -49,6 +50,48 @@ func TestHandleAnalyticsRecordsIncr(t *testing.T) {
+ 	f.assertIncrement("foo", 1)
+ }
+ 
++func TestAPIRouterRequiresTiltToken(t *testing.T) {
++	f := newTestFixture(t)
++	f.setToken("test-token")
++
++	req, err := http.NewRequest(http.MethodPost, "/api/analytics", strings.NewReader("[]"))
++	require.NoError(t, err)
++
++	rr := httptest.NewRecorder()
++	f.serv.Router().ServeHTTP(rr, req)
++
++	require.Equal(t, http.StatusUnauthorized, rr.Code)
++}
++
++func TestAPIRouterAcceptsTiltTokenHeader(t *testing.T) {
++	f := newTestFixture(t)
++	f.setToken("test-token")
++
++	req, err := http.NewRequest(http.MethodPost, "/api/analytics", strings.NewReader("[]"))
++	require.NoError(t, err)
++	req.Header.Set(server.TiltTokenHeaderName, "test-token")
++
++	rr := httptest.NewRecorder()
++	f.serv.Router().ServeHTTP(rr, req)
++
++	require.Equal(t, http.StatusOK, rr.Code)
++	f.assertIncrement("foo", 0)
++}
++
++func TestAPIRouterAcceptsTiltTokenCookie(t *testing.T) {
++	f := newTestFixture(t)
++	f.setToken("test-token")
++
++	req, err := http.NewRequest(http.MethodPost, "/api/analytics", strings.NewReader("[]"))
++	require.NoError(t, err)
++	req.AddCookie(&http.Cookie{Name: server.TiltTokenCookieName, Value: "test-token"})
++
++	rr := httptest.NewRecorder()
++	f.serv.Router().ServeHTTP(rr, req)
++
++	require.Equal(t, http.StatusOK, rr.Code)
++}
++
+ func TestHandleAnalyticsNonPost(t *testing.T) {
+ 	f := newTestFixture(t)
+ 
+@@ -388,6 +431,12 @@ func (f *serverFixture) withDummyManifests(mNames ...string) *serverFixture {
+ 	return f
+ }
+ 
++func (f *serverFixture) setToken(tok token.Token) {
++	state := f.st.LockMutableStateForTesting()
++	state.Token = tok
++	f.st.UnlockMutableState()
++}
++
+ type fakeHTTPClient struct {
+ 	lastReq *http.Request
+ }

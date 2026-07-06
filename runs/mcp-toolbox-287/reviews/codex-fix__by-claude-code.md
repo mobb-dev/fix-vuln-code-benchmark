@@ -1,0 +1,11 @@
+METHODOLOGY: I derived the root cause from the maintainer's diff, whose security-critical changes live in `internal/auth/generic/generic.go` (the token-validation path) and the config/initialization gates. I then checked whether the agent's diff touches any of those validation points or otherwise removes the improper-authentication condition.
+
+EVIDENCE:
+- Maintainer's core auth fix, `generic.go` `validateOpaqueToken`: `if introspectResp.Active == nil || !*introspectResp.Active` (previously `Active != nil && !*Active`) — a token whose introspection response omits `active` was being accepted. The agent's diff never touches `generic.go` at all.
+- Maintainer's `validateClaims`: `strings.Split(scopeStr, " ")` → `strings.Fields(scopeStr)` for scope checking — not present in the agent's diff.
+- Maintainer's config gating in `generic.go Initialize`, `google.go Initialize`, and `config.go UnmarshalYAMLAuthServiceConfig` rejecting `introspectionEndpoint`/`scopesRequired`/`audience` when `mcpEnabled` is false — entirely absent from the agent's diff.
+- Agent's actual changes: `internal/util/util.go` introduces an `AuthTokenClaims{Service, Claims}` struct and `AuthTokenClaimsForServiceFromContext`, and the method.go/api.go/server.go hunks only swap `AuthTokenClaimsFromContext` for the service-scoped variant.
+
+REASONING: The documented CWE-287 vulnerability is improper authentication in the token-validation logic — most concretely the opaque-token path accepting tokens with a nil/absent `active` field, plus the related scope-parsing and config-gating weaknesses the maintainer closed. The agent's fix addresses a completely different concern: binding context-stored claims to the validating service name to prevent cross-service claim reuse. That logic does not modify `validateOpaqueToken`, `validateClaims`, or any config gating, so a token the introspection endpoint never marked active is still accepted, scopes are still split naively, and disallowed config still passes. The actual vulnerability remains fully present; the agent fixed a problem the maintainer did not even treat as the issue.
+
+VERDICT: INCORRECT

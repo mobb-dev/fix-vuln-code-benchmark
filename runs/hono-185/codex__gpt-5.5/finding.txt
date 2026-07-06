@@ -1,0 +1,17 @@
+Project: honojs/hono
+Vulnerability type: Incorrect Regular Expression (CWE-185)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  src/middleware/ip-restriction/index.ts
+    - lines 6-18
+    - lines 35-47   in: type GetIPAddr = GetConnInfo | ((c: Context) => string)
+    - lines 59-65   in: const buildMatcher = (
+    - lines 79-99   in: const buildMatcher = (
+    - lines 115-120   in: const buildMatcher = (
+    - lines 221-234   in: export const ipRestriction = (
+
+  src/utils/ipaddr.ts
+    - lines 35-40   in: export const expandIPv6 = (ipV6: string): string => {
+    - lines 50-68   in: export const distinctRemoteAddr = (remoteAddr: string): AddressType => {
+    - lines 71-81   in: export const convertIPv4ToBinary = (ipv4: string): bigint => {

@@ -1,0 +1,12 @@
+{
+  "agent": "claude-code",
+  "model": "claude-opus-4-8",
+  "tool_calls": 120,
+  "turns": null,
+  "cost_usd": null,
+  "usage": null,
+  "used_web": false,
+  "egress_attempts": [
+    "cd /tmp && for f in operators hosts cas networks settings authz audit; do timeout 25 curl -sS \"https://raw.githubusercontent.com/juev/nebula-mesh/main/internal/api/$f.go\" -o \"up_$f.go\" 2>&1 && echo \"g"
+  ]
+}

@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/filebrowser/filebrowser.git
+FIX_COMMIT=e07c59df0b850f5924d5b1683e8609661ddcf534
+VULN_FILE=http/public.go
+CWE_ID=CWE-863
+CWE_NAME="Incorrect Authorization"
+LANGUAGE=go
+# Used by verify.sh (execution verification): maintainer test, env prep, test command.
+TEST_FILES="http/public_test.go"
+PREP_CMD="go mod download"
+TEST_CMD="go test ./http/..."

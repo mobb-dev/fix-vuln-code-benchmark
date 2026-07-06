@@ -1,0 +1,93 @@
+diff --git a/vau/vau-httpclient/src/main/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorImpl.java b/vau/vau-httpclient/src/main/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorImpl.java
+index bb73e05..cd5f7d6 100644
+--- a/vau/vau-httpclient/src/main/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorImpl.java
++++ b/vau/vau-httpclient/src/main/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorImpl.java
+@@ -42,7 +42,9 @@ public class SignedPublicKeysTrustValidatorImpl implements SignedPublicKeysTrust
+ 
+       // https://www.rfc-editor.org/rfc/rfc7515.html#appendix-A.3.1
+       var signatureDer = ECDSA.transcodeSignatureToDER(signedPublicKeys.signatureEs256());
+-      ecdsa.verify(signatureDer);
++      if (!ecdsa.verify(signatureDer)) {
++        throw new SignatureException("invalid signed public keys signature");
++      }
+ 
+     } catch (CertificateValidationException
+         | InvalidKeyException
+diff --git a/vau/vau-httpclient/src/test/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorImplTest.java b/vau/vau-httpclient/src/test/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorImplTest.java
+new file mode 100644
+index 0000000..7f025e0
+--- /dev/null
++++ b/vau/vau-httpclient/src/test/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorImplTest.java
+@@ -0,0 +1,72 @@
++package com.oviva.telematik.vau.httpclient.internal;
++
++import static org.junit.jupiter.api.Assertions.assertFalse;
++
++import com.fasterxml.jackson.dataformat.cbor.databind.CBORMapper;
++import com.oviva.telematik.vau.httpclient.HttpClient;
++import com.oviva.telematik.vau.httpclient.HttpResponse;
++import com.oviva.telematik.vau.httpclient.internal.cert.CertDataResponse;
++import com.oviva.telematik.vau.httpclient.internal.cert.TrustValidator;
++import de.gematik.vau.lib.data.SignedPublicKeysTrustValidator.SignedPublicKeys;
++import java.io.IOException;
++import java.net.URI;
++import java.nio.charset.StandardCharsets;
++import java.nio.file.Files;
++import java.nio.file.Path;
++import java.security.Security;
++import java.util.ArrayList;
++import java.util.Arrays;
++import java.util.List;
++import org.bouncycastle.jce.provider.BouncyCastleProvider;
++import org.bouncycastle.util.io.pem.PemObject;
++import org.bouncycastle.util.io.pem.PemReader;
++import org.junit.jupiter.api.Test;
++
++class SignedPublicKeysTrustValidatorImplTest {
++
++  static {
++    Security.addProvider(new BouncyCastleProvider());
++  }
++
++  @Test
++  void isTrustedReturnsFalseWhenSignatureVerificationFails() throws IOException {
++    var certDataResponse =
++        new CertDataResponse(
++            loadFirstPemObject("src/test/resources/cert.pem"),
++            loadFirstPemObject("src/test/resources/ca.pem"),
++            loadPemObjects("src/test/resources/chain.pem"));
++    var certDataResponseBody = new CBORMapper().writeValueAsBytes(certDataResponse);
++    HttpClient outerClient = req -> new HttpResponse(200, List.of(), certDataResponseBody);
++    TrustValidator trustValidator = (cert, issuerCa, certificateChain, ocspResponseDer) -> {};
++    var validator =
++        new SignedPublicKeysTrustValidatorImpl(
++            outerClient, trustValidator, URI.create("https://example.test/vau"));
++
++    var invalidSignature = new byte[64];
++    Arrays.fill(invalidSignature, (byte) 1);
++
++    assertFalse(
++        validator.isTrusted(
++            new SignedPublicKeys(
++                "signed-public-keys".getBytes(StandardCharsets.UTF_8),
++                invalidSignature,
++                new byte[] {1, 2, 3},
++                1,
++                new byte[] {4, 5, 6})));
++  }
++
++  private static byte[] loadFirstPemObject(String path) throws IOException {
++    return loadPemObjects(path).get(0);
++  }
++
++  private static List<byte[]> loadPemObjects(String path) throws IOException {
++    try (var reader = new PemReader(Files.newBufferedReader(Path.of(path)))) {
++      var objects = new ArrayList<byte[]>();
++      PemObject pemObject;
++      while ((pemObject = reader.readPemObject()) != null) {
++        objects.add(pemObject.getContent());
++      }
++      return objects;
++    }
++  }
++}

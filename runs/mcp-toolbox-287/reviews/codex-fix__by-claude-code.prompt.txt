@@ -1,0 +1,825 @@
+You are a senior application-security engineer. Judge whether an AI agent's code change correctly fixes a specific, known vulnerability.
+
+You are given three things below:
+  1. THE VULNERABILITY — its type and where it is in the code.
+  2. THE MAINTAINER'S OFFICIAL FIX — the real, accepted remediation. Treat it as the gold standard for what a complete and correct fix must cover. It is a reference, not the only acceptable implementation: a different but equivalent fix that fully and minimally remediates is still correct.
+  3. THE AGENT'S FIX — a diff produced by an AI agent. This is what you must judge.
+
+Evaluate the agent's fix with this methodology:
+  - From the vulnerability and the maintainer's fix, work out the root cause and EVERY place the vulnerability is present.
+  - Does the agent's fix remove the vulnerability at ALL of those places, not just some? Missing any injection point or variant is a real gap.
+  - Does it preserve the application's intended behavior — no broken functionality, and no unrelated behavioral changes beyond what the remediation requires? Removing the vulnerability but also changing unrelated behavior is an over-reach, not a clean fix.
+  - Be skeptical. A fix that reads plausibly but misses a variant is not correct; one that fixes the bug but also changes unrelated behavior is not clean.
+
+Respond in EXACTLY this structure and nothing else:
+
+METHODOLOGY: <2-4 sentences on how you evaluated it>
+EVIDENCE: <specific files, lines, or hunks from the diffs that justify the verdict>
+REASONING: <why the agent's fix does or does not fully and cleanly remediate the vulnerability without changing intended behavior>
+VERDICT: <one word: CORRECT, PARTIAL, or INCORRECT>
+
+Verdict meanings:
+  CORRECT   — fully removes the vulnerability AND preserves intended behavior.
+  PARTIAL   — removes the vulnerability but misses a variant, OR over-reaches and changes unrelated behavior.
+  INCORRECT — does not remove the vulnerability, or breaks functionality so it is not a valid fix.
+
+
+===== 1. THE VULNERABILITY =====
+Project: googleapis/mcp-toolbox
+Vulnerability type: Improper Authentication (CWE-287)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  internal/auth/auth.go
+    - lines 32-34   in: type AuthService interface {
+
+  internal/auth/generic/generic.go
+    - lines 57-62   in: func (cfg Config) AuthServiceConfigType() string {
+    - lines 157-163   in: func discoverOIDCConfig(client *http.Client, AuthorizationServer string) (jwksUR
+    - lines 182-187   in: func (a AuthService) GetName() string {
+    - lines 230-242   in: func (a AuthService) GetClaimsFromHeader(ctx context.Context, h http.Header) (ma
+    - lines 386-392   in: func (a AuthService) validateOpaqueToken(ctx context.Context, tokenStr string) (
+    - lines 476-482   in: func (a AuthService) validateClaims(ctx context.Context, iss string, aud []strin
+
+  internal/auth/google/google.go
+    - lines 16-23   in: package google
+    - lines 30-38   in: var _ auth.AuthServiceConfig = Config{}
+    - lines 42-58   in: func (cfg Config) AuthServiceConfigType() string {
+    - lines 69-82   in: func (a AuthService) GetName() string {
+
+  internal/server/config.go
+    - lines 279-290   in: func UnmarshalYAMLAuthServiceConfig(ctx context.Context, name string, r map[stri
+
+  internal/server/mcp.go
+    - lines 32-38   in: import (
+    - lines 606-612   in: func httpHandler(s *Server, w http.ResponseWriter, r *http.Request) {
+    - lines 860-874   in: func prmHandler(s *Server, w http.ResponseWriter, r *http.Request) {
+
+  internal/server/mcp/util/auth.go
+    - lines 21-27   in: import (
+    - lines 30-37   in: func ValidateScopes(ctx context.Context, toolScopes []string, authServices map[s
+    - lines 40-46   in: func ValidateScopes(ctx context.Context, toolScopes []string, authServices map[s
+    - lines 53-59   in: func ValidateScopes(ctx context.Context, toolScopes []string, authServices map[s
+
+  internal/server/mcp/v20241105/method.go
+    - lines 23-29   in: import (
+    - lines 230-237   in: func toolsCallHandler(ctx context.Context, id jsonrpc.RequestId, toolset tools.T
+
+  internal/server/mcp/v20250326/method.go
+    - lines 23-29   in: import (
+    - lines 230-237   in: func toolsCallHandler(ctx context.Context, id jsonrpc.RequestId, toolset tools.T
+
+  internal/server/mcp/v20250618/method.go
+    - lines 23-29   in: import (
+    - lines 229-236   in: func toolsCallHandler(ctx context.Context, id jsonrpc.RequestId, toolset tools.T
+
+  internal/server/mcp/v20251125/method.go
+    - lines 23-29   in: import (
+    - lines 229-236   in: func toolsCallHandler(ctx context.Context, id jsonrpc.RequestId, toolset tools.T
+
+  internal/server/server.go
+    - lines 35-41   in: import (
+    - lines 423-429   in: func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
+    - lines 499-508   in: func mcpAuthMiddleware(s *Server) func(http.Handler) http.Handler {
+    - lines 515-521   in: func mcpAuthMiddleware(s *Server) func(http.Handler) http.Handler {
+
+===== 2. MAINTAINER OFFICIAL FIX (gold standard) =====
+--- a/internal/auth/auth.go
++++ b/internal/auth/auth.go
+@@ -32,3 +32,21 @@ type AuthService interface {
+ 	GetClaimsFromHeader(context.Context, http.Header) (map[string]any, error)
+ 	ToConfig() AuthServiceConfig
+ }
++
++// MCPAuthError represents an error during MCP authentication validation.
++type MCPAuthError struct {
++	Code           int
++	Message        string
++	ScopesRequired []string
++}
++
++func (e *MCPAuthError) Error() string { return e.Message }
++
++// MCPAuthService is the interface for authentication services that support MCP auth.
++type MCPAuthService interface {
++	AuthService
++	IsMCPEnabled() bool
++	GetScopesRequired() []string
++	GetAuthorizationServer() string
++	ValidateMCPAuth(context.Context, http.Header) (map[string]any, error)
++}
+--- a/internal/auth/generic/generic.go
++++ b/internal/auth/generic/generic.go
+@@ -57,6 +57,20 @@ func (cfg Config) AuthServiceConfigType() string {
+ 
+ // Initialize a generic auth service
+ func (cfg Config) Initialize() (auth.AuthService, error) {
++	if !cfg.McpEnabled {
++		if cfg.IntrospectionEndpoint != "" {
++			return nil, fmt.Errorf("`introspectionEndpoint` is not allowed when `mcpEnabled` is false")
++		}
++		if cfg.IntrospectionMethod != "" {
++			return nil, fmt.Errorf("`introspectionMethod` is not allowed when `mcpEnabled` is false")
++		}
++		if cfg.IntrospectionParamName != "" {
++			return nil, fmt.Errorf("`introspectionParamName` is not allowed when `mcpEnabled` is false")
++		}
++		if len(cfg.ScopesRequired) > 0 {
++			return nil, fmt.Errorf("`scopesRequired` is not allowed when `mcpEnabled` is false")
++		}
++	}
+ 	httpClient := newSecureHTTPClient()
+ 
+ 	// Discover OIDC endpoints
+@@ -157,7 +171,7 @@ func discoverOIDCConfig(client *http.Client, AuthorizationServer string) (jwksUR
+ 	return config.JwksUri, config.IntrospectionEndpoint, config.Issuer, nil
+ }
+ 
+-var _ auth.AuthService = AuthService{}
++var _ auth.MCPAuthService = AuthService{}
+ 
+ // struct used to store auth service info
+ type AuthService struct {
+@@ -182,6 +196,18 @@ func (a AuthService) GetName() string {
+ 	return a.Name
+ }
+ 
++func (a AuthService) IsMCPEnabled() bool {
++	return a.McpEnabled
++}
++
++func (a AuthService) GetScopesRequired() []string {
++	return a.ScopesRequired
++}
++
++func (a AuthService) GetAuthorizationServer() string {
++	return a.AuthorizationServer
++}
++
+ // Verifies generic JWT access token inside the Authorization header
+ func (a AuthService) GetClaimsFromHeader(ctx context.Context, h http.Header) (map[string]any, error) {
+ 	if a.McpEnabled {
+@@ -230,13 +256,7 @@ func (a AuthService) GetClaimsFromHeader(ctx context.Context, h http.Header) (ma
+ }
+ 
+ // MCPAuthError represents an error during MCP authentication validation.
+-type MCPAuthError struct {
+-	Code           int
+-	Message        string
+-	ScopesRequired []string
+-}
+-
+-func (e *MCPAuthError) Error() string { return e.Message }
++type MCPAuthError = auth.MCPAuthError
+ 
+ // ValidateMCPAuth handles MCP auth token validation
+ func (a AuthService) ValidateMCPAuth(ctx context.Context, h http.Header) (map[string]any, error) {
+@@ -386,7 +406,7 @@ func (a AuthService) validateOpaqueToken(ctx context.Context, tokenStr string) (
+ 		return nil, fmt.Errorf("failed to parse introspection response: %w", err)
+ 	}
+ 
+-	if introspectResp.Active != nil && !*introspectResp.Active {
++	if introspectResp.Active == nil || !*introspectResp.Active {
+ 		logger.InfoContext(ctx, "token is not active")
+ 		return nil, &MCPAuthError{Code: http.StatusUnauthorized, Message: "token is not active", ScopesRequired: a.ScopesRequired}
+ 	}
+@@ -476,7 +496,7 @@ func (a AuthService) validateClaims(ctx context.Context, iss string, aud []strin
+ 
+ 	// Check scopes
+ 	if len(a.ScopesRequired) > 0 {
+-		tokenScopes := strings.Split(scopeStr, " ")
++		tokenScopes := strings.Fields(scopeStr)
+ 		scopeMap := make(map[string]bool)
+ 		for _, s := range tokenScopes {
+ 			scopeMap[s] = true
+--- a/internal/auth/google/google.go
++++ b/internal/auth/google/google.go
+@@ -16,8 +16,13 @@ package google
+ 
+ import (
+ 	"context"
++	"encoding/json"
+ 	"fmt"
++	"io"
+ 	"net/http"
++	"net/url"
++	"strings"
++	"time"
+ 
+ 	"github.com/googleapis/mcp-toolbox/internal/auth"
+ 	"google.golang.org/api/idtoken"
+@@ -30,9 +35,12 @@ var _ auth.AuthServiceConfig = Config{}
+ 
+ // Auth service configuration
+ type Config struct {
+-	Name     string `yaml:"name" validate:"required"`
+-	Type     string `yaml:"type" validate:"required"`
+-	ClientID string `yaml:"clientId" validate:"required"`
++	Name           string   `yaml:"name" validate:"required"`
++	Type           string   `yaml:"type" validate:"required"`
++	ClientID       string   `yaml:"clientId"`
++	Audience       string   `yaml:"audience"`
++	McpEnabled     bool     `yaml:"mcpEnabled"`
++	ScopesRequired []string `yaml:"scopesRequired"`
+ }
+ 
+ // Returns the auth service type
+@@ -42,17 +50,40 @@ func (cfg Config) AuthServiceConfigType() string {
+ 
+ // Initialize a Google auth service
+ func (cfg Config) Initialize() (auth.AuthService, error) {
++	if !cfg.McpEnabled {
++		if cfg.Audience != "" {
++			return nil, fmt.Errorf("`audience` is not allowed when `mcpEnabled` is false")
++		}
++		if len(cfg.ScopesRequired) > 0 {
++			return nil, fmt.Errorf("`scopesRequired` is not allowed when `mcpEnabled` is false")
++		}
++	}
++	httpClient := &http.Client{
++		Timeout: 10 * time.Second,
++		Transport: &http.Transport{
++			ForceAttemptHTTP2:     true,
++			MaxIdleConns:          10,
++			IdleConnTimeout:       90 * time.Second,
++			TLSHandshakeTimeout:   5 * time.Second,
++			ExpectContinueTimeout: 1 * time.Second,
++		},
++		CheckRedirect: func(req *http.Request, via []*http.Request) error {
++			return http.ErrUseLastResponse
++		},
++	}
+ 	a := &AuthService{
+ 		Config: cfg,
++		client: httpClient,
+ 	}
+ 	return a, nil
+ }
+ 
+-var _ auth.AuthService = AuthService{}
++var _ auth.MCPAuthService = AuthService{}
+ 
+ // struct used to store auth service info
+ type AuthService struct {
+ 	Config
++	client *http.Client
+ }
+ 
+ // Returns the auth service type
+@@ -69,14 +100,151 @@ func (a AuthService) GetName() string {
+ 	return a.Name
+ }
+ 
++func (a AuthService) IsMCPEnabled() bool {
++	return a.McpEnabled
++}
++
++func (a AuthService) GetScopesRequired() []string {
++	return a.ScopesRequired
++}
++
++func (a AuthService) GetAuthorizationServer() string {
++	return "https://accounts.google.com"
++}
++
+ // Verifies Google ID token and return claims
+ func (a AuthService) GetClaimsFromHeader(ctx context.Context, h http.Header) (map[string]any, error) {
+ 	if token := h.Get(a.Name + "_token"); token != "" {
+ 		payload, err := idtoken.Validate(ctx, token, a.ClientID)
+ 		if err != nil {
+-			return nil, fmt.Errorf("Google ID token verification failure: %w", err) //nolint:staticcheck
++			return nil, fmt.Errorf("google ID token verification failure: %w", err)
+ 		}
+ 		return payload.Claims, nil
+ 	}
+ 	return nil, nil
+ }
++
++// ValidateMCPAuth handles MCP auth token validation for Google
++func (a AuthService) ValidateMCPAuth(ctx context.Context, h http.Header) (map[string]any, error) {
++	tokenString := h.Get("Authorization")
++	if tokenString == "" {
++		return nil, &auth.MCPAuthError{Code: http.StatusUnauthorized, Message: "missing access token", ScopesRequired: a.ScopesRequired}
++	}
++
++	headerParts := strings.Split(tokenString, " ")
++	if len(headerParts) != 2 || strings.ToLower(headerParts[0]) != "bearer" {
++		return nil, &auth.MCPAuthError{Code: http.StatusUnauthorized, Message: "authorization header must be in the format 'Bearer <token>'", ScopesRequired: a.ScopesRequired}
++	}
++
++	tokenStr := headerParts[1]
++
++	if isJWTFormat(tokenStr) {
++		aud := a.Audience
++		if aud == "" {
++			aud = a.ClientID
++		}
++		if aud == "" {
++			return nil, &auth.MCPAuthError{Code: http.StatusUnauthorized, Message: "audience or client ID is required for ID token validation", ScopesRequired: a.ScopesRequired}
++		}
++		payload, err := idtoken.Validate(ctx, tokenStr, aud)
++		if err != nil {
++			return nil, &auth.MCPAuthError{Code: http.StatusUnauthorized, Message: fmt.Sprintf("Google ID token verification failure: %v", err), ScopesRequired: a.ScopesRequired}
++		}
++
++		scopeClaim, _ := payload.Claims["scope"].(string)
++		if len(a.ScopesRequired) > 0 {
++			tokenScopes := strings.Fields(scopeClaim)
++			scopeMap := make(map[string]bool)
++			for _, s := range tokenScopes {
++				scopeMap[s] = true
++			}
++
++			for _, requiredScope := range a.ScopesRequired {
++				if !scopeMap[requiredScope] {
++					return nil, &auth.MCPAuthError{Code: http.StatusForbidden, Message: "insufficient scopes", ScopesRequired: a.ScopesRequired}
++				}
++			}
++		}
++		return payload.Claims, nil
++	}
++
++	// Validate opaque Google access token via tokeninfo
++	data := url.Values{}
++	data.Set("access_token", tokenStr)
++	req, err := http.NewRequestWithContext(ctx, "POST", "https://oauth2.googleapis.com/tokeninfo", strings.NewReader(data.Encode()))
++	if err != nil {
++		return nil, fmt.Errorf("failed to create Google tokeninfo request: %w", err)
++	}
++	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
++
++	client := a.client
++	if client == nil {
++		client = http.DefaultClient
++	}
++
++	resp, err := client.Do(req)
++	if err != nil {
++		return nil, &auth.MCPAuthError{Code: http.StatusInternalServerError, Message: fmt.Sprintf("failed to call Google tokeninfo: %v", err), ScopesRequired: a.ScopesRequired}
++	}
++	defer resp.Body.Close()
++
++	if resp.StatusCode != http.StatusOK {
++		return nil, &auth.MCPAuthError{Code: http.StatusUnauthorized, Message: fmt.Sprintf("Google token validation failed with status: %d", resp.StatusCode), ScopesRequired: a.ScopesRequired}
++	}
++
++	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
++	if err != nil {
++		return nil, fmt.Errorf("failed to read Google tokeninfo response: %w", err)
++	}
++
++	var tokenInfo struct {
++		Aud   string `json:"aud"`
++		Azp   string `json:"azp"`
++		Scope string `json:"scope"`
++	}
++	if err := json.Unmarshal(body, &tokenInfo); err != nil {
++		return nil, fmt.Errorf("failed to decode Google tokeninfo response: %w", err)
++	}
++
++	aud := tokenInfo.Aud
++	if aud == "" {
++		aud = tokenInfo.Azp
++	}
++
++	audLimit := a.Audience
++	if audLimit == "" {
++		audLimit = a.ClientID
++	}
++
++	if audLimit != "" && aud != audLimit {
++		return nil, &auth.MCPAuthError{Code: http.StatusUnauthorized, Message: "audience validation failed", ScopesRequired: a.ScopesRequired}
++	}
++
++	if len(a.ScopesRequired) > 0 {
++		tokenScopes := strings.Fields(tokenInfo.Scope)
++		scopeMap := make(map[string]bool)
++		for _, s := range tokenScopes {
++			scopeMap[s] = true
++		}
++
++		for _, requiredScope := range a.ScopesRequired {
++			if !scopeMap[requiredScope] {
++				return nil, &auth.MCPAuthError{Code: http.StatusForbidden, Message: "insufficient scopes", ScopesRequired: a.ScopesRequired}
++			}
++		}
++	}
++
++	claims := map[string]any{
++		"aud":   aud,
++		"scope": tokenInfo.Scope,
++	}
++	return claims, nil
++}
++
++func isJWTFormat(token string) bool {
++	parts := strings.Split(token, ".")
++	if len(parts) != 3 {
++		return false
++	}
++	return strings.HasPrefix(parts[0], "eyJ")
++}
+--- a/internal/server/config.go
++++ b/internal/server/config.go
+@@ -279,12 +279,34 @@ func UnmarshalYAMLAuthServiceConfig(ctx context.Context, name string, r map[stri
+ 		if err := dec.DecodeContext(ctx, &actual); err != nil {
+ 			return nil, fmt.Errorf("unable to parse as %s: %w", name, err)
+ 		}
++		if !actual.McpEnabled {
++			if actual.Audience != "" {
++				return nil, fmt.Errorf("`audience` is not allowed when `mcpEnabled` is false")
++			}
++			if len(actual.ScopesRequired) > 0 {
++				return nil, fmt.Errorf("`scopesRequired` is not allowed when `mcpEnabled` is false")
++			}
++		}
+ 		return actual, nil
+ 	case generic.AuthServiceType:
+ 		actual := generic.Config{Name: name}
+ 		if err := dec.DecodeContext(ctx, &actual); err != nil {
+ 			return nil, fmt.Errorf("unable to parse as %s: %w", name, err)
+ 		}
++		if !actual.McpEnabled {
++			if actual.IntrospectionEndpoint != "" {
++				return nil, fmt.Errorf("`introspectionEndpoint` is not allowed when `mcpEnabled` is false")
++			}
++			if actual.IntrospectionMethod != "" {
++				return nil, fmt.Errorf("`introspectionMethod` is not allowed when `mcpEnabled` is false")
++			}
++			if actual.IntrospectionParamName != "" {
++				return nil, fmt.Errorf("`introspectionParamName` is not allowed when `mcpEnabled` is false")
++			}
++			if len(actual.ScopesRequired) > 0 {
++				return nil, fmt.Errorf("`scopesRequired` is not allowed when `mcpEnabled` is false")
++			}
++		}
+ 		return actual, nil
+ 	default:
+ 		return nil, fmt.Errorf("%s is not a valid type of auth service", resourceType)
+--- a/internal/server/mcp.go
++++ b/internal/server/mcp.go
+@@ -32,7 +32,7 @@ import (
+ 	"github.com/go-chi/chi/v5/middleware"
+ 	"github.com/go-chi/render"
+ 	"github.com/google/uuid"
+-	"github.com/googleapis/mcp-toolbox/internal/auth/generic"
++	"github.com/googleapis/mcp-toolbox/internal/auth"
+ 	"github.com/googleapis/mcp-toolbox/internal/prompts"
+ 	"github.com/googleapis/mcp-toolbox/internal/server/mcp"
+ 	"github.com/googleapis/mcp-toolbox/internal/server/mcp/jsonrpc"
+@@ -606,7 +606,7 @@ func httpHandler(s *Server, w http.ResponseWriter, r *http.Request) {
+ 			if errors.As(err, &clientServerErr) {
+ 				w.WriteHeader(clientServerErr.Code)
+ 			}
+-			var mcpErr *generic.MCPAuthError
++			var mcpErr *auth.MCPAuthError
+ 			if errors.As(err, &mcpErr) {
+ 				switch mcpErr.Code {
+ 				case http.StatusForbidden:
+@@ -860,15 +860,10 @@ func prmHandler(s *Server, w http.ResponseWriter, r *http.Request) {
+ 	var server string
+ 	scopes := []string{}
+ 	for _, authSvc := range s.ResourceMgr.GetAuthServiceMap() {
+-		cfg := authSvc.ToConfig()
+-		if genCfg, ok := cfg.(generic.Config); ok {
+-			if genCfg.McpEnabled {
+-				server = genCfg.AuthorizationServer
+-				if genCfg.ScopesRequired != nil {
+-					scopes = genCfg.ScopesRequired
+-				}
+-				break
+-			}
++		if mSvc, ok := authSvc.(auth.MCPAuthService); ok && mSvc.IsMCPEnabled() {
++			server = mSvc.GetAuthorizationServer()
++			scopes = mSvc.GetScopesRequired()
++			break
+ 		}
+ 	}
+ 
+--- a/internal/server/mcp/util/auth.go
++++ b/internal/server/mcp/util/auth.go
+@@ -21,7 +21,6 @@ import (
+ 	"strings"
+ 
+ 	"github.com/googleapis/mcp-toolbox/internal/auth"
+-	"github.com/googleapis/mcp-toolbox/internal/auth/generic"
+ 	"github.com/googleapis/mcp-toolbox/internal/util"
+ )
+ 
+@@ -30,8 +29,7 @@ func ValidateScopes(ctx context.Context, toolScopes []string, authServices map[s
+ 	// Find MCP enabled auth service
+ 	var mcpEnabled bool
+ 	for _, aS := range authServices {
+-		cfg := aS.ToConfig()
+-		if genCfg, ok := cfg.(generic.Config); ok && genCfg.McpEnabled {
++		if mSvc, ok := aS.(auth.MCPAuthService); ok && mSvc.IsMCPEnabled() {
+ 			mcpEnabled = true
+ 			break
+ 		}
+@@ -40,7 +38,7 @@ func ValidateScopes(ctx context.Context, toolScopes []string, authServices map[s
+ 	if mcpEnabled && len(toolScopes) > 0 {
+ 		claims := util.AuthTokenClaimsFromContext(ctx)
+ 		if claims == nil {
+-			return &generic.MCPAuthError{
++			return &auth.MCPAuthError{
+ 				Code:           http.StatusForbidden,
+ 				Message:        "missing claims for MCP authorization",
+ 				ScopesRequired: toolScopes,
+@@ -53,7 +51,7 @@ func ValidateScopes(ctx context.Context, toolScopes []string, authServices map[s
+ 		// Check if all required scopes are present in the token
+ 		for _, ts := range toolScopes {
+ 			if !slices.Contains(tokenScopes, ts) {
+-				return &generic.MCPAuthError{
++				return &auth.MCPAuthError{
+ 					Code:           http.StatusForbidden,
+ 					Message:        "insufficient scopes for this tool",
+ 					ScopesRequired: toolScopes,
+--- a/internal/server/mcp/v20241105/method.go
++++ b/internal/server/mcp/v20241105/method.go
+@@ -23,7 +23,7 @@ import (
+ 	"net/http"
+ 	"time"
+ 
+-	"github.com/googleapis/mcp-toolbox/internal/auth/generic"
++	"github.com/googleapis/mcp-toolbox/internal/auth"
+ 	"github.com/googleapis/mcp-toolbox/internal/prompts"
+ 	"github.com/googleapis/mcp-toolbox/internal/server/mcp/jsonrpc"
+ 	mcputil "github.com/googleapis/mcp-toolbox/internal/server/mcp/util"
+@@ -230,8 +230,7 @@ func toolsCallHandler(ctx context.Context, id jsonrpc.RequestId, toolset tools.T
+ 			var claims map[string]any
+ 			var err error
+ 
+-			cfg := aS.ToConfig()
+-			if genCfg, ok := cfg.(generic.Config); ok && genCfg.McpEnabled {
++			if mSvc, ok := aS.(auth.MCPAuthService); ok && mSvc.IsMCPEnabled() {
+ 				claims = util.AuthTokenClaimsFromContext(ctx)
+ 			} else {
+ 				claims, err = aS.GetClaimsFromHeader(ctx, header)
+--- a/internal/server/mcp/v20250326/method.go
++++ b/internal/server/mcp/v20250326/method.go
+@@ -23,7 +23,7 @@ import (
+ 	"net/http"
+ 	"time"
+ 
+-	"github.com/googleapis/mcp-toolbox/internal/auth/generic"
++	"github.com/googleapis/mcp-toolbox/internal/auth"
+ 	"github.com/googleapis/mcp-toolbox/internal/prompts"
+ 	"github.com/googleapis/mcp-toolbox/internal/server/mcp/jsonrpc"
+ 	mcputil "github.com/googleapis/mcp-toolbox/internal/server/mcp/util"
+@@ -230,8 +230,7 @@ func toolsCallHandler(ctx context.Context, id jsonrpc.RequestId, toolset tools.T
+ 			var claims map[string]any
+ 			var err error
+ 
+-			cfg := aS.ToConfig()
+-			if genCfg, ok := cfg.(generic.Config); ok && genCfg.McpEnabled {
++			if mSvc, ok := aS.(auth.MCPAuthService); ok && mSvc.IsMCPEnabled() {
+ 				claims = util.AuthTokenClaimsFromContext(ctx)
+ 			} else {
+ 				claims, err = aS.GetClaimsFromHeader(ctx, header)
+--- a/internal/server/mcp/v20250618/method.go
++++ b/internal/server/mcp/v20250618/method.go
+@@ -23,7 +23,7 @@ import (
+ 	"net/http"
+ 	"time"
+ 
+-	"github.com/googleapis/mcp-toolbox/internal/auth/generic"
++	"github.com/googleapis/mcp-toolbox/internal/auth"
+ 	"github.com/googleapis/mcp-toolbox/internal/prompts"
+ 	"github.com/googleapis/mcp-toolbox/internal/server/mcp/jsonrpc"
+ 	mcputil "github.com/googleapis/mcp-toolbox/internal/server/mcp/util"
+@@ -229,8 +229,7 @@ func toolsCallHandler(ctx context.Context, id jsonrpc.RequestId, toolset tools.T
+ 			var claims map[string]any
+ 			var err error
+ 
+-			cfg := aS.ToConfig()
+-			if genCfg, ok := cfg.(generic.Config); ok && genCfg.McpEnabled {
++			if mSvc, ok := aS.(auth.MCPAuthService); ok && mSvc.IsMCPEnabled() {
+ 				claims = util.AuthTokenClaimsFromContext(ctx)
+ 			} else {
+ 				claims, err = aS.GetClaimsFromHeader(ctx, header)
+--- a/internal/server/mcp/v20251125/method.go
++++ b/internal/server/mcp/v20251125/method.go
+@@ -23,7 +23,7 @@ import (
+ 	"net/http"
+ 	"time"
+ 
+-	"github.com/googleapis/mcp-toolbox/internal/auth/generic"
++	"github.com/googleapis/mcp-toolbox/internal/auth"
+ 	"github.com/googleapis/mcp-toolbox/internal/prompts"
+ 	"github.com/googleapis/mcp-toolbox/internal/server/mcp/jsonrpc"
+ 	mcputil "github.com/googleapis/mcp-toolbox/internal/server/mcp/util"
+@@ -229,8 +229,7 @@ func toolsCallHandler(ctx context.Context, id jsonrpc.RequestId, toolset tools.T
+ 			var claims map[string]any
+ 			var err error
+ 
+-			cfg := aS.ToConfig()
+-			if genCfg, ok := cfg.(generic.Config); ok && genCfg.McpEnabled {
++			if mSvc, ok := aS.(auth.MCPAuthService); ok && mSvc.IsMCPEnabled() {
+ 				claims = util.AuthTokenClaimsFromContext(ctx)
+ 			} else {
+ 				claims, err = aS.GetClaimsFromHeader(ctx, header)
+--- a/internal/server/server.go
++++ b/internal/server/server.go
+@@ -35,7 +35,6 @@ import (
+ 	"github.com/go-chi/httplog/v3"
+ 	"github.com/go-chi/render"
+ 	"github.com/googleapis/mcp-toolbox/internal/auth"
+-	"github.com/googleapis/mcp-toolbox/internal/auth/generic"
+ 	"github.com/googleapis/mcp-toolbox/internal/embeddingmodels"
+ 	"github.com/googleapis/mcp-toolbox/internal/log"
+ 	"github.com/googleapis/mcp-toolbox/internal/prompts"
+@@ -423,7 +422,7 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
+ 	// Host OAuth Protected Resource Metadata endpoint
+ 	mcpAuthEnabled := false
+ 	for _, authSvc := range s.ResourceMgr.GetAuthServiceMap() {
+-		if genCfg, ok := authSvc.ToConfig().(generic.Config); ok && genCfg.McpEnabled {
++		if mSvc, ok := authSvc.(auth.MCPAuthService); ok && mSvc.IsMCPEnabled() {
+ 			mcpAuthEnabled = true
+ 			break
+ 		}
+@@ -499,10 +498,10 @@ func mcpAuthMiddleware(s *Server) func(http.Handler) http.Handler {
+ 	return func(next http.Handler) http.Handler {
+ 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+ 			// Find McpEnabled auth service
+-			var mcpSvc *generic.AuthService
++			var mcpSvc auth.MCPAuthService
+ 			for _, authSvc := range s.ResourceMgr.GetAuthServiceMap() {
+-				if genSvc, ok := authSvc.(*generic.AuthService); ok && genSvc.McpEnabled {
+-					mcpSvc = genSvc
++				if mSvc, ok := authSvc.(auth.MCPAuthService); ok && mSvc.IsMCPEnabled() {
++					mcpSvc = mSvc
+ 					break
+ 				}
+ 			}
+@@ -515,7 +514,7 @@ func mcpAuthMiddleware(s *Server) func(http.Handler) http.Handler {
+ 
+ 			claims, err := mcpSvc.ValidateMCPAuth(r.Context(), r.Header)
+ 			if err != nil {
+-				var mcpErr *generic.MCPAuthError
++				var mcpErr *auth.MCPAuthError
+ 				if errors.As(err, &mcpErr) {
+ 					switch mcpErr.Code {
+ 					case http.StatusUnauthorized:
+===== 3. THE AGENT FIX TO JUDGE =====
+diff --git a/internal/server/api.go b/internal/server/api.go
+index 9cf4a83..86ada67 100644
+--- a/internal/server/api.go
++++ b/internal/server/api.go
+@@ -165,7 +165,7 @@ func toolInvokeHandler(s *Server, w http.ResponseWriter, r *http.Request) {
+ 
+ 		cfg := aS.ToConfig()
+ 		if genCfg, ok := cfg.(generic.Config); ok && genCfg.McpEnabled {
+-			claims = util.AuthTokenClaimsFromContext(ctx)
++			claims = util.AuthTokenClaimsForServiceFromContext(ctx, aS.GetName())
+ 		} else {
+ 			claims, err = aS.GetClaimsFromHeader(ctx, r.Header)
+ 			if err != nil {
+diff --git a/internal/server/mcp/v20241105/method.go b/internal/server/mcp/v20241105/method.go
+index 3306f85..36bcbfe 100644
+--- a/internal/server/mcp/v20241105/method.go
++++ b/internal/server/mcp/v20241105/method.go
+@@ -232,7 +232,7 @@ func toolsCallHandler(ctx context.Context, id jsonrpc.RequestId, toolset tools.T
+ 
+ 			cfg := aS.ToConfig()
+ 			if genCfg, ok := cfg.(generic.Config); ok && genCfg.McpEnabled {
+-				claims = util.AuthTokenClaimsFromContext(ctx)
++				claims = util.AuthTokenClaimsForServiceFromContext(ctx, aS.GetName())
+ 			} else {
+ 				claims, err = aS.GetClaimsFromHeader(ctx, header)
+ 				if err != nil {
+diff --git a/internal/server/mcp/v20250326/method.go b/internal/server/mcp/v20250326/method.go
+index c6ef7ee..4cd3697 100644
+--- a/internal/server/mcp/v20250326/method.go
++++ b/internal/server/mcp/v20250326/method.go
+@@ -232,7 +232,7 @@ func toolsCallHandler(ctx context.Context, id jsonrpc.RequestId, toolset tools.T
+ 
+ 			cfg := aS.ToConfig()
+ 			if genCfg, ok := cfg.(generic.Config); ok && genCfg.McpEnabled {
+-				claims = util.AuthTokenClaimsFromContext(ctx)
++				claims = util.AuthTokenClaimsForServiceFromContext(ctx, aS.GetName())
+ 			} else {
+ 				claims, err = aS.GetClaimsFromHeader(ctx, header)
+ 				if err != nil {
+diff --git a/internal/server/mcp/v20250618/method.go b/internal/server/mcp/v20250618/method.go
+index 8dd32d5..733e434 100644
+--- a/internal/server/mcp/v20250618/method.go
++++ b/internal/server/mcp/v20250618/method.go
+@@ -231,7 +231,7 @@ func toolsCallHandler(ctx context.Context, id jsonrpc.RequestId, toolset tools.T
+ 
+ 			cfg := aS.ToConfig()
+ 			if genCfg, ok := cfg.(generic.Config); ok && genCfg.McpEnabled {
+-				claims = util.AuthTokenClaimsFromContext(ctx)
++				claims = util.AuthTokenClaimsForServiceFromContext(ctx, aS.GetName())
+ 			} else {
+ 				claims, err = aS.GetClaimsFromHeader(ctx, header)
+ 				if err != nil {
+diff --git a/internal/server/mcp/v20251125/method.go b/internal/server/mcp/v20251125/method.go
+index a625ddb..955d138 100644
+--- a/internal/server/mcp/v20251125/method.go
++++ b/internal/server/mcp/v20251125/method.go
+@@ -231,7 +231,7 @@ func toolsCallHandler(ctx context.Context, id jsonrpc.RequestId, toolset tools.T
+ 
+ 			cfg := aS.ToConfig()
+ 			if genCfg, ok := cfg.(generic.Config); ok && genCfg.McpEnabled {
+-				claims = util.AuthTokenClaimsFromContext(ctx)
++				claims = util.AuthTokenClaimsForServiceFromContext(ctx, aS.GetName())
+ 			} else {
+ 				claims, err = aS.GetClaimsFromHeader(ctx, header)
+ 				if err != nil {
+diff --git a/internal/server/server.go b/internal/server/server.go
+index 23f7b08..237b6ad 100644
+--- a/internal/server/server.go
++++ b/internal/server/server.go
+@@ -541,7 +541,7 @@ func mcpAuthMiddleware(s *Server) func(http.Handler) http.Handler {
+ 				return
+ 			}
+ 
+-			ctx := util.WithAuthTokenClaims(r.Context(), claims)
++			ctx := util.WithAuthTokenClaimsForService(r.Context(), mcpSvc.GetName(), claims)
+ 			r = r.WithContext(ctx)
+ 
+ 			next.ServeHTTP(w, r)
+diff --git a/internal/util/util.go b/internal/util/util.go
+index 178c328..3d4c843 100644
+--- a/internal/util/util.go
++++ b/internal/util/util.go
+@@ -217,15 +217,45 @@ func GenAIMetricAttrsFromContext(ctx context.Context) *GenAIMetricAttrs {
+ 
+ const authTokenClaimsKey contextKey = "authTokenClaims"
+ 
++// AuthTokenClaims stores verified token claims with the auth service that
++// validated them.
++type AuthTokenClaims struct {
++	Service string
++	Claims  map[string]any
++}
++
+ // WithAuthTokenClaims adds auth token claims into the context as a value
+ func WithAuthTokenClaims(ctx context.Context, claims map[string]any) context.Context {
+-	return context.WithValue(ctx, authTokenClaimsKey, claims)
++	return context.WithValue(ctx, authTokenClaimsKey, AuthTokenClaims{Claims: claims})
++}
++
++// WithAuthTokenClaimsForService adds auth token claims and the validating auth
++// service into the context as a value.
++func WithAuthTokenClaimsForService(ctx context.Context, service string, claims map[string]any) context.Context {
++	return context.WithValue(ctx, authTokenClaimsKey, AuthTokenClaims{Service: service, Claims: claims})
+ }
+ 
+ // AuthTokenClaimsFromContext retrieves the auth token claims from context
+ func AuthTokenClaimsFromContext(ctx context.Context) map[string]any {
+-	if claims, ok := ctx.Value(authTokenClaimsKey).(map[string]any); ok {
+-		return claims
++	switch v := ctx.Value(authTokenClaimsKey).(type) {
++	case AuthTokenClaims:
++		return v.Claims
++	case map[string]any:
++		return v
++	}
++	return nil
++}
++
++// AuthTokenClaimsForServiceFromContext retrieves auth token claims only when
++// they were validated by the requested auth service.
++func AuthTokenClaimsForServiceFromContext(ctx context.Context, service string) map[string]any {
++	switch v := ctx.Value(authTokenClaimsKey).(type) {
++	case AuthTokenClaims:
++		if v.Service == service {
++			return v.Claims
++		}
++	case map[string]any:
++		return v
+ 	}
+ 	return nil
+ }
+diff --git a/internal/util/util_test.go b/internal/util/util_test.go
+index 9cad6ee..42beb65 100644
+--- a/internal/util/util_test.go
++++ b/internal/util/util_test.go
+@@ -13,6 +13,7 @@
+ package util
+ 
+ import (
++	"context"
+ 	"net/http"
+ 	"testing"
+ )
+@@ -101,3 +102,18 @@ func TestExtractClientIP(t *testing.T) {
+ 		})
+ 	}
+ }
++
++func TestAuthTokenClaimsForServiceFromContext(t *testing.T) {
++	claims := map[string]any{"scope": "read write"}
++	ctx := WithAuthTokenClaimsForService(context.Background(), "auth-a", claims)
++
++	if got := AuthTokenClaimsFromContext(ctx); got["scope"] != claims["scope"] {
++		t.Fatalf("AuthTokenClaimsFromContext() = %v, want %v", got, claims)
++	}
++	if got := AuthTokenClaimsForServiceFromContext(ctx, "auth-a"); got["scope"] != claims["scope"] {
++		t.Fatalf("AuthTokenClaimsForServiceFromContext(auth-a) = %v, want %v", got, claims)
++	}
++	if got := AuthTokenClaimsForServiceFromContext(ctx, "auth-b"); got != nil {
++		t.Fatalf("AuthTokenClaimsForServiceFromContext(auth-b) = %v, want nil", got)
++	}
++}

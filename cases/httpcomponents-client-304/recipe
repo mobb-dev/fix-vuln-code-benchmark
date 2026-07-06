@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/apache/httpcomponents-client.git
+FIX_COMMIT=726eac2323d370435d8afca1e0540aa099927f18
+VULN_FILE=httpclient5/src/main/java/org/apache/hc/client5/http/impl/DefaultAuthenticationStrategy.java
+CWE_ID=CWE-304
+CWE_NAME="CWE-304"
+LANGUAGE=java
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="httpclient5/src/test/java/org/apache/hc/client5/http/examples/ClientScramAuthentication.java httpclient5/src/test/java/org/apache/hc/client5/http/impl/auth/TestAuthenticationHandler.java httpclient5/src/test/java/org/apache/hc/client5/http/impl/auth/TestScramScheme.java"
+PREP_CMD="mvn -q -pl httpclient5 -am -DskipTests install"
+TEST_CMD="mvn -q -pl httpclient5 -Dit.test= -DfailIfNoTests=false verify"

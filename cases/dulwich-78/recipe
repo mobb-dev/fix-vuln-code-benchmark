@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/jelmer/dulwich.git
+FIX_COMMIT=e3331b3b3a122fc313460182f928f59723580b7b
+VULN_FILE=dulwich/merge_drivers.py
+CWE_ID=CWE-78
+CWE_NAME="OS Command Injection"
+LANGUAGE=python
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="tests/test_merge_drivers.py"
+PREP_CMD="pip install -e '.[test]' 2>/dev/null || pip install -e '.[dev]' 2>/dev/null || pip install -e . 2>/dev/null || uv sync --dev 2>/dev/null || true; pip install -q pytest pytest-asyncio 2>/dev/null || true"
+TEST_CMD="python -m pytest tests/test_merge_drivers.py -x"

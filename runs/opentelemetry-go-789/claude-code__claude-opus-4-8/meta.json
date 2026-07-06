@@ -1,0 +1,12 @@
+{
+  "agent": "claude-code",
+  "model": "claude-opus-4-8",
+  "tool_calls": 19,
+  "turns": 20,
+  "cost_usd": 1.7533075,
+  "usage": null,
+  "used_web": false,
+  "egress_attempts": [
+    "cd /tmp && timeout 20 git clone --depth 1 --branch v1.40.0 https://github.com/open-telemetry/opentelemetry-go otel-ref 2>&1 | tail -3 || echo \"NETWORK FAIL\""
+  ]
+}

@@ -1,0 +1,162 @@
+diff --git a/internal/server/api.go b/internal/server/api.go
+index 9cf4a83..86ada67 100644
+--- a/internal/server/api.go
++++ b/internal/server/api.go
+@@ -165,7 +165,7 @@ func toolInvokeHandler(s *Server, w http.ResponseWriter, r *http.Request) {
+ 
+ 		cfg := aS.ToConfig()
+ 		if genCfg, ok := cfg.(generic.Config); ok && genCfg.McpEnabled {
+-			claims = util.AuthTokenClaimsFromContext(ctx)
++			claims = util.AuthTokenClaimsForServiceFromContext(ctx, aS.GetName())
+ 		} else {
+ 			claims, err = aS.GetClaimsFromHeader(ctx, r.Header)
+ 			if err != nil {
+diff --git a/internal/server/mcp/v20241105/method.go b/internal/server/mcp/v20241105/method.go
+index 3306f85..36bcbfe 100644
+--- a/internal/server/mcp/v20241105/method.go
++++ b/internal/server/mcp/v20241105/method.go
+@@ -232,7 +232,7 @@ func toolsCallHandler(ctx context.Context, id jsonrpc.RequestId, toolset tools.T
+ 
+ 			cfg := aS.ToConfig()
+ 			if genCfg, ok := cfg.(generic.Config); ok && genCfg.McpEnabled {
+-				claims = util.AuthTokenClaimsFromContext(ctx)
++				claims = util.AuthTokenClaimsForServiceFromContext(ctx, aS.GetName())
+ 			} else {
+ 				claims, err = aS.GetClaimsFromHeader(ctx, header)
+ 				if err != nil {
+diff --git a/internal/server/mcp/v20250326/method.go b/internal/server/mcp/v20250326/method.go
+index c6ef7ee..4cd3697 100644
+--- a/internal/server/mcp/v20250326/method.go
++++ b/internal/server/mcp/v20250326/method.go
+@@ -232,7 +232,7 @@ func toolsCallHandler(ctx context.Context, id jsonrpc.RequestId, toolset tools.T
+ 
+ 			cfg := aS.ToConfig()
+ 			if genCfg, ok := cfg.(generic.Config); ok && genCfg.McpEnabled {
+-				claims = util.AuthTokenClaimsFromContext(ctx)
++				claims = util.AuthTokenClaimsForServiceFromContext(ctx, aS.GetName())
+ 			} else {
+ 				claims, err = aS.GetClaimsFromHeader(ctx, header)
+ 				if err != nil {
+diff --git a/internal/server/mcp/v20250618/method.go b/internal/server/mcp/v20250618/method.go
+index 8dd32d5..733e434 100644
+--- a/internal/server/mcp/v20250618/method.go
++++ b/internal/server/mcp/v20250618/method.go
+@@ -231,7 +231,7 @@ func toolsCallHandler(ctx context.Context, id jsonrpc.RequestId, toolset tools.T
+ 
+ 			cfg := aS.ToConfig()
+ 			if genCfg, ok := cfg.(generic.Config); ok && genCfg.McpEnabled {
+-				claims = util.AuthTokenClaimsFromContext(ctx)
++				claims = util.AuthTokenClaimsForServiceFromContext(ctx, aS.GetName())
+ 			} else {
+ 				claims, err = aS.GetClaimsFromHeader(ctx, header)
+ 				if err != nil {
+diff --git a/internal/server/mcp/v20251125/method.go b/internal/server/mcp/v20251125/method.go
+index a625ddb..955d138 100644
+--- a/internal/server/mcp/v20251125/method.go
++++ b/internal/server/mcp/v20251125/method.go
+@@ -231,7 +231,7 @@ func toolsCallHandler(ctx context.Context, id jsonrpc.RequestId, toolset tools.T
+ 
+ 			cfg := aS.ToConfig()
+ 			if genCfg, ok := cfg.(generic.Config); ok && genCfg.McpEnabled {
+-				claims = util.AuthTokenClaimsFromContext(ctx)
++				claims = util.AuthTokenClaimsForServiceFromContext(ctx, aS.GetName())
+ 			} else {
+ 				claims, err = aS.GetClaimsFromHeader(ctx, header)
+ 				if err != nil {
+diff --git a/internal/server/server.go b/internal/server/server.go
+index 23f7b08..237b6ad 100644
+--- a/internal/server/server.go
++++ b/internal/server/server.go
+@@ -541,7 +541,7 @@ func mcpAuthMiddleware(s *Server) func(http.Handler) http.Handler {
+ 				return
+ 			}
+ 
+-			ctx := util.WithAuthTokenClaims(r.Context(), claims)
++			ctx := util.WithAuthTokenClaimsForService(r.Context(), mcpSvc.GetName(), claims)
+ 			r = r.WithContext(ctx)
+ 
+ 			next.ServeHTTP(w, r)
+diff --git a/internal/util/util.go b/internal/util/util.go
+index 178c328..3d4c843 100644
+--- a/internal/util/util.go
++++ b/internal/util/util.go
+@@ -217,15 +217,45 @@ func GenAIMetricAttrsFromContext(ctx context.Context) *GenAIMetricAttrs {
+ 
+ const authTokenClaimsKey contextKey = "authTokenClaims"
+ 
++// AuthTokenClaims stores verified token claims with the auth service that
++// validated them.
++type AuthTokenClaims struct {
++	Service string
++	Claims  map[string]any
++}
++
+ // WithAuthTokenClaims adds auth token claims into the context as a value
+ func WithAuthTokenClaims(ctx context.Context, claims map[string]any) context.Context {
+-	return context.WithValue(ctx, authTokenClaimsKey, claims)
++	return context.WithValue(ctx, authTokenClaimsKey, AuthTokenClaims{Claims: claims})
++}
++
++// WithAuthTokenClaimsForService adds auth token claims and the validating auth
++// service into the context as a value.
++func WithAuthTokenClaimsForService(ctx context.Context, service string, claims map[string]any) context.Context {
++	return context.WithValue(ctx, authTokenClaimsKey, AuthTokenClaims{Service: service, Claims: claims})
+ }
+ 
+ // AuthTokenClaimsFromContext retrieves the auth token claims from context
+ func AuthTokenClaimsFromContext(ctx context.Context) map[string]any {
+-	if claims, ok := ctx.Value(authTokenClaimsKey).(map[string]any); ok {
+-		return claims
++	switch v := ctx.Value(authTokenClaimsKey).(type) {
++	case AuthTokenClaims:
++		return v.Claims
++	case map[string]any:
++		return v
++	}
++	return nil
++}
++
++// AuthTokenClaimsForServiceFromContext retrieves auth token claims only when
++// they were validated by the requested auth service.
++func AuthTokenClaimsForServiceFromContext(ctx context.Context, service string) map[string]any {
++	switch v := ctx.Value(authTokenClaimsKey).(type) {
++	case AuthTokenClaims:
++		if v.Service == service {
++			return v.Claims
++		}
++	case map[string]any:
++		return v
+ 	}
+ 	return nil
+ }
+diff --git a/internal/util/util_test.go b/internal/util/util_test.go
+index 9cad6ee..42beb65 100644
+--- a/internal/util/util_test.go
++++ b/internal/util/util_test.go
+@@ -13,6 +13,7 @@
+ package util
+ 
+ import (
++	"context"
+ 	"net/http"
+ 	"testing"
+ )
+@@ -101,3 +102,18 @@ func TestExtractClientIP(t *testing.T) {
+ 		})
+ 	}
+ }
++
++func TestAuthTokenClaimsForServiceFromContext(t *testing.T) {
++	claims := map[string]any{"scope": "read write"}
++	ctx := WithAuthTokenClaimsForService(context.Background(), "auth-a", claims)
++
++	if got := AuthTokenClaimsFromContext(ctx); got["scope"] != claims["scope"] {
++		t.Fatalf("AuthTokenClaimsFromContext() = %v, want %v", got, claims)
++	}
++	if got := AuthTokenClaimsForServiceFromContext(ctx, "auth-a"); got["scope"] != claims["scope"] {
++		t.Fatalf("AuthTokenClaimsForServiceFromContext(auth-a) = %v, want %v", got, claims)
++	}
++	if got := AuthTokenClaimsForServiceFromContext(ctx, "auth-b"); got != nil {
++		t.Fatalf("AuthTokenClaimsForServiceFromContext(auth-b) = %v, want nil", got)
++	}
++}

@@ -1,0 +1,20 @@
+diff --git a/vau/vau-httpclient/src/main/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorImpl.java b/vau/vau-httpclient/src/main/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorImpl.java
+index bb73e05..71f2d6d 100644
+--- a/vau/vau-httpclient/src/main/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorImpl.java
++++ b/vau/vau-httpclient/src/main/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorImpl.java
+@@ -42,7 +42,7 @@ public class SignedPublicKeysTrustValidatorImpl implements SignedPublicKeysTrust
+ 
+       // https://www.rfc-editor.org/rfc/rfc7515.html#appendix-A.3.1
+       var signatureDer = ECDSA.transcodeSignatureToDER(signedPublicKeys.signatureEs256());
+-      ecdsa.verify(signatureDer);
++      return ecdsa.verify(signatureDer);
+ 
+     } catch (CertificateValidationException
+         | InvalidKeyException
+@@ -53,6 +53,5 @@ public class SignedPublicKeysTrustValidatorImpl implements SignedPublicKeysTrust
+       log.atDebug().setCause(e).log("failed to validate certificate: {}", e.getMessage());
+       return false;
+     }
+-    return true;
+   }
+ }

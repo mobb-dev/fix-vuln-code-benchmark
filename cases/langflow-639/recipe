@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/langflow-ai/langflow.git
+FIX_COMMIT=2c9f498d664a3c32698b57d7c5e752625291060e
+VULN_FILE=src/backend/base/langflow/api/v1/endpoints.py
+CWE_ID=CWE-639
+CWE_NAME="Authorization Bypass Through User-Controlled Key"
+LANGUAGE=python
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="src/backend/tests/unit/helpers/test_flow_helpers.py src/backend/tests/unit/test_endpoints.py"
+PREP_CMD="uv sync --dev"
+TEST_CMD="uv run pytest src/backend/tests/unit/test_endpoints.py -x"

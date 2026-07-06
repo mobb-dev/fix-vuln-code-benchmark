@@ -1,0 +1,57 @@
+diff --git a/components/camel-coap/src/main/java/org/apache/camel/coap/CamelCoapResource.java b/components/camel-coap/src/main/java/org/apache/camel/coap/CamelCoapResource.java
+index 25cd4fc1..27eb969e 100644
+--- a/components/camel-coap/src/main/java/org/apache/camel/coap/CamelCoapResource.java
++++ b/components/camel-coap/src/main/java/org/apache/camel/coap/CamelCoapResource.java
+@@ -22,6 +22,8 @@ import java.util.Map;
+ import java.util.concurrent.ConcurrentHashMap;
+ 
+ import org.apache.camel.Message;
++import org.apache.camel.spi.HeaderFilterStrategy;
++import org.apache.camel.support.DefaultHeaderFilterStrategy;
+ import org.eclipse.californium.core.CoapResource;
+ import org.eclipse.californium.core.coap.CoAP.ResponseCode;
+ import org.eclipse.californium.core.coap.MediaTypeRegistry;
+@@ -36,6 +38,12 @@ final class CamelCoapResource extends CoapResource {
+ 
+     private static final Logger LOG = LoggerFactory.getLogger(CamelCoapResource.class);
+ 
++    /**
++     * Filters out Camel reserved (Camel-prefixed) header names so that remote clients cannot inject or overwrite
++     * internal Camel control headers via the CoAP request (CWE-915).
++     */
++    private static final HeaderFilterStrategy HEADER_FILTER_STRATEGY = createHeaderFilterStrategy();
++
+     private final Map<String, CoAPConsumer> consumers = new ConcurrentHashMap<>();
+     private final List<CamelCoapResource> possibles;
+ 
+@@ -50,6 +58,12 @@ final class CamelCoapResource extends CoapResource {
+         this.possibles = possibles;
+     }
+ 
++    private static HeaderFilterStrategy createHeaderFilterStrategy() {
++        DefaultHeaderFilterStrategy strategy = new DefaultHeaderFilterStrategy();
++        strategy.setInFilterStartsWith(DefaultHeaderFilterStrategy.CAMEL_FILTER_STARTS_WITH);
++        return strategy;
++    }
++
+     void addConsumer(CoAPConsumer consumer) {
+         CoAPEndpoint coapEndpoint = consumer.getCoapEndpoint();
+         String coapMethodRestrict = CoAPHelper.getDefaultMethodRestrict(coapEndpoint.getCoapMethodRestrict());
+@@ -102,11 +116,13 @@ final class CamelCoapResource extends CoapResource {
+             OptionSet options = exchange.getRequest().getOptions();
+             for (String s : options.getUriQuery()) {
+                 int i = s.indexOf('=');
+-                if (i == -1) {
+-                    camelExchange.getIn().setHeader(s, "");
+-                } else {
+-                    camelExchange.getIn().setHeader(s.substring(0, i), s.substring(i + 1));
++                String name = i == -1 ? s : s.substring(0, i);
++                String value = i == -1 ? "" : s.substring(i + 1);
++                // Do not let remote clients inject/override internal Camel headers (CWE-915)
++                if (HEADER_FILTER_STRATEGY.applyFilterToExternalHeaders(name, value, camelExchange)) {
++                    continue;
+                 }
++                camelExchange.getIn().setHeader(name, value);
+             }
+ 
+             if (options.hasContentFormat()) {

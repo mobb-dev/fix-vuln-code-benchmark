@@ -1,0 +1,527 @@
+--- a/internal/api/audit.go
++++ b/internal/api/audit.go
+@@ -10,6 +10,10 @@ import (
+ const defaultAuditLimit = 100
+ 
+ func (s *Server) handleGetAuditLog(w http.ResponseWriter, r *http.Request) {
++	if !actorIsAdmin(r.Context()) {
++		writeError(w, http.StatusForbidden, "audit log access requires the admin role")
++		return
++	}
+ 	filter := store.AuditFilter{
+ 		Action: r.URL.Query().Get("action"),
+ 		Limit:  defaultAuditLimit,
+--- a/internal/api/authz.go
++++ b/internal/api/authz.go
+@@ -0,0 +1,52 @@
++package api
++
++import (
++	"context"
++	"errors"
++
++	"github.com/juev/nebula-mesh/internal/models"
++	"github.com/juev/nebula-mesh/internal/store"
++)
++
++// actorOwnsCA returns true if the actor in ctx is admin, or owns the CA with caID.
++// Returns (false, nil) for empty caID or ErrNotFound. Errors only for unexpected DB errors.
++func (s *Server) actorOwnsCA(ctx context.Context, caID string) (bool, error) {
++	if actorIsAdmin(ctx) {
++		return true, nil
++	}
++	if caID == "" {
++		return false, nil
++	}
++	actor := ActorOf(ctx)
++	if actor == nil {
++		// actorIsAdmin returned false but ActorOf is nil — defensive; treat as
++		// forbidden. Unreachable on the current bearerAuth path; if it ever
++		// fires it usually means middleware ordering regressed, so log loud.
++		s.logger.Warn("authz: nil actor with non-admin context — bearerAuth ordering regression?", "ca_id", caID)
++		return false, nil
++	}
++	ca, err := s.store.GetCA(ctx, caID)
++	if err != nil {
++		if errors.Is(err, store.ErrNotFound) {
++			return false, nil
++		}
++		return false, err
++	}
++	return ca.OwnerOperatorID == actor.ID, nil
++}
++
++// canAccessHost returns true if the actor in ctx is admin, or owns the host's CA.
++func (s *Server) canAccessHost(ctx context.Context, h *models.Host) (bool, error) {
++	if h == nil {
++		return false, nil
++	}
++	return s.actorOwnsCA(ctx, h.CAID)
++}
++
++// canAccessNetwork returns true if the actor in ctx is admin, or owns the network's CA.
++func (s *Server) canAccessNetwork(ctx context.Context, n *models.Network) (bool, error) {
++	if n == nil {
++		return false, nil
++	}
++	return s.actorOwnsCA(ctx, n.CAID)
++}
+--- a/internal/api/firewall.go
++++ b/internal/api/firewall.go
+@@ -29,6 +29,27 @@ var defaultFirewallRules = firewallRulesRequest{
+ func (s *Server) handleGetFirewall(w http.ResponseWriter, r *http.Request) {
+ 	networkID := chi.URLParam(r, "id")
+ 
++	network, err := s.store.GetNetwork(r.Context(), networkID)
++	if errors.Is(err, store.ErrNotFound) {
++		writeError(w, http.StatusNotFound, "network not found")
++		return
++	}
++	if err != nil {
++		s.logger.Error("get network for firewall", "error", err)
++		writeError(w, http.StatusInternalServerError, "failed to load network")
++		return
++	}
++	ok, err := s.canAccessNetwork(r.Context(), network)
++	if err != nil {
++		s.logger.Error("authz check", "error", err)
++		writeError(w, http.StatusInternalServerError, "authz check failed")
++		return
++	}
++	if !ok {
++		writeError(w, http.StatusForbidden, "forbidden")
++		return
++	}
++
+ 	rules, err := s.getFirewallRules(r, networkID)
+ 	if err != nil {
+ 		s.logger.Error("get firewall rules", "error", err)
+@@ -42,6 +63,27 @@ func (s *Server) handleGetFirewall(w http.ResponseWriter, r *http.Request) {
+ func (s *Server) handleUpdateFirewall(w http.ResponseWriter, r *http.Request) {
+ 	networkID := chi.URLParam(r, "id")
+ 
++	network, err := s.store.GetNetwork(r.Context(), networkID)
++	if errors.Is(err, store.ErrNotFound) {
++		writeError(w, http.StatusNotFound, "network not found")
++		return
++	}
++	if err != nil {
++		s.logger.Error("get network for firewall update", "error", err)
++		writeError(w, http.StatusInternalServerError, "failed to load network")
++		return
++	}
++	ok, err := s.canAccessNetwork(r.Context(), network)
++	if err != nil {
++		s.logger.Error("authz check", "error", err)
++		writeError(w, http.StatusInternalServerError, "authz check failed")
++		return
++	}
++	if !ok {
++		writeError(w, http.StatusForbidden, "forbidden")
++		return
++	}
++
+ 	var req firewallRulesRequest
+ 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+ 		writeError(w, http.StatusBadRequest, "invalid request body")
+--- a/internal/api/hosts.go
++++ b/internal/api/hosts.go
+@@ -51,6 +51,28 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
+ 		writeError(w, http.StatusBadRequest, "name, nebula_ips, and network_id are required")
+ 		return
+ 	}
++
++	network, err := s.store.GetNetwork(r.Context(), req.NetworkID)
++	if errors.Is(err, store.ErrNotFound) {
++		writeError(w, http.StatusBadRequest, "network not found")
++		return
++	}
++	if err != nil {
++		s.logger.Error("get network for host create", "error", err)
++		writeError(w, http.StatusInternalServerError, "failed to load network")
++		return
++	}
++	netOK, err := s.canAccessNetwork(r.Context(), network)
++	if err != nil {
++		s.logger.Error("authz check for host create", "error", err)
++		writeError(w, http.StatusInternalServerError, "authz check failed")
++		return
++	}
++	if !netOK {
++		writeError(w, http.StatusForbidden, "forbidden")
++		return
++	}
++
+ 	if err := validateHostIPs(r.Context(), s.store, req.NetworkID, req.NebulaIPs, ""); err != nil {
+ 		if IsHostIPValidationError(err) {
+ 			writeError(w, http.StatusBadRequest, err.Error())
+@@ -90,6 +112,16 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
+ 		return
+ 	}
+ 
++	// Host inherits the network's CA. Combined with the canAccessNetwork
++	// gate above, this binds new hosts to the same trust domain as the
++	// network's operator (closes the GHSA-598g class of cross-tenant cert
++	// issuance via host create + rotate-cert). The defaultCAID fallback
++	// preserves backward compatibility for admin-created networks via the
++	// CAID-less /api/v1/networks endpoint (out-of-scope follow-up).
++	caID := network.CAID
++	if caID == "" {
++		caID = s.defaultCAID
++	}
+ 	now := time.Now()
+ 	host := &models.Host{
+ 		ID:           uuid.New().String(),
+@@ -104,7 +136,7 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
+ 		ListenPort:   req.ListenPort,
+ 		Status:       models.HostStatusPending,
+ 		Advanced:     req.Advanced,
+-		CAID:         s.defaultCAID,
++		CAID:         caID,
+ 		CreatedAt:    now,
+ 		UpdatedAt:    now,
+ 	}
+@@ -152,6 +184,34 @@ func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
+ 		writeError(w, http.StatusInternalServerError, "failed to list hosts")
+ 		return
+ 	}
++
++	// For non-admin, scope to owned CAs
++	if !actorIsAdmin(r.Context()) {
++		actor := ActorOf(r.Context())
++		if actor == nil {
++			writeJSON(w, http.StatusOK, []*models.Host{})
++			return
++		}
++		cas, err := s.store.ListCAsByOwner(r.Context(), actor.ID)
++		if err != nil {
++			s.logger.Error("list cas by owner", "error", err)
++			writeError(w, http.StatusInternalServerError, "failed to check permissions")
++			return
++		}
++		ownedCAIDs := make(map[string]struct{}, len(cas))
++		for _, ca := range cas {
++			ownedCAIDs[ca.ID] = struct{}{}
++		}
++		// Filter hosts to only those under owned CAs
++		filtered := hosts[:0]
++		for _, h := range hosts {
++			if _, ok := ownedCAIDs[h.CAID]; ok {
++				filtered = append(filtered, h)
++			}
++		}
++		hosts = filtered
++	}
++
+ 	writeJSON(w, http.StatusOK, hosts)
+ }
+ 
+@@ -167,12 +227,42 @@ func (s *Server) handleGetHost(w http.ResponseWriter, r *http.Request) {
+ 		writeError(w, http.StatusInternalServerError, "failed to get host")
+ 		return
+ 	}
++	ok, err := s.canAccessHost(r.Context(), host)
++	if err != nil {
++		s.logger.Error("authz check", "error", err)
++		writeError(w, http.StatusInternalServerError, "authz check failed")
++		return
++	}
++	if !ok {
++		writeError(w, http.StatusForbidden, "forbidden")
++		return
++	}
+ 
+ 	writeJSON(w, http.StatusOK, host)
+ }
+ 
+ func (s *Server) handleDeleteHost(w http.ResponseWriter, r *http.Request) {
+ 	id := chi.URLParam(r, "id")
++	host, err := s.store.GetHost(r.Context(), id)
++	if errors.Is(err, store.ErrNotFound) {
++		writeError(w, http.StatusNotFound, "host not found")
++		return
++	}
++	if err != nil {
++		s.logger.Error("get host for delete", "error", err)
++		writeError(w, http.StatusInternalServerError, "failed to get host")
++		return
++	}
++	ok, err := s.canAccessHost(r.Context(), host)
++	if err != nil {
++		s.logger.Error("authz check", "error", err)
++		writeError(w, http.StatusInternalServerError, "authz check failed")
++		return
++	}
++	if !ok {
++		writeError(w, http.StatusForbidden, "forbidden")
++		return
++	}
+ 	if err := s.store.DeleteHostAndBlockCert(r.Context(), id, "host deleted"); err != nil {
+ 		if errors.Is(err, store.ErrNotFound) {
+ 			writeError(w, http.StatusNotFound, "host not found")
+@@ -189,6 +279,26 @@ func (s *Server) handleDeleteHost(w http.ResponseWriter, r *http.Request) {
+ 
+ func (s *Server) handleBlockHost(w http.ResponseWriter, r *http.Request) {
+ 	id := chi.URLParam(r, "id")
++	existing, err := s.store.GetHost(r.Context(), id)
++	if errors.Is(err, store.ErrNotFound) {
++		writeError(w, http.StatusNotFound, "host not found")
++		return
++	}
++	if err != nil {
++		s.logger.Error("get host for block", "error", err)
++		writeError(w, http.StatusInternalServerError, "failed to get host")
++		return
++	}
++	ok, err := s.canAccessHost(r.Context(), existing)
++	if err != nil {
++		s.logger.Error("authz check", "error", err)
++		writeError(w, http.StatusInternalServerError, "authz check failed")
++		return
++	}
++	if !ok {
++		writeError(w, http.StatusForbidden, "forbidden")
++		return
++	}
+ 	host, err := s.store.BlockHostAndAddToBlocklist(r.Context(), id, "manually blocked")
+ 	if errors.Is(err, store.ErrNotFound) {
+ 		writeError(w, http.StatusNotFound, "host not found")
+@@ -206,6 +316,26 @@ func (s *Server) handleBlockHost(w http.ResponseWriter, r *http.Request) {
+ 
+ func (s *Server) handleUnblockHost(w http.ResponseWriter, r *http.Request) {
+ 	id := chi.URLParam(r, "id")
++	existing, err := s.store.GetHost(r.Context(), id)
++	if errors.Is(err, store.ErrNotFound) {
++		writeError(w, http.StatusNotFound, "host not found")
++		return
++	}
++	if err != nil {
++		s.logger.Error("get host for unblock", "error", err)
++		writeError(w, http.StatusInternalServerError, "failed to get host")
++		return
++	}
++	ok, err := s.canAccessHost(r.Context(), existing)
++	if err != nil {
++		s.logger.Error("authz check", "error", err)
++		writeError(w, http.StatusInternalServerError, "authz check failed")
++		return
++	}
++	if !ok {
++		writeError(w, http.StatusForbidden, "forbidden")
++		return
++	}
+ 	host, err := s.store.UnblockHostAndRemoveFromBlocklist(r.Context(), id)
+ 	if errors.Is(err, store.ErrNotFound) {
+ 		writeError(w, http.StatusNotFound, "host not found")
+@@ -222,6 +352,10 @@ func (s *Server) handleUnblockHost(w http.ResponseWriter, r *http.Request) {
+ }
+ 
+ func (s *Server) handleGetBlocklist(w http.ResponseWriter, r *http.Request) {
++	if !actorIsAdmin(r.Context()) {
++		writeError(w, http.StatusForbidden, "blocklist access requires the admin role")
++		return
++	}
+ 	list, err := s.store.GetBlocklist(r.Context())
+ 	if err != nil {
+ 		s.logger.Error("get blocklist", "error", err)
+@@ -269,6 +403,16 @@ func (s *Server) handleRotateCert(w http.ResponseWriter, r *http.Request) {
+ 		writeError(w, http.StatusInternalServerError, "failed to get host")
+ 		return
+ 	}
++	ok, err := s.canAccessHost(r.Context(), host)
++	if err != nil {
++		s.logger.Error("authz check for rotate-cert", "error", err)
++		writeError(w, http.StatusInternalServerError, "authz check failed")
++		return
++	}
++	if !ok {
++		writeError(w, http.StatusForbidden, "forbidden")
++		return
++	}
+ 
+ 	if newKey {
+ 		if err := s.store.SetPendingRekey(r.Context(), host.ID); err != nil {
+@@ -346,6 +490,16 @@ func (s *Server) mintEnrollmentTokenForHost(w http.ResponseWriter, r *http.Reque
+ 		writeError(w, http.StatusInternalServerError, "failed to get host")
+ 		return
+ 	}
++	ok, err := s.canAccessHost(r.Context(), host)
++	if err != nil {
++		s.logger.Error("authz check", "error", err)
++		writeError(w, http.StatusInternalServerError, "authz check failed")
++		return
++	}
++	if !ok {
++		writeError(w, http.StatusForbidden, "forbidden")
++		return
++	}
+ 
+ 	tokenStr := uuid.New().String()
+ 	expiresAt := time.Now().Add(s.tokenTTLFor(r.Context(), host.NetworkID))
+@@ -380,8 +534,16 @@ func (s *Server) handleUpdateHost(w http.ResponseWriter, r *http.Request) {
+ 		writeError(w, http.StatusInternalServerError, "failed to get host")
+ 		return
+ 	}
+-
+-	// API trusts the bearer token for authorisation; per-CA ownership is enforced only in the Web layer (handleHostUpdate). Matches handleCreateHost/handleDeleteHost behaviour.
++	ok, err := s.canAccessHost(r.Context(), host)
++	if err != nil {
++		s.logger.Error("authz check", "error", err)
++		writeError(w, http.StatusInternalServerError, "authz check failed")
++		return
++	}
++	if !ok {
++		writeError(w, http.StatusForbidden, "forbidden")
++		return
++	}
+ 
+ 	// Decode request body (lenient for PATCH, forward-compatible)
+ 	var req updateHostRequest
+--- a/internal/api/mobile_bundle.go
++++ b/internal/api/mobile_bundle.go
+@@ -29,6 +29,16 @@ func (s *Server) handleMobileBundle(w http.ResponseWriter, r *http.Request) {
+ 		writeError(w, http.StatusInternalServerError, "failed to get host")
+ 		return
+ 	}
++	ok, err := s.canAccessHost(r.Context(), host)
++	if err != nil {
++		s.logger.Error("authz check", "error", err)
++		writeError(w, http.StatusInternalServerError, "authz check failed")
++		return
++	}
++	if !ok {
++		writeError(w, http.StatusForbidden, "forbidden")
++		return
++	}
+ 
+ 	// Check that host is mobile
+ 	if host.Kind != models.HostKindMobile {
+--- a/internal/api/networks.go
++++ b/internal/api/networks.go
+@@ -17,6 +17,10 @@ type createNetworkRequest struct {
+ }
+ 
+ func (s *Server) handleCreateNetwork(w http.ResponseWriter, r *http.Request) {
++	if !actorIsAdmin(r.Context()) {
++		writeError(w, http.StatusForbidden, "network creation requires the admin role")
++		return
++	}
+ 	var req createNetworkRequest
+ 	if err := decodeJSONStrict(r, &req); err != nil {
+ 		writeError(w, http.StatusBadRequest, err.Error())
+@@ -55,6 +59,30 @@ func (s *Server) handleListNetworks(w http.ResponseWriter, r *http.Request) {
+ 		writeError(w, http.StatusInternalServerError, "failed to list networks")
+ 		return
+ 	}
++	if !actorIsAdmin(r.Context()) {
++		actor := ActorOf(r.Context())
++		if actor == nil {
++			writeJSON(w, http.StatusOK, []*models.Network{})
++			return
++		}
++		cas, err := s.store.ListCAsByOwner(r.Context(), actor.ID)
++		if err != nil {
++			s.logger.Error("list cas by owner", "error", err)
++			writeError(w, http.StatusInternalServerError, "failed to scope networks")
++			return
++		}
++		owned := make(map[string]struct{}, len(cas))
++		for _, ca := range cas {
++			owned[ca.ID] = struct{}{}
++		}
++		filtered := networks[:0]
++		for _, n := range networks {
++			if _, ok := owned[n.CAID]; ok {
++				filtered = append(filtered, n)
++			}
++		}
++		networks = filtered
++	}
+ 	writeJSON(w, http.StatusOK, networks)
+ }
+ 
+@@ -70,6 +98,16 @@ func (s *Server) handleGetNetwork(w http.ResponseWriter, r *http.Request) {
+ 		writeError(w, http.StatusInternalServerError, "failed to get network")
+ 		return
+ 	}
++	ok, err := s.canAccessNetwork(r.Context(), network)
++	if err != nil {
++		s.logger.Error("authz check", "error", err)
++		writeError(w, http.StatusInternalServerError, "authz check failed")
++		return
++	}
++	if !ok {
++		writeError(w, http.StatusForbidden, "forbidden")
++		return
++	}
+ 
+ 	writeJSON(w, http.StatusOK, network)
+ }
+--- a/internal/api/operators.go
++++ b/internal/api/operators.go
+@@ -64,6 +64,10 @@ func (s *Server) handleCreateOperator(w http.ResponseWriter, r *http.Request) {
+ }
+ 
+ func (s *Server) handleListOperators(w http.ResponseWriter, r *http.Request) {
++	if !actorIsAdmin(r.Context()) {
++		writeError(w, http.StatusForbidden, "operator management requires the admin role")
++		return
++	}
+ 	ops, err := s.store.ListOperators(r.Context())
+ 	if err != nil {
+ 		s.logger.Error("list operators", "error", err)
+@@ -77,6 +81,10 @@ func (s *Server) handleListOperators(w http.ResponseWriter, r *http.Request) {
+ }
+ 
+ func (s *Server) handleDisableOperator(w http.ResponseWriter, r *http.Request) {
++	if !actorIsAdmin(r.Context()) {
++		writeError(w, http.StatusForbidden, "operator management requires the admin role")
++		return
++	}
+ 	id := chi.URLParam(r, "id")
+ 	if err := s.store.DisableOperator(r.Context(), id); err != nil {
+ 		if errors.Is(err, store.ErrNotFound) {
+@@ -92,6 +100,10 @@ func (s *Server) handleDisableOperator(w http.ResponseWriter, r *http.Request) {
+ }
+ 
+ func (s *Server) handleEnableOperator(w http.ResponseWriter, r *http.Request) {
++	if !actorIsAdmin(r.Context()) {
++		writeError(w, http.StatusForbidden, "operator management requires the admin role")
++		return
++	}
+ 	id := chi.URLParam(r, "id")
+ 	if err := s.store.EnableOperator(r.Context(), id); err != nil {
+ 		if errors.Is(err, store.ErrNotFound) {
+@@ -116,6 +128,10 @@ type createAPIKeyResponse struct {
+ }
+ 
+ func (s *Server) handleCreateOperatorAPIKey(w http.ResponseWriter, r *http.Request) {
++	if !actorIsAdmin(r.Context()) {
++		writeError(w, http.StatusForbidden, "operator management requires the admin role")
++		return
++	}
+ 	id := chi.URLParam(r, "id")
+ 	if _, err := s.store.GetOperator(r.Context(), id); err != nil {
+ 		if errors.Is(err, store.ErrNotFound) {
+@@ -155,6 +171,10 @@ func (s *Server) handleCreateOperatorAPIKey(w http.ResponseWriter, r *http.Reque
+ }
+ 
+ func (s *Server) handleRevokeOperatorAPIKey(w http.ResponseWriter, r *http.Request) {
++	if !actorIsAdmin(r.Context()) {
++		writeError(w, http.StatusForbidden, "operator management requires the admin role")
++		return
++	}
+ 	id := chi.URLParam(r, "id")
+ 	kid := chi.URLParam(r, "kid")
+ 	if err := s.store.RevokeOperatorAPIKey(r.Context(), kid); err != nil {
+@@ -171,6 +191,10 @@ func (s *Server) handleRevokeOperatorAPIKey(w http.ResponseWriter, r *http.Reque
+ }
+ 
+ func (s *Server) handleListOperatorAPIKeys(w http.ResponseWriter, r *http.Request) {
++	if !actorIsAdmin(r.Context()) {
++		writeError(w, http.StatusForbidden, "operator management requires the admin role")
++		return
++	}
+ 	id := chi.URLParam(r, "id")
+ 	keys, err := s.store.ListOperatorAPIKeys(r.Context(), id)
+ 	if err != nil {

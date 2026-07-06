@@ -1,0 +1,25 @@
+diff --git a/api/src/main/java/org/openmrs/util/ConceptReferenceRangeUtility.java b/api/src/main/java/org/openmrs/util/ConceptReferenceRangeUtility.java
+index 6ece9de..fe227b9 100644
+--- a/api/src/main/java/org/openmrs/util/ConceptReferenceRangeUtility.java
++++ b/api/src/main/java/org/openmrs/util/ConceptReferenceRangeUtility.java
+@@ -24,6 +24,8 @@ import org.apache.commons.lang3.StringUtils;
+ import org.apache.velocity.VelocityContext;
+ import org.apache.velocity.app.VelocityEngine;
+ import org.apache.velocity.exception.ParseErrorException;
++import org.apache.velocity.runtime.RuntimeConstants;
++import org.apache.velocity.util.introspection.SecureUberspector;
+ import org.joda.time.LocalTime;
+ import org.openmrs.Concept;
+ import org.openmrs.ConceptReferenceRangeContext;
+@@ -110,6 +112,11 @@ public class ConceptReferenceRangeUtility {
+ 			Properties props = new Properties();
+ 			props.put("runtime.log.logsystem.log4j.category", "velocity");
+ 			props.put("runtime.log.logsystem.log4j.logger", "velocity");
++			// Restrict introspection so user-supplied criteria cannot reach dangerous classes
++			// (e.g. Runtime, System, ClassLoader, java.lang.reflect.*) or escape via getClass().
++			// This prevents code injection (CWE-94) while still allowing the intended method calls
++			// on context objects such as $patient, $fn and $obs.
++			props.put(RuntimeConstants.UBERSPECT_CLASSNAME, SecureUberspector.class.getName());
+ 			velocityEngine.init(props);
+ 		} catch (Exception e) {
+ 			throw new APIException("Failed to create the velocity engine: " + e.getMessage(), e);

@@ -1,0 +1,7 @@
+METHODOLOGY: I compared the agent patch against the official fix’s root cause: unsafe yt-dlp output-template expansions inside `--exec` shell commands. I checked whether the agent covers all unsafe conversion/default variants and whether it preserves the intended compatibility behavior and error handling.
+
+EVIDENCE: In `yt_dlp/postprocessor/exec.py`, the agent only passes `shell=True` to `prepare_outtmpl` during `parse_cmd`, rather than validating commands at postprocessor setup. In `yt_dlp/YoutubeDL.py`, the agent only shell-quotes values when `fmt[-1] == 's'` after partial handling of `r`/`a`, and leaves other conversions such as `c` unblocked. The official fix instead adds `_exec=True`, rejects all conversions except `d`, `i`, `f`, and `q`, rejects unsafe defaults, wires `UnsafeExecExpansionError`, and preserves the documented `allow-unsafe-exec-expansion` compatibility option.
+
+REASONING: The agent reduces some straightforward string-value injection by shell-quoting `%s` expansions, but it does not match the accepted remediation. It misses unsafe conversion variants that the maintainer explicitly blocks, such as `%c`, and it does not implement the compatibility option or the validation/error path. It also changes behavior by automatically quoting interpolated values instead of rejecting unsafe templates, which can alter legitimate `--exec` command construction and still leaves formatting edge cases outside the official safety model.
+
+VERDICT: PARTIAL

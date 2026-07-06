@@ -1,0 +1,491 @@
+You are a senior application-security engineer. Judge whether an AI agent's code change correctly fixes a specific, known vulnerability.
+
+You are given three things below:
+  1. THE VULNERABILITY — its type and where it is in the code.
+  2. THE MAINTAINER'S OFFICIAL FIX — the real, accepted remediation. Treat it as the gold standard for what a complete and correct fix must cover. It is a reference, not the only acceptable implementation: a different but equivalent fix that fully and minimally remediates is still correct.
+  3. THE AGENT'S FIX — a diff produced by an AI agent. This is what you must judge.
+
+Evaluate the agent's fix with this methodology:
+  - From the vulnerability and the maintainer's fix, work out the root cause and EVERY place the vulnerability is present.
+  - Does the agent's fix remove the vulnerability at ALL of those places, not just some? Missing any injection point or variant is a real gap.
+  - Does it preserve the application's intended behavior — no broken functionality, and no unrelated behavioral changes beyond what the remediation requires? Removing the vulnerability but also changing unrelated behavior is an over-reach, not a clean fix.
+  - Be skeptical. A fix that reads plausibly but misses a variant is not correct; one that fixes the bug but also changes unrelated behavior is not clean.
+
+Respond in EXACTLY this structure and nothing else:
+
+METHODOLOGY: <2-4 sentences on how you evaluated it>
+EVIDENCE: <specific files, lines, or hunks from the diffs that justify the verdict>
+REASONING: <why the agent's fix does or does not fully and cleanly remediate the vulnerability without changing intended behavior>
+VERDICT: <one word: CORRECT, PARTIAL, or INCORRECT>
+
+Verdict meanings:
+  CORRECT   — fully removes the vulnerability AND preserves intended behavior.
+  PARTIAL   — removes the vulnerability but misses a variant, OR over-reaches and changes unrelated behavior.
+  INCORRECT — does not remove the vulnerability, or breaks functionality so it is not a valid fix.
+
+
+===== 1. THE VULNERABILITY =====
+Project: open-telemetry/opentelemetry-operator
+Vulnerability type: Information Exposure (CWE-200)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  apis/v1alpha1/opentelemetrycollector_types.go
+    - lines 411-416   in: type OpenTelemetryTargetAllocatorPrometheusCR struct {
+
+  apis/v1beta1/targetallocator_types.go
+    - lines 22-27   in: type TargetAllocatorPrometheusCR struct {
+
+  cmd/otel-allocator/internal/config/config.go
+    - lines 92-97   in: type PrometheusCRConfig struct {
+
+  cmd/otel-allocator/internal/watcher/promOperator.go
+    - lines 150-155   in: func NewPrometheusCRWatcher(
+    - lines 170-175   in: type PrometheusCRWatcher struct {
+    - lines 649-654   in: func (w *PrometheusCRWatcher) LoadConfig(ctx context.Context) (*promconfig.Confi
+    - lines 665-670   in: func (w *PrometheusCRWatcher) LoadConfig(ctx context.Context) (*promconfig.Confi
+
+  internal/manifests/targetallocator/configmap.go
+    - lines 117-122   in: func ConfigMap(params Params) (*corev1.ConfigMap, error) {
+
+===== 2. MAINTAINER OFFICIAL FIX (gold standard) =====
+--- a/apis/v1alpha1/opentelemetrycollector_types.go
++++ b/apis/v1alpha1/opentelemetrycollector_types.go
+@@ -411,6 +411,16 @@ type OpenTelemetryTargetAllocatorPrometheusCR struct {
+ 	// Empty or nil map matches all service monitors.
+ 	// +optional
+ 	ServiceMonitorSelector map[string]string `json:"serviceMonitorSelector,omitempty"`
++	// DenyFSAccessThroughSMs causes the Target Allocator to drop ServiceMonitor and
++	// PodMonitor endpoints that reference arbitrary files on the file system. When
++	// enabled, endpoints with bearerTokenFile, tlsConfig.caFile, tlsConfig.certFile,
++	// or tlsConfig.keyFile are dropped from the produced scrape configuration while
++	// the remaining endpoints are kept. This prevents tenants from stealing the
++	// Collector's service account token via ServiceMonitor bearerTokenFile
++	// references. This is the equivalent of ArbitraryFSAccessThroughSMs.Deny from
++	// the Prometheus Operator.
++	// +optional
++	DenyFSAccessThroughSMs bool `json:"denyFSAccessThroughSMs,omitempty"`
+ }
+ 
+ // ScaleSubresourceStatus defines the observed state of the OpenTelemetryCollector's
+--- a/apis/v1beta1/targetallocator_types.go
++++ b/apis/v1beta1/targetallocator_types.go
+@@ -22,6 +22,16 @@ type TargetAllocatorPrometheusCR struct {
+ 	// If not configured, defaults to the target allocator's own namespace.
+ 	// +optional
+ 	SecretNamespaces []string `json:"secretNamespaces,omitempty"`
++	// DenyFSAccessThroughSMs causes the Target Allocator to drop ServiceMonitor and
++	// PodMonitor endpoints that reference arbitrary files on the file system. When
++	// enabled, endpoints with bearerTokenFile, tlsConfig.caFile, tlsConfig.certFile,
++	// or tlsConfig.keyFile are dropped from the produced scrape configuration while
++	// the remaining endpoints are kept. This prevents tenants from stealing the
++	// Collector's service account token via ServiceMonitor bearerTokenFile
++	// references. This is the equivalent of ArbitraryFSAccessThroughSMs.Deny from
++	// the Prometheus Operator.
++	// +optional
++	DenyFSAccessThroughSMs bool `json:"denyFSAccessThroughSMs,omitempty"`
+ 	// Default interval between consecutive scrapes. Intervals set in ServiceMonitors and PodMonitors override it.
+ 	//
+ 	// Default: "30s"
+--- a/cmd/otel-allocator/internal/config/config.go
++++ b/cmd/otel-allocator/internal/config/config.go
+@@ -92,6 +92,16 @@ type PrometheusCRConfig struct {
+ 	EvaluationInterval              model.Duration                `yaml:"evaluation_interval,omitempty"`
+ 	ScrapeProtocols                 []monitoringv1.ScrapeProtocol `yaml:"scrape_protocols,omitempty"`
+ 	ScrapeClasses                   []monitoringv1.ScrapeClass    `yaml:"scrape_classes,omitempty"`
++	// DenyFSAccessThroughSMs causes the Target Allocator to drop ServiceMonitor and
++	// PodMonitor endpoints that reference arbitrary files on the file system. When
++	// true, endpoints with bearerTokenFile, tlsConfig.caFile, tlsConfig.certFile, or
++	// tlsConfig.keyFile referencing paths outside an operator-owned mount are
++	// dropped from the produced scrape configuration while the remaining endpoints
++	// are kept. This prevents tenants from stealing the Collector's service account
++	// token. This is the equivalent of ArbitraryFSAccessThroughSMs.Deny from the
++	// Prometheus Operator.
++	// +optional
++	DenyFSAccessThroughSMs bool `yaml:"deny_fs_access_through_sms,omitempty"`
+ }
+ 
+ type HTTPSServerConfig struct {
+--- a/cmd/otel-allocator/internal/watcher/promOperator.go
++++ b/cmd/otel-allocator/internal/watcher/promOperator.go
+@@ -150,6 +150,7 @@ func NewPrometheusCRWatcher(
+ 		resourceSelector:                resourceSelector,
+ 		store:                           store,
+ 		prometheusCR:                    prom,
++		denyFSAccessThroughSMs:          cfg.PrometheusCR.DenyFSAccessThroughSMs,
+ 	}, nil
+ }
+ 
+@@ -170,6 +171,7 @@ type PrometheusCRWatcher struct {
+ 	resourceSelector                *prometheus.ResourceSelector
+ 	store                           *assets.StoreBuilder
+ 	prometheusCR                    *monitoringv1.Prometheus
++	denyFSAccessThroughSMs          bool
+ }
+ 
+ func getNamespaceInformer(ctx context.Context, allowList, denyList map[string]struct{}, promOperatorLogger *slog.Logger, clientset kubernetes.Interface, operatorMetrics *operator.Metrics) (cache.SharedIndexInformer, error) {
+@@ -649,6 +651,13 @@ func (w *PrometheusCRWatcher) LoadConfig(ctx context.Context) (*promconfig.Confi
+ 			return nil, unmarshalErr
+ 		}
+ 
++		// If denyFSAccessThroughSMs is enabled, drop scrape configs that reference
++		// arbitrary files on the file system. This prevents tenants from stealing
++		// the Collector's service account token.
++		if w.denyFSAccessThroughSMs {
++			w.filterScrapeConfigs(promCfg)
++		}
++
+ 		// set kubeconfig path to service discovery configs, else kubernetes_sd will always attempt in-cluster
+ 		// authentication even if running with a detected kubeconfig
+ 		for _, scrapeConfig := range promCfg.ScrapeConfigs {
+@@ -665,6 +674,44 @@ func (w *PrometheusCRWatcher) LoadConfig(ctx context.Context) (*promconfig.Confi
+ 	return promCfg, nil
+ }
+ 
++// filterScrapeConfigs drops scrape configs that reference arbitrary files on
++// the file system. This prevents tenants from stealing the Collector's service
++// account token via ServiceMonitor bearerTokenFile (via
++// authorization.credentials_file) or tlsConfig file references (caFile,
++// certFile, keyFile). This is the equivalent guard from
++// ArbitraryFSAccessThroughSMs.Deny in the Prometheus Operator.
++func (w *PrometheusCRWatcher) filterScrapeConfigs(promCfg *promconfig.Config) {
++	filtered := promCfg.ScrapeConfigs[:0]
++	for _, sc := range promCfg.ScrapeConfigs {
++		if reason := deniedFSAccessReason(sc); reason != "" {
++			w.logger.Warn("dropping scrape config that references arbitrary file path", "job", sc.JobName, "reason", reason)
++			continue
++		}
++		filtered = append(filtered, sc)
++	}
++	promCfg.ScrapeConfigs = filtered
++}
++
++// deniedFSAccessReason returns a non-empty reason if the scrape config
++// references arbitrary files via authorization or TLS config, or "" if the
++// config is allowed.
++func deniedFSAccessReason(sc *promconfig.ScrapeConfig) string {
++	if auth := sc.HTTPClientConfig.Authorization; auth != nil && auth.CredentialsFile != "" {
++		return fmt.Sprintf("authorization.credentials_file: %s", auth.CredentialsFile)
++	}
++	tls := &sc.HTTPClientConfig.TLSConfig
++	if tls.CAFile != "" {
++		return fmt.Sprintf("tls_config.ca_file: %s", tls.CAFile)
++	}
++	if tls.CertFile != "" {
++		return fmt.Sprintf("tls_config.cert_file: %s", tls.CertFile)
++	}
++	if tls.KeyFile != "" {
++		return fmt.Sprintf("tls_config.key_file: %s", tls.KeyFile)
++	}
++	return ""
++}
++
+ // WaitForNamedCacheSync adds a timeout to the informer's wait for the cache to be ready.
+ // If the PrometheusCRWatcher is unable to load an informer within 15 seconds, the method is
+ // cancelled and returns false. A successful informer load will return true. This method also
+--- a/internal/manifests/targetallocator/configmap.go
++++ b/internal/manifests/targetallocator/configmap.go
+@@ -117,6 +117,10 @@ func ConfigMap(params Params) (*corev1.ConfigMap, error) {
+ 			prometheusCRConfig["secret_namespaces"] = taSpec.PrometheusCR.SecretNamespaces
+ 		}
+ 
++		if taSpec.PrometheusCR.DenyFSAccessThroughSMs {
++			prometheusCRConfig["deny_fs_access_through_sms"] = true
++		}
++
+ 		prometheusCRConfig["service_monitor_namespace_selector"] = taSpec.PrometheusCR.ServiceMonitorNamespaceSelector
+ 		prometheusCRConfig["service_monitor_selector"] = taSpec.PrometheusCR.ServiceMonitorSelector
+ 
+===== 3. THE AGENT FIX TO JUDGE =====
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 933f83b..7faefea 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -15,12 +15,6 @@
+ 
+ ### 💡 Enhancements 💡
+ 
+-- `target allocator`: Add `secretNamespaces` field to PrometheusCR configuration to make the namespaces watched for secrets configurable instead of hardcoding to the collector namespace. (#4999)
+-  Previously, the Target Allocator always watched the collector namespace for secrets used in
+-  ServiceMonitor/PodMonitor basicAuth and other secret references. Now, the namespaces to watch
+-  for secrets can be explicitly configured via `spec.prometheusCR.secretNamespaces`.
+-  If not configured, no namespaces are watched for secrets.
+-  
+ - `operator`: Split kubebuilder RBAC markers and restrict pod permissions to get/list/watch only (#3156)
+   The operator does not create, update, patch, or delete Pod objects directly;
+   pods are managed by Deployment, DaemonSet, and StatefulSet controllers.
+diff --git a/apis/v1beta1/targetallocator_types.go b/apis/v1beta1/targetallocator_types.go
+index d0065a3..2f5253e 100644
+--- a/apis/v1beta1/targetallocator_types.go
++++ b/apis/v1beta1/targetallocator_types.go
+@@ -18,10 +18,6 @@ type TargetAllocatorPrometheusCR struct {
+ 	// DenyNamespaces Namespaces to scope the interaction of the Target Allocator and the apiserver (deny list). This is mutually exclusive with AllowNamespaces.
+ 	// +optional
+ 	DenyNamespaces []string `json:"denyNamespaces,omitempty"`
+-	// SecretNamespaces Namespaces to scope the watching of secrets for the Target Allocator.
+-	// If not configured, defaults to the target allocator's own namespace.
+-	// +optional
+-	SecretNamespaces []string `json:"secretNamespaces,omitempty"`
+ 	// Default interval between consecutive scrapes. Intervals set in ServiceMonitors and PodMonitors override it.
+ 	//
+ 	// Default: "30s"
+diff --git a/apis/v1beta1/zz_generated.deepcopy.go b/apis/v1beta1/zz_generated.deepcopy.go
+index c04fac7..89e4fbc 100644
+--- a/apis/v1beta1/zz_generated.deepcopy.go
++++ b/apis/v1beta1/zz_generated.deepcopy.go
+@@ -857,11 +857,6 @@ func (in *TargetAllocatorPrometheusCR) DeepCopyInto(out *TargetAllocatorPromethe
+ 		*out = make([]string, len(*in))
+ 		copy(*out, *in)
+ 	}
+-	if in.SecretNamespaces != nil {
+-		in, out := &in.SecretNamespaces, &out.SecretNamespaces
+-		*out = make([]string, len(*in))
+-		copy(*out, *in)
+-	}
+ 	if in.ScrapeInterval != nil {
+ 		in, out := &in.ScrapeInterval, &out.ScrapeInterval
+ 		*out = new(metav1.Duration)
+diff --git a/bundle/community/manifests/opentelemetry.io_opentelemetrycollectors.yaml b/bundle/community/manifests/opentelemetry.io_opentelemetrycollectors.yaml
+index af3baa6..b5818b5 100644
+--- a/bundle/community/manifests/opentelemetry.io_opentelemetrycollectors.yaml
++++ b/bundle/community/manifests/opentelemetry.io_opentelemetrycollectors.yaml
+@@ -8485,10 +8485,6 @@ spec:
+                         items:
+                           type: string
+                         type: array
+-                      secretNamespaces:
+-                        items:
+-                          type: string
+-                        type: array
+                       serviceMonitorNamespaceSelector:
+                         default: {}
+                         properties:
+diff --git a/bundle/community/manifests/opentelemetry.io_targetallocators.yaml b/bundle/community/manifests/opentelemetry.io_targetallocators.yaml
+index 0e6f929..044c453 100644
+--- a/bundle/community/manifests/opentelemetry.io_targetallocators.yaml
++++ b/bundle/community/manifests/opentelemetry.io_targetallocators.yaml
+@@ -2663,10 +2663,6 @@ spec:
+                     items:
+                       type: string
+                     type: array
+-                  secretNamespaces:
+-                    items:
+-                      type: string
+-                    type: array
+                   serviceMonitorNamespaceSelector:
+                     default: {}
+                     properties:
+diff --git a/bundle/openshift/manifests/opentelemetry.io_opentelemetrycollectors.yaml b/bundle/openshift/manifests/opentelemetry.io_opentelemetrycollectors.yaml
+index 8cb95a9..df82cea 100644
+--- a/bundle/openshift/manifests/opentelemetry.io_opentelemetrycollectors.yaml
++++ b/bundle/openshift/manifests/opentelemetry.io_opentelemetrycollectors.yaml
+@@ -8484,10 +8484,6 @@ spec:
+                         items:
+                           type: string
+                         type: array
+-                      secretNamespaces:
+-                        items:
+-                          type: string
+-                        type: array
+                       serviceMonitorNamespaceSelector:
+                         default: {}
+                         properties:
+diff --git a/bundle/openshift/manifests/opentelemetry.io_targetallocators.yaml b/bundle/openshift/manifests/opentelemetry.io_targetallocators.yaml
+index 0e6f929..044c453 100644
+--- a/bundle/openshift/manifests/opentelemetry.io_targetallocators.yaml
++++ b/bundle/openshift/manifests/opentelemetry.io_targetallocators.yaml
+@@ -2663,10 +2663,6 @@ spec:
+                     items:
+                       type: string
+                     type: array
+-                  secretNamespaces:
+-                    items:
+-                      type: string
+-                    type: array
+                   serviceMonitorNamespaceSelector:
+                     default: {}
+                     properties:
+diff --git a/cmd/otel-allocator/internal/config/config.go b/cmd/otel-allocator/internal/config/config.go
+index 81707c5..a16aed9 100644
+--- a/cmd/otel-allocator/internal/config/config.go
++++ b/cmd/otel-allocator/internal/config/config.go
+@@ -79,7 +79,6 @@ type PrometheusCRConfig struct {
+ 	Enabled                         bool                          `yaml:"enabled,omitempty"`
+ 	AllowNamespaces                 []string                      `yaml:"allow_namespaces,omitempty"`
+ 	DenyNamespaces                  []string                      `yaml:"deny_namespaces,omitempty"`
+-	SecretNamespaces                []string                      `yaml:"secret_namespaces,omitempty"`
+ 	PodMonitorSelector              *metav1.LabelSelector         `yaml:"pod_monitor_selector,omitempty"`
+ 	PodMonitorNamespaceSelector     *metav1.LabelSelector         `yaml:"pod_monitor_namespace_selector,omitempty"`
+ 	ServiceMonitorSelector          *metav1.LabelSelector         `yaml:"service_monitor_selector,omitempty"`
+@@ -481,15 +480,10 @@ func (c HTTPSServerConfig) NewTLSConfig(logger logr.Logger) (*tls.Config, *certw
+ }
+ 
+ // GetSecretsAllowList returns the namespaces to watch for secrets as a map.
+-// If SecretNamespaces is explicitly configured, those namespaces are used.
+-// Otherwise, it defaults to the collectorNamespace (the target allocator's own namespace).
++// Secret access is scoped to the target allocator's own namespace.
+ func (c PrometheusCRConfig) GetSecretsAllowList(collectorNamespace string) map[string]struct{} {
+ 	secretsAllowList := make(map[string]struct{})
+-	if len(c.SecretNamespaces) > 0 {
+-		for _, ns := range c.SecretNamespaces {
+-			secretsAllowList[ns] = struct{}{}
+-		}
+-	} else if collectorNamespace != "" {
++	if collectorNamespace != "" {
+ 		secretsAllowList[collectorNamespace] = struct{}{}
+ 	}
+ 	return secretsAllowList
+diff --git a/cmd/otel-allocator/internal/config/config_test.go b/cmd/otel-allocator/internal/config/config_test.go
+index 8b9f5ea..7cb75af 100644
+--- a/cmd/otel-allocator/internal/config/config_test.go
++++ b/cmd/otel-allocator/internal/config/config_test.go
+@@ -920,24 +920,6 @@ func TestGetSecretsAllowList(t *testing.T) {
+ 			collectorNamespace:       "",
+ 			expectedSecretsAllowList: map[string]struct{}{},
+ 		},
+-		{
+-			name:                     "single namespace overrides default",
+-			promCRConfig:             PrometheusCRConfig{Enabled: true, SecretNamespaces: []string{"ns1"}},
+-			collectorNamespace:       "ta-namespace",
+-			expectedSecretsAllowList: map[string]struct{}{"ns1": {}},
+-		},
+-		{
+-			name:                     "multiple namespaces",
+-			promCRConfig:             PrometheusCRConfig{Enabled: true, SecretNamespaces: []string{"ns1", "ns2", "ns3"}},
+-			collectorNamespace:       "ta-namespace",
+-			expectedSecretsAllowList: map[string]struct{}{"ns1": {}, "ns2": {}, "ns3": {}},
+-		},
+-		{
+-			name:                     "empty slice defaults to collector namespace",
+-			promCRConfig:             PrometheusCRConfig{Enabled: true, SecretNamespaces: []string{}},
+-			collectorNamespace:       "ta-namespace",
+-			expectedSecretsAllowList: map[string]struct{}{"ta-namespace": {}},
+-		},
+ 	}
+ 
+ 	for _, tc := range testCases {
+diff --git a/cmd/otel-allocator/internal/watcher/promOperator.go b/cmd/otel-allocator/internal/watcher/promOperator.go
+index 8558db7..4fd9c2e 100644
+--- a/cmd/otel-allocator/internal/watcher/promOperator.go
++++ b/cmd/otel-allocator/internal/watcher/promOperator.go
+@@ -64,9 +64,8 @@ func NewPrometheusCRWatcher(
+ 
+ 	monitoringInformerFactory := informers.NewMonitoringInformerFactories(allowList, denyList, monitoringclient, allocatorconfig.DefaultResyncTime, nil)
+ 
+-	// Scope the metadata informer factory to specific namespaces for secrets access.
++	// Scope the metadata informer factory to the target allocator namespace for secrets access.
+ 	// This avoids requiring cluster-wide secrets list/watch RBAC.
+-	// If SecretNamespaces is not configured, defaults to the target allocator's own namespace.
+ 	secretsAllowList := cfg.PrometheusCR.GetSecretsAllowList(cfg.CollectorNamespace)
+ 	metaDataInformerFactory := informers.NewMetadataInformerFactory(secretsAllowList, denyList, mdClient, allocatorconfig.DefaultResyncTime, nil)
+ 
+diff --git a/config/crd/bases/opentelemetry.io_opentelemetrycollectors.yaml b/config/crd/bases/opentelemetry.io_opentelemetrycollectors.yaml
+index 36a85d9..3667e0f 100644
+--- a/config/crd/bases/opentelemetry.io_opentelemetrycollectors.yaml
++++ b/config/crd/bases/opentelemetry.io_opentelemetrycollectors.yaml
+@@ -8471,10 +8471,6 @@ spec:
+                         items:
+                           type: string
+                         type: array
+-                      secretNamespaces:
+-                        items:
+-                          type: string
+-                        type: array
+                       serviceMonitorNamespaceSelector:
+                         default: {}
+                         properties:
+diff --git a/config/crd/bases/opentelemetry.io_targetallocators.yaml b/config/crd/bases/opentelemetry.io_targetallocators.yaml
+index 3801ac5..390a0ee 100644
+--- a/config/crd/bases/opentelemetry.io_targetallocators.yaml
++++ b/config/crd/bases/opentelemetry.io_targetallocators.yaml
+@@ -2661,10 +2661,6 @@ spec:
+                     items:
+                       type: string
+                     type: array
+-                  secretNamespaces:
+-                    items:
+-                      type: string
+-                    type: array
+                   serviceMonitorNamespaceSelector:
+                     default: {}
+                     properties:
+diff --git a/docs/api/opentelemetrycollectors.md b/docs/api/opentelemetrycollectors.md
+index 28743ab..9a2a728 100644
+--- a/docs/api/opentelemetrycollectors.md
++++ b/docs/api/opentelemetrycollectors.md
+@@ -34979,14 +34979,6 @@ Default: "30s"<br/>
+ protocols supported by Prometheus in order of preference (from most to least preferred).<br/>
+         </td>
+         <td>false</td>
+-      </tr><tr>
+-        <td><b>secretNamespaces</b></td>
+-        <td>[]string</td>
+-        <td>
+-          SecretNamespaces Namespaces to scope the watching of secrets for the Target Allocator.
+-If not configured, defaults to the target allocator's own namespace.<br/>
+-        </td>
+-        <td>false</td>
+       </tr><tr>
+         <td><b><a href="#opentelemetrycollectorspectargetallocatorprometheuscrservicemonitornamespaceselector">serviceMonitorNamespaceSelector</a></b></td>
+         <td>object</td>
+@@ -41605,4 +41597,4 @@ Deployment, Daemonset, StatefulSet.<br/>
+         </td>
+         <td>false</td>
+       </tr></tbody>
+-</table>
+\ No newline at end of file
++</table>
+diff --git a/docs/api/targetallocators.md b/docs/api/targetallocators.md
+index 563e346..409fe0d 100644
+--- a/docs/api/targetallocators.md
++++ b/docs/api/targetallocators.md
+@@ -10484,14 +10484,6 @@ Default: "30s"<br/>
+ protocols supported by Prometheus in order of preference (from most to least preferred).<br/>
+         </td>
+         <td>false</td>
+-      </tr><tr>
+-        <td><b>secretNamespaces</b></td>
+-        <td>[]string</td>
+-        <td>
+-          SecretNamespaces Namespaces to scope the watching of secrets for the Target Allocator.
+-If not configured, defaults to the target allocator's own namespace.<br/>
+-        </td>
+-        <td>false</td>
+       </tr><tr>
+         <td><b><a href="#targetallocatorspecprometheuscrservicemonitornamespaceselector">serviceMonitorNamespaceSelector</a></b></td>
+         <td>object</td>
+@@ -16349,4 +16341,4 @@ TargetAllocatorStatus defines the observed state of Target Allocator.
+         </td>
+         <td>false</td>
+       </tr></tbody>
+-</table>
+\ No newline at end of file
++</table>
+diff --git a/internal/manifests/targetallocator/configmap.go b/internal/manifests/targetallocator/configmap.go
+index 4f7d4f8..020582e 100644
+--- a/internal/manifests/targetallocator/configmap.go
++++ b/internal/manifests/targetallocator/configmap.go
+@@ -113,10 +113,6 @@ func ConfigMap(params Params) (*corev1.ConfigMap, error) {
+ 			prometheusCRConfig["deny_namespaces"] = taSpec.PrometheusCR.DenyNamespaces
+ 		}
+ 
+-		if taSpec.PrometheusCR.SecretNamespaces != nil {
+-			prometheusCRConfig["secret_namespaces"] = taSpec.PrometheusCR.SecretNamespaces
+-		}
+-
+ 		prometheusCRConfig["service_monitor_namespace_selector"] = taSpec.PrometheusCR.ServiceMonitorNamespaceSelector
+ 		prometheusCRConfig["service_monitor_selector"] = taSpec.PrometheusCR.ServiceMonitorSelector
+ 
+diff --git a/tests/e2e-targetallocator/targetallocator-prometheuscr-secrets/00-install.yaml b/tests/e2e-targetallocator/targetallocator-prometheuscr-secrets/00-install.yaml
+index 8db1828..f65d1b5 100644
+--- a/tests/e2e-targetallocator/targetallocator-prometheuscr-secrets/00-install.yaml
++++ b/tests/e2e-targetallocator/targetallocator-prometheuscr-secrets/00-install.yaml
+@@ -76,8 +76,6 @@ spec:
+     prometheusCR:
+       enabled: true
+       scrapeInterval: 1s
+-      secretNamespaces:
+-      - ($namespace)
+       serviceMonitorSelector: {}
+       podMonitorSelector: {}
+     serviceAccount: ta

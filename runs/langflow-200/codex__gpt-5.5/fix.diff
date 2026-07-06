@@ -1,0 +1,235 @@
+diff --git a/src/backend/base/langflow/api/v1/endpoints.py b/src/backend/base/langflow/api/v1/endpoints.py
+index 10cb82d..d466353 100644
+--- a/src/backend/base/langflow/api/v1/endpoints.py
++++ b/src/backend/base/langflow/api/v1/endpoints.py
+@@ -1,10 +1,12 @@
+ from __future__ import annotations
+ 
+ import asyncio
++import hashlib
+ import json
+ import time
+ from collections.abc import AsyncGenerator
+ from http import HTTPStatus
++from pathlib import Path
+ from typing import TYPE_CHECKING, Annotated
+ from uuid import UUID, uuid4
+ 
+@@ -58,12 +60,18 @@ from langflow.services.auth.utils import (
+     get_current_user_for_sse,
+     get_optional_user,
+ )
+-from langflow.services.cache.utils import save_uploaded_file
+ from langflow.services.database.models.flow.model import Flow, FlowRead
+ from langflow.services.database.models.flow.utils import get_all_webhook_components_in_flow
+ from langflow.services.database.models.user.model import User, UserRead
+-from langflow.services.deps import get_auth_service, get_session_service, get_settings_service, get_telemetry_service
++from langflow.services.deps import (
++    get_auth_service,
++    get_session_service,
++    get_settings_service,
++    get_storage_service,
++    get_telemetry_service,
++)
+ from langflow.services.event_manager import create_webhook_event_manager, webhook_event_manager
++from langflow.services.storage.service import StorageService
+ from langflow.services.telemetry.schema import RunPayload
+ from langflow.utils.compression import compress_response
+ from langflow.utils.version import get_version_info
+@@ -988,6 +996,7 @@ async def get_task_status(_task_id: str) -> TaskStatusResponse:
+ async def create_upload_file(
+     file: UploadFile,
+     flow_id: UUID,
++    storage_service: Annotated[StorageService, Depends(get_storage_service)],
+ ) -> UploadFileResponse:
+     """Upload a file for a specific flow (Deprecated).
+ 
+@@ -995,15 +1004,18 @@ async def create_upload_file(
+     """
+     try:
+         flow_id_str = str(flow_id)
+-        file_path = await asyncio.to_thread(save_uploaded_file, file, folder_name=flow_id_str)
++        file_content = await file.read()
++        file_extension = Path(file.filename).suffix if file.filename else ""
++        file_name = f"{hashlib.sha256(file_content).hexdigest()}{file_extension}"
++        await storage_service.save_file(flow_id=flow_id_str, file_name=file_name, data=file_content)
+ 
+         return UploadFileResponse(
+             flow_id=flow_id_str,
+-            file_path=file_path.as_posix(),
++            file_path=f"{flow_id_str}/{file_name}",
+         )
+     except Exception as exc:
+         await logger.aexception("Error saving file")
+-        raise HTTPException(status_code=500, detail=str(exc)) from exc
++        raise HTTPException(status_code=500, detail="Error saving file") from exc
+ 
+ 
+ # get endpoint to return version of langflow
+diff --git a/src/backend/tests/unit/api/v1/test_deprecated_upload_endpoint.py b/src/backend/tests/unit/api/v1/test_deprecated_upload_endpoint.py
+new file mode 100644
+index 0000000..72e4408
+--- /dev/null
++++ b/src/backend/tests/unit/api/v1/test_deprecated_upload_endpoint.py
+@@ -0,0 +1,49 @@
++from io import BytesIO
++from uuid import uuid4
++
++import pytest
++from fastapi import HTTPException, UploadFile
++
++from langflow.api.v1.endpoints import create_upload_file
++
++
++class FakeStorageService:
++    def __init__(self, *, error: Exception | None = None):
++        self.error = error
++        self.saved: list[tuple[str, str, bytes]] = []
++
++    async def save_file(self, flow_id: str, file_name: str, data: bytes, *, append: bool = False) -> None:
++        _ = append
++        if self.error:
++            raise self.error
++        self.saved.append((flow_id, file_name, data))
++
++
++@pytest.mark.asyncio
++async def test_deprecated_upload_returns_logical_path_without_server_cache_path():
++    flow_id = uuid4()
++    storage_service = FakeStorageService()
++    file = UploadFile(filename="secret.txt", file=BytesIO(b"test content"))
++
++    response = await create_upload_file(file=file, flow_id=flow_id, storage_service=storage_service)
++
++    assert response.flow_id == str(flow_id)
++    assert response.file_path.startswith(f"{flow_id}/")
++    assert "/" not in response.file_path.split("/", 1)[1]
++    assert response.file_path.endswith(".txt")
++    assert storage_service.saved[0][1] == response.file_path.split("/", 1)[1]
++    assert storage_service.saved[0] == (str(flow_id), response.file_path.split("/", 1)[1], b"test content")
++
++
++@pytest.mark.asyncio
++async def test_deprecated_upload_uses_generic_error_detail():
++    flow_id = uuid4()
++    storage_service = FakeStorageService(error=RuntimeError("/private/cache/path/secret.txt"))
++    file = UploadFile(filename="secret.txt", file=BytesIO(b"test content"))
++
++    with pytest.raises(HTTPException) as exc_info:
++        await create_upload_file(file=file, flow_id=flow_id, storage_service=storage_service)
++
++    assert exc_info.value.status_code == 500
++    assert exc_info.value.detail == "Error saving file"
++    assert "/private/cache/path" not in exc_info.value.detail
+diff --git a/src/lfx/src/lfx/load/utils.py b/src/lfx/src/lfx/load/utils.py
+index 297d781..16668eb 100644
+--- a/src/lfx/src/lfx/load/utils.py
++++ b/src/lfx/src/lfx/load/utils.py
+@@ -7,6 +7,9 @@ class UploadError(Exception):
+     """Raised when an error occurs during the upload process."""
+ 
+ 
++UPLOAD_ERROR_MESSAGE = "Error uploading file"
++
++
+ def upload(file_path: str, host: str, flow_id: str):
+     """Upload a file to Langflow and return the file path.
+ 
+@@ -27,12 +30,10 @@ def upload(file_path: str, host: str, flow_id: str):
+             response = httpx.post(url, files={"file": file})
+             if response.status_code in {httpx.codes.OK, httpx.codes.CREATED}:
+                 return response.json()
+-    except Exception as e:
+-        msg = f"Error uploading file: {e}"
+-        raise UploadError(msg) from e
++    except Exception:
++        raise UploadError(UPLOAD_ERROR_MESSAGE) from None
+ 
+-    msg = f"Error uploading file: {response.status_code}"
+-    raise UploadError(msg)
++    raise UploadError(UPLOAD_ERROR_MESSAGE)
+ 
+ 
+ def upload_file(file_path: str, host: str, flow_id: str, components: list[str], tweaks: dict | None = None):
+@@ -54,9 +55,8 @@ def upload_file(file_path: str, host: str, flow_id: str, components: list[str],
+     """
+     try:
+         response = upload(file_path, host, flow_id)
+-    except Exception as e:
+-        msg = f"Error uploading file: {e}"
+-        raise UploadError(msg) from e
++    except Exception:
++        raise UploadError(UPLOAD_ERROR_MESSAGE) from None
+ 
+     if not tweaks:
+         tweaks = {}
+@@ -65,12 +65,11 @@ def upload_file(file_path: str, host: str, flow_id: str, components: list[str],
+             if isinstance(component, str):
+                 tweaks[component] = {"path": response["file_path"]}
+             else:
+-                msg = f"Error uploading file: component ID or name must be a string. Got {type(component)}"
++                msg = "Error uploading file: component ID or name must be a string."
+                 raise UploadError(msg)
+         return tweaks
+ 
+-    msg = "Error uploading file"
+-    raise UploadError(msg)
++    raise UploadError(UPLOAD_ERROR_MESSAGE)
+ 
+ 
+ def replace_tweaks_with_env(tweaks: dict, env_vars: dict) -> dict:
+diff --git a/src/lfx/tests/unit/load/test_upload_utils.py b/src/lfx/tests/unit/load/test_upload_utils.py
+new file mode 100644
+index 0000000..e1e1302
+--- /dev/null
++++ b/src/lfx/tests/unit/load/test_upload_utils.py
+@@ -0,0 +1,49 @@
++import httpx
++import pytest
++
++from lfx.load import utils
++
++
++def test_upload_error_does_not_expose_local_or_remote_details(monkeypatch, tmp_path):
++    secret_file = tmp_path / "secret-token.txt"
++    secret_file.write_text("content", encoding="utf-8")
++
++    def raise_sensitive_error(*_args, **_kwargs):
++        raise RuntimeError(f"failed while opening {secret_file}")
++
++    monkeypatch.setattr(utils.httpx, "post", raise_sensitive_error)
++
++    with pytest.raises(utils.UploadError) as exc_info:
++        utils.upload(str(secret_file), "http://example.test", "flow-id")
++
++    assert str(exc_info.value) == utils.UPLOAD_ERROR_MESSAGE
++    assert str(secret_file) not in str(exc_info.value)
++
++
++def test_upload_non_success_status_uses_generic_error(monkeypatch, tmp_path):
++    upload_file = tmp_path / "upload.txt"
++    upload_file.write_text("content", encoding="utf-8")
++
++    def post_response(*_args, **_kwargs):
++        return httpx.Response(httpx.codes.INTERNAL_SERVER_ERROR, text="/private/server/path")
++
++    monkeypatch.setattr(utils.httpx, "post", post_response)
++
++    with pytest.raises(utils.UploadError) as exc_info:
++        utils.upload(str(upload_file), "http://example.test", "flow-id")
++
++    assert str(exc_info.value) == utils.UPLOAD_ERROR_MESSAGE
++    assert "/private/server/path" not in str(exc_info.value)
++
++
++def test_upload_file_wraps_upload_errors_without_details(monkeypatch):
++    def raise_upload_error(*_args, **_kwargs):
++        raise utils.UploadError("Error uploading file: /private/server/path")
++
++    monkeypatch.setattr(utils, "upload", raise_upload_error)
++
++    with pytest.raises(utils.UploadError) as exc_info:
++        utils.upload_file("local.txt", "http://example.test", "flow-id", ["File"])
++
++    assert str(exc_info.value) == utils.UPLOAD_ERROR_MESSAGE
++    assert "/private/server/path" not in str(exc_info.value)

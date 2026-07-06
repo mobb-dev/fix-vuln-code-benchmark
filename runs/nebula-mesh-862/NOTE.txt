@@ -1,0 +1,2 @@
+nebula-mesh-862: Claude fix TERMINATED at ~30 min / 190+ turns — did not converge offline within the time bound.
+Recorded as: Claude failed to fix offline within bound. Codex completed.

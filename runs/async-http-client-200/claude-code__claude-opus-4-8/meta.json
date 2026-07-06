@@ -1,0 +1,13 @@
+{
+  "agent": "claude-code",
+  "model": "claude-opus-4-8",
+  "tool_calls": 43,
+  "turns": 44,
+  "cost_usd": 5.822241000000001,
+  "usage": null,
+  "used_web": false,
+  "egress_attempts": [
+    "(curl -s --max-time 15 \"https://raw.githubusercontent.com/AsyncHttpClient/async-http-client/async-http-client-project-3.0.9/client/src/main/java/org/asynchttpclient/netty/handler/intercept/Redirect30x",
+    "curl -sI --max-time 10 https://raw.githubusercontent.com 2>&1 | head -3 || echo \"NO NET\""
+  ]
+}

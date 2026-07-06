@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/jupyter-server/jupyter_server.git
+FIX_COMMIT=6cbee8d65e71abac851c4492fea987ad080580bd
+VULN_FILE=jupyter_server/nbconvert/handlers.py
+CWE_ID=CWE-79
+CWE_NAME="Cross-site Scripting"
+LANGUAGE=python
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="tests/nbconvert/test_handlers.py"
+PREP_CMD="apt-get update -qq && apt-get install -y -qq pandoc && pip install -e '.[test]'"
+TEST_CMD="pytest tests/nbconvert/test_handlers.py -x"

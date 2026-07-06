@@ -1,0 +1,227 @@
+diff --git a/common/errors.go b/common/errors.go
+index 5cc8991..3f744a2 100644
+--- a/common/errors.go
++++ b/common/errors.go
+@@ -778,6 +778,9 @@ var ErrNotCompressed = errors.New("not compressed")
+ // ErrAlreadyCompressed ...
+ var ErrAlreadyCompressed = errors.New("already compressed")
+ 
++// ErrInvalidCompressedDataSize signals that a compressed batch has an invalid decompressed size
++var ErrInvalidCompressedDataSize = errors.New("invalid compressed data size")
++
+ // ErrInvalidParameter signals that a wrong parameter has been provided
+ var ErrInvalidParameter = errors.New("invalid parameter")
+ 
+diff --git a/core/process/interceptors/multiDataInterceptor.go b/core/process/interceptors/multiDataInterceptor.go
+index 5ea5a4b..8655df9 100644
+--- a/core/process/interceptors/multiDataInterceptor.go
++++ b/core/process/interceptors/multiDataInterceptor.go
+@@ -1,6 +1,7 @@
+ package interceptors
+ 
+ import (
++	"github.com/klever-io/klever-go/common"
+ 	"github.com/klever-io/klever-go/core"
+ 	"github.com/klever-io/klever-go/core/process"
+ 	"github.com/klever-io/klever-go/data/batch"
+@@ -103,6 +104,20 @@ func (mdi *MultiDataInterceptor) ProcessReceivedMessage(message p2p.MessageP2P,
+ 		return err
+ 	}
+ 	if b.IsCompressed {
++		if b.DataSize <= 0 {
++			return common.ErrInvalidCompressedDataSize
++		}
++		err = mdi.antifloodHandler.CanProcessMessagesOnTopic(
++			fromConnectedPeer,
++			mdi.topic,
++			1,
++			uint64(b.DataSize), // #nosec G115 - negative sizes are rejected above
++			message.SeqNo(),
++		)
++		if err != nil {
++			return err
++		}
++
+ 		err = b.Decompress(mdi.marshalizer)
+ 		if err != nil {
+ 			log.Error("MultiDataInterceptor.ProcessReceivedMessage", "err", err.Error())
+diff --git a/core/process/interceptors/multiDataInterceptor_test.go b/core/process/interceptors/multiDataInterceptor_test.go
+index 0067ea8..24af5a6 100644
+--- a/core/process/interceptors/multiDataInterceptor_test.go
++++ b/core/process/interceptors/multiDataInterceptor_test.go
+@@ -634,6 +634,50 @@ func TestMultiDataInterceptor_ProcessReceivedMessage_DecompressionErrorShouldRel
+ 		"regression GHSA-74m6-4hjp-7226 / KLC-2348: decompression-error path must release the throttler slot")
+ }
+ 
++func TestMultiDataInterceptor_ProcessReceivedMessage_CompressedBatchShouldChargeDecompressedSizeBeforeDecompress(t *testing.T) {
++	t.Parallel()
++
++	marshalizer := &mock.MarshalizerMock{}
++	compressedBatch := batch.New([]byte("payload"))
++	err := compressedBatch.Compress(marshalizer)
++	require.NoError(t, err)
++
++	payload, err := marshalizer.Marshal(compressedBatch)
++	require.NoError(t, err)
++
++	expectedDataSize := uint64(compressedBatch.DataSize)
++	errQuota := errors.New("quota exceeded")
++	chargedSizes := make([]uint64, 0, 2)
++
++	arg := createMockArgMultiDataInterceptor()
++	arg.Marshalizer = marshalizer
++	arg.AntifloodHandler = &mock.P2PAntifloodHandlerStub{
++		CanProcessMessagesOnTopicCalled: func(_ core.PeerID, _ string, _ uint32, totalSize uint64, _ []byte) error {
++			chargedSizes = append(chargedSizes, totalSize)
++			if len(chargedSizes) == 2 {
++				return errQuota
++			}
++			return nil
++		},
++	}
++
++	mdi, err := interceptors.NewMultiDataInterceptor(arg)
++	require.NoError(t, err)
++
++	msg := &mock.P2PMessageMock{
++		DataField:  payload,
++		PeerField:  core.PeerID("origin-peer"),
++		SeqNoField: []byte("seq-1"),
++	}
++
++	processErr := mdi.ProcessReceivedMessage(msg, fromConnectedPeerID)
++	require.ErrorIs(t, processErr, errQuota)
++
++	require.Len(t, chargedSizes, 2)
++	assert.Equal(t, uint64(len(payload)), chargedSizes[0])
++	assert.Equal(t, expectedDataSize, chargedSizes[1])
++}
++
+ // Repeated malformed compressed batches must not exhaust a real, bounded throttler.
+ // On the unfixed code, the third malformed batch returns common.ErrSystemBusy because the
+ // previous two leaked their slots in the gzip-error branch.
+diff --git a/data/batch/batch.go b/data/batch/batch.go
+index 60446ef..c552809 100644
+--- a/data/batch/batch.go
++++ b/data/batch/batch.go
+@@ -12,6 +12,8 @@ import (
+ 	"github.com/klever-io/klever-go/tools/marshal"
+ )
+ 
++const maxDecompressedBatchSize = 1 << 20
++
+ // New returns a new batch from given buffers
+ func New(buffs ...[]byte) *Batch {
+ 	return &Batch{
+@@ -32,23 +34,33 @@ func compressGzip(data []byte) ([]byte, error) {
+ 	return b.Bytes(), nil
+ }
+ 
+-func decompressGzip(data []byte) ([]byte, error) {
++func decompressGzip(dataSize int32, data []byte) ([]byte, error) {
++	if dataSize <= 0 || dataSize > maxDecompressedBatchSize {
++		return nil, common.ErrInvalidCompressedDataSize
++	}
++
+ 	rdata := bytes.NewReader(data)
+ 
+ 	reader, err := gzip.NewReader(rdata)
+ 	if err != nil {
+ 		return nil, err
+ 	}
++	defer func() {
++		_ = reader.Close()
++	}()
+ 
+-	result, err := io.ReadAll(reader)
++	limitedReader := &io.LimitedReader{
++		R: reader,
++		N: int64(dataSize) + 1,
++	}
++	result, err := io.ReadAll(limitedReader)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+ 
+-	if err := reader.Close(); err != nil {
+-		return nil, err
++	if limitedReader.N == 0 || int32(len(result)) != dataSize {
++		return nil, common.ErrInvalidCompressedDataSize
+ 	}
+-
+ 	return result, nil
+ }
+ 
+@@ -65,7 +77,7 @@ func compressLZ4(data []byte) ([]byte, error) {
+ }
+ 
+ func decompressLZ4(dataSize int32, data []byte) ([]byte, error) {
+-	return decompressGzip(data)
++	return decompressGzip(dataSize, data)
+ 	/*output := make([]byte, dataSize)
+ 	_, err := lz4.Uncompress(output, data)
+ 	if err != nil {
+@@ -119,7 +131,7 @@ func (ba *Batch) Decompress(m marshal.Marshalizer) error {
+ 			return err
+ 		}
+ 	} else {
+-		result, err = decompressGzip(ba.Stream)
++		result, err = decompressGzip(ba.DataSize, ba.Stream)
+ 		if err != nil {
+ 			return err
+ 		}
+diff --git a/data/batch/batch_test.go b/data/batch/batch_test.go
+index 571a595..0d0363d 100644
+--- a/data/batch/batch_test.go
++++ b/data/batch/batch_test.go
+@@ -5,6 +5,7 @@ import (
+ 	"math"
+ 	"testing"
+ 
++	"github.com/klever-io/klever-go/common"
+ 	"github.com/klever-io/klever-go/data/batch"
+ 	"github.com/klever-io/klever-go/tools/marshal/factory"
+ 	"github.com/stretchr/testify/assert"
+@@ -47,6 +48,42 @@ func TestGZIP(t *testing.T) {
+ 	fmt.Printf("Size: %d, New Size %d\n", len(data), len(newData))
+ }
+ 
++func TestDecompress_GZIPDataLargerThanDeclaredShouldFail(t *testing.T) {
++	t.Parallel()
++
++	internalMarshalizer, err := factory.NewMarshalizer(factory.ProtoMarshalizer)
++	require.NoError(t, err)
++
++	buffer := addRandom(make([][]byte, 0), 100)
++	ba := batch.New(buffer...)
++	ba.Algo = batch.CType_GZip
++
++	err = ba.Compress(internalMarshalizer)
++	require.NoError(t, err)
++	require.Greater(t, ba.DataSize, int32(1))
++
++	ba.DataSize--
++	err = ba.Decompress(internalMarshalizer)
++	assert.ErrorIs(t, err, common.ErrInvalidCompressedDataSize)
++}
++
++func TestDecompress_GZIPDataSizeTooLargeShouldFail(t *testing.T) {
++	t.Parallel()
++
++	internalMarshalizer, err := factory.NewMarshalizer(factory.ProtoMarshalizer)
++	require.NoError(t, err)
++
++	ba := batch.Batch{
++		Algo:         batch.CType_GZip,
++		IsCompressed: true,
++		DataSize:     1<<20 + 1,
++		Stream:       []byte("not read"),
++	}
++
++	err = ba.Decompress(internalMarshalizer)
++	assert.ErrorIs(t, err, common.ErrInvalidCompressedDataSize)
++}
++
+ func BenchmarkCompress(b *testing.B) {
+ 	algos := []batch.CType{batch.CType_GZip, batch.CType_LZ4}
+ 	sizes := []int{100, 1000, 3000}

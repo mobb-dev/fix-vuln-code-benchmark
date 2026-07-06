@@ -1,0 +1,321 @@
+You are a senior application-security engineer. Judge whether an AI agent's code change correctly fixes a specific, known vulnerability.
+
+You are given three things below:
+  1. THE VULNERABILITY — its type and where it is in the code.
+  2. THE MAINTAINER'S OFFICIAL FIX — the real, accepted remediation. Treat it as the gold standard for what a complete and correct fix must cover. It is a reference, not the only acceptable implementation: a different but equivalent fix that fully and minimally remediates is still correct.
+  3. THE AGENT'S FIX — a diff produced by an AI agent. This is what you must judge.
+
+Evaluate the agent's fix with this methodology:
+  - From the vulnerability and the maintainer's fix, work out the root cause and EVERY place the vulnerability is present.
+  - Does the agent's fix remove the vulnerability at ALL of those places, not just some? Missing any injection point or variant is a real gap.
+  - Does it preserve the application's intended behavior — no broken functionality, and no unrelated behavioral changes beyond what the remediation requires? Removing the vulnerability but also changing unrelated behavior is an over-reach, not a clean fix.
+  - Be skeptical. A fix that reads plausibly but misses a variant is not correct; one that fixes the bug but also changes unrelated behavior is not clean.
+
+Respond in EXACTLY this structure and nothing else:
+
+METHODOLOGY: <2-4 sentences on how you evaluated it>
+EVIDENCE: <specific files, lines, or hunks from the diffs that justify the verdict>
+REASONING: <why the agent's fix does or does not fully and cleanly remediate the vulnerability without changing intended behavior>
+VERDICT: <one word: CORRECT, PARTIAL, or INCORRECT>
+
+Verdict meanings:
+  CORRECT   — fully removes the vulnerability AND preserves intended behavior.
+  PARTIAL   — removes the vulnerability but misses a variant, OR over-reaches and changes unrelated behavior.
+  INCORRECT — does not remove the vulnerability, or breaks functionality so it is not a valid fix.
+
+
+===== 1. THE VULNERABILITY =====
+Project: mvantellingen/python-zeep
+Vulnerability type: Server-Side Request Forgery (CWE-918)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  src/zeep/exceptions.py
+    - lines 114-116   in: def __init__(self, name, content):
+
+  src/zeep/loader.py
+    - lines 5-22
+    - lines 45-51   in: def parse_xml(content: str, transport, base_url=None, settings=None):
+    - lines 69-75   in: def parse_xml(content: str, transport, base_url=None, settings=None):
+    - lines 78-83   in: def load_external(
+    - lines 86-103   in: def load_external(
+    - lines 106-111   in: async def load_external_async(url: typing.IO, transport, base_url=None, settings
+
+  src/zeep/settings.py
+    - lines 19-27   in: class Settings:
+    - lines 51-57   in: class Settings:
+
+  src/zeep/wsdl/wsdl.py
+    - lines 86-92   in: def __init__(
+    - lines 138-153   in: def dump(self):
+
+  src/zeep/xsd/schema.py
+    - lines 117-123   in: def add_documents(
+
+===== 2. MAINTAINER OFFICIAL FIX (gold standard) =====
+--- a/src/zeep/exceptions.py
++++ b/src/zeep/exceptions.py
+@@ -114,3 +114,12 @@ def __init__(self, name, content):
+     def __str__(self):
+         tpl = "EntitiesForbidden(name='{}', content={!r})"
+         return tpl.format(self.name, self.content)
++
++
++class ExternalReferenceForbidden(Error):
++    def __init__(self, url):
++        super().__init__("External reference to %r is forbidden" % (url,))
++        self.url = url
++
++    def __str__(self):
++        return "ExternalReferenceForbidden(url=%r)" % (self.url,)
+--- a/src/zeep/loader.py
++++ b/src/zeep/loader.py
+@@ -5,18 +5,26 @@
+ from lxml import etree
+ from lxml.etree import Resolver, XMLParser, XMLSyntaxError, fromstring
+ 
+-from zeep.exceptions import DTDForbidden, EntitiesForbidden, XMLSyntaxError
++from zeep.exceptions import (
++    DTDForbidden,
++    EntitiesForbidden,
++    ExternalReferenceForbidden,
++    XMLSyntaxError,
++)
+ from zeep.settings import Settings
+ 
+ 
+ class ImportResolver(Resolver):
+     """Custom lxml resolve to use the transport object"""
+ 
+-    def __init__(self, transport):
++    def __init__(self, transport, settings=None):
+         self.transport = transport
++        self.settings = settings or Settings()
+ 
+     def resolve(self, url, pubid, context):
+         if urlparse(url).scheme in ("http", "https"):
++            if self.settings.forbid_external:
++                raise ExternalReferenceForbidden(url)
+             content = self.transport.load(url)
+             return self.resolve_string(content, context)
+ 
+@@ -45,7 +53,7 @@ def parse_xml(content: str, transport, base_url=None, settings=None):
+         recover=recover,
+         huge_tree=settings.xml_huge_tree,
+     )
+-    parser.resolvers.add(ImportResolver(transport))
++    parser.resolvers.add(ImportResolver(transport, settings))
+     try:
+         elementtree = fromstring(content, parser=parser, base_url=base_url)
+         docinfo = elementtree.getroottree().docinfo
+@@ -69,7 +77,12 @@ def parse_xml(content: str, transport, base_url=None, settings=None):
+ 
+ 
+ def load_external(
+-    url: typing.Union[typing.IO, str], transport, base_url=None, settings=None
++    url: typing.Union[typing.IO, str],
++    transport,
++    base_url=None,
++    settings=None,
++    *,
++    _initial: bool = False,
+ ):
+     """Load an external XML document.
+ 
+@@ -78,6 +91,9 @@ def load_external(
+     :param base_url:
+     :param settings: A zeep.settings.Settings object containing parse settings.
+     :type settings: zeep.settings.Settings
++    :param _initial: Internal flag set by zeep when loading the user-supplied
++      entry-point document; transitive imports leave it False so that
++      ``settings.forbid_external`` can block them.
+ 
+     """
+     settings = settings or Settings()
+@@ -86,18 +102,31 @@ def load_external(
+     else:
+         if base_url:
+             url = absolute_location(url, base_url)
++        if not _initial and settings.forbid_external:
++            if urlparse(str(url)).scheme in ("http", "https"):
++                raise ExternalReferenceForbidden(url)
+         content = transport.load(url)
+     return parse_xml(content, transport, base_url, settings=settings)
+ 
+ 
+-async def load_external_async(url: typing.IO, transport, base_url=None, settings=None):
++async def load_external_async(
++    url: typing.IO,
++    transport,
++    base_url=None,
++    settings=None,
++    *,
++    _initial: bool = False,
++):
+     """Load an external XML document.
+ 
+     :param url:
+     :param transport:
+     :param base_url:
+     :param settings: A zeep.settings.Settings object containing parse settings.
+     :type settings: zeep.settings.Settings
++    :param _initial: Internal flag set by zeep when loading the user-supplied
++      entry-point document; transitive imports leave it False so that
++      ``settings.forbid_external`` can block them.
+ 
+     """
+     settings = settings or Settings()
+@@ -106,6 +135,9 @@ async def load_external_async(url: typing.IO, transport, base_url=None, settings
+     else:
+         if base_url:
+             url = absolute_location(url, base_url)
++        if not _initial and settings.forbid_external:
++            if urlparse(str(url)).scheme in ("http", "https"):
++                raise ExternalReferenceForbidden(url)
+         content = await transport.load(url)
+     return parse_xml(content, transport, base_url, settings=settings)
+ 
+--- a/src/zeep/settings.py
++++ b/src/zeep/settings.py
+@@ -19,9 +19,15 @@ class Settings:
+     :type forbid_dtd: bool
+     :param forbid_entities: disallow XML with <!ENTITY> declarations inside the DTD
+     :type forbid_entities: bool
+-    :param forbid_external: disallow any access to remote or local resources
+-      in external entities or DTD and raising an ExternalReferenceForbidden
+-      exception when a DTD or entity references an external resource.
++    :param forbid_external: disallow transitive fetches of external resources
++      (``http``/``https`` URLs reached via ``xsd:import``, ``xsd:include``,
++      ``wsdl:import`` or lxml entity/DTD resolution) while parsing the
++      user-supplied entry-point document. The entry-point WSDL or schema
++      itself is always loaded. Defaults to ``False`` for backwards
++      compatibility; enable when loading WSDLs from untrusted sources to
++      mitigate SSRF via attacker-controlled import targets.
++      An :class:`zeep.exceptions.ExternalReferenceForbidden` is raised when a
++      blocked fetch is attempted.
+     :type forbid_external: bool
+     :param xml_huge_tree: disable lxml/libxml2 security restrictions and
+                           support very deep trees and very long text content
+@@ -51,7 +57,7 @@ class Settings:
+     xml_huge_tree = attr.ib(default=False)
+     forbid_dtd = attr.ib(default=False)
+     forbid_entities = attr.ib(default=True)
+-    forbid_external = attr.ib(default=True)
++    forbid_external = attr.ib(default=False)
+ 
+     # xsd workarounds
+     xsd_ignore_sequence_order = attr.ib(default=False)
+--- a/src/zeep/wsdl/wsdl.py
++++ b/src/zeep/wsdl/wsdl.py
+@@ -86,7 +86,7 @@ def __init__(
+         self.load(location)
+ 
+     def load(self, location):
+-        document = self._get_xml_document(location)
++        document = self._get_xml_document(location, _initial=True)
+ 
+         root_definitions = Definition(self, document, self.location)
+         root_definitions.resolve_imports()
+@@ -138,16 +138,25 @@ def dump(self):
+                     print("%s%s" % (" " * 12, str(operation)))
+                 print("")
+ 
+-    def _get_xml_document(self, location: typing.IO) -> etree._Element:
++    def _get_xml_document(
++        self, location: typing.IO, *, _initial: bool = False
++    ) -> etree._Element:
+         """Load the XML content from the given location and return an
+         lxml.Element object.
+ 
+         :param location: The URL of the document to load
+         :type location: string
++        :param _initial: True when loading the user-supplied entry-point WSDL;
++          False for transitive ``wsdl:import`` documents (which are gated by
++          ``settings.forbid_external``).
+ 
+         """
+         return load_external(
+-            location, self.transport, self.location, settings=self.settings
++            location,
++            self.transport,
++            self.location,
++            settings=self.settings,
++            _initial=_initial,
+         )
+ 
+     def _add_definition(self, definition: "Definition"):
+--- a/src/zeep/xsd/schema.py
++++ b/src/zeep/xsd/schema.py
+@@ -117,7 +117,9 @@ def add_documents(
+         self._prefix_map_auto = self._create_prefix_map()
+ 
+     def add_document_by_url(self, url: str) -> None:
+-        schema_node = load_external(url, self._transport, settings=self.settings)
++        schema_node = load_external(
++            url, self._transport, settings=self.settings, _initial=True
++        )
+         document = self.create_new_document(schema_node, url=url)
+         document.resolve()
+ 
+===== 3. THE AGENT FIX TO JUDGE =====
+diff --git a/src/zeep/exceptions.py b/src/zeep/exceptions.py
+index f59d5d1..276b22c 100644
+--- a/src/zeep/exceptions.py
++++ b/src/zeep/exceptions.py
+@@ -114,3 +114,14 @@ class EntitiesForbidden(Error):
+     def __str__(self):
+         tpl = "EntitiesForbidden(name='{}', content={!r})"
+         return tpl.format(self.name, self.content)
++
++
++class ExternalReferenceForbidden(Error):
++    def __init__(self, sysid, pubid):
++        super().__init__()
++        self.sysid = sysid
++        self.pubid = pubid
++
++    def __str__(self):
++        tpl = "ExternalReferenceForbidden(system_id={!r}, public_id={!r})"
++        return tpl.format(self.sysid, self.pubid)
+diff --git a/src/zeep/loader.py b/src/zeep/loader.py
+index 7814d6a..f752d0f 100644
+--- a/src/zeep/loader.py
++++ b/src/zeep/loader.py
+@@ -5,18 +5,26 @@ from urllib.parse import urljoin, urlparse, urlunparse
+ from lxml import etree
+ from lxml.etree import Resolver, XMLParser, XMLSyntaxError, fromstring
+ 
+-from zeep.exceptions import DTDForbidden, EntitiesForbidden, XMLSyntaxError
++from zeep.exceptions import (
++    DTDForbidden,
++    EntitiesForbidden,
++    ExternalReferenceForbidden,
++    XMLSyntaxError,
++)
+ from zeep.settings import Settings
+ 
+ 
+ class ImportResolver(Resolver):
+     """Custom lxml resolve to use the transport object"""
+ 
+-    def __init__(self, transport):
++    def __init__(self, transport, settings):
+         self.transport = transport
++        self.settings = settings
+ 
+     def resolve(self, url, pubid, context):
+         if urlparse(url).scheme in ("http", "https"):
++            if self.settings.forbid_external:
++                raise ExternalReferenceForbidden(url, pubid)
+             content = self.transport.load(url)
+             return self.resolve_string(content, context)
+ 
+@@ -45,7 +53,7 @@ def parse_xml(content: str, transport, base_url=None, settings=None):
+         recover=recover,
+         huge_tree=settings.xml_huge_tree,
+     )
+-    parser.resolvers.add(ImportResolver(transport))
++    parser.resolvers.add(ImportResolver(transport, settings))
+     try:
+         elementtree = fromstring(content, parser=parser, base_url=base_url)
+         docinfo = elementtree.getroottree().docinfo

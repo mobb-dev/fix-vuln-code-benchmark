@@ -1,0 +1,12 @@
+{
+  "agent": "claude-code",
+  "model": "claude-opus-4-8",
+  "tool_calls": 81,
+  "turns": null,
+  "cost_usd": null,
+  "usage": null,
+  "used_web": false,
+  "egress_attempts": [
+    "cd /tmp && curl -s --max-time 15 \"https://raw.githubusercontent.com/juev/nebula-mesh/main/internal/api/hosts.go\" -o up_hosts.go 2>&1; echo \"exit=$?\"; ls -la up_hosts.go 2>/dev/null; head -5 up_hosts.g"
+  ]
+}

@@ -1,0 +1,8 @@
+Reading additional input from stdin...
+2026-07-02T14:19:32.438560Z ERROR codex_core::tools::router: error=apply_patch verification failed: Failed to find expected lines in /work/service/singleton/crontask.go:
+			if cr != nil && cr.CronJobID != 0 {
+				c.Cron.Remove(cr.CronJobID)
+			}
+			delete(c.list, id)
+		}
+	}

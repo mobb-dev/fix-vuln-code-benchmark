@@ -1,0 +1,9 @@
+Project: AsyncHttpClient/async-http-client
+Vulnerability type: Information Exposure (CWE-200)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  client/src/main/java/org/asynchttpclient/netty/handler/intercept/Redirect30xInterceptor.java
+    - lines 41-46
+    - lines 113-119   in: public boolean exitAfterHandlingRedirect(Channel channel, NettyResponseFuture<?>
+    - lines 209-216   in: private static HttpHeaders propagatedHeaders(Request request, Realm realm, boole

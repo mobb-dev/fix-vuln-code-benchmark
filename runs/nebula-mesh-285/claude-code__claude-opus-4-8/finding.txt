@@ -1,0 +1,40 @@
+Project: forgekeep/nebula-mesh
+Vulnerability type: Improper Authorization (CWE-285)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  internal/api/audit.go
+    - lines 10-15   in: import (
+
+  internal/api/firewall.go
+    - lines 29-34   in: var defaultFirewallRules = firewallRulesRequest{
+    - lines 42-47   in: func (s *Server) handleGetFirewall(w http.ResponseWriter, r *http.Request) {
+
+  internal/api/hosts.go
+    - lines 51-56   in: func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
+    - lines 90-95   in: func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
+    - lines 104-110   in: func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
+    - lines 152-157   in: func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
+    - lines 167-178   in: func (s *Server) handleGetHost(w http.ResponseWriter, r *http.Request) {
+    - lines 189-194   in: func (s *Server) handleDeleteHost(w http.ResponseWriter, r *http.Request) {
+    - lines 206-211   in: func (s *Server) handleBlockHost(w http.ResponseWriter, r *http.Request) {
+    - lines 222-227   in: func (s *Server) handleUnblockHost(w http.ResponseWriter, r *http.Request) {
+    - lines 269-274   in: func (s *Server) handleRotateCert(w http.ResponseWriter, r *http.Request) {
+    - lines 346-351   in: func (s *Server) mintEnrollmentTokenForHost(w http.ResponseWriter, r *http.Reque
+    - lines 380-387   in: func (s *Server) handleUpdateHost(w http.ResponseWriter, r *http.Request) {
+
+  internal/api/mobile_bundle.go
+    - lines 29-34   in: func (s *Server) handleMobileBundle(w http.ResponseWriter, r *http.Request) {
+
+  internal/api/networks.go
+    - lines 17-22   in: type createNetworkRequest struct {
+    - lines 55-60   in: func (s *Server) handleListNetworks(w http.ResponseWriter, r *http.Request) {
+    - lines 70-75   in: func (s *Server) handleGetNetwork(w http.ResponseWriter, r *http.Request) {
+
+  internal/api/operators.go
+    - lines 64-69   in: func (s *Server) handleCreateOperator(w http.ResponseWriter, r *http.Request) {
+    - lines 77-82   in: func (s *Server) handleListOperators(w http.ResponseWriter, r *http.Request) {
+    - lines 92-97   in: func (s *Server) handleDisableOperator(w http.ResponseWriter, r *http.Request) {
+    - lines 116-121   in: type createAPIKeyResponse struct {
+    - lines 155-160   in: func (s *Server) handleCreateOperatorAPIKey(w http.ResponseWriter, r *http.Reque
+    - lines 171-176   in: func (s *Server) handleRevokeOperatorAPIKey(w http.ResponseWriter, r *http.Reque

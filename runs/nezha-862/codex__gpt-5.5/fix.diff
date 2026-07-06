@@ -1,0 +1,354 @@
+diff --git a/cmd/dashboard/rpc/rpc.go b/cmd/dashboard/rpc/rpc.go
+index ca14870..894d25d 100644
+--- a/cmd/dashboard/rpc/rpc.go
++++ b/cmd/dashboard/rpc/rpc.go
+@@ -93,7 +93,7 @@ func DispatchTask(serviceSentinelDispatchBus <-chan *model.Service) {
+ 					continue
+ 				}
+ 
+-				if canSendTaskToServer(task, server) {
++				if singleton.ServiceCanSendToServer(task, server) {
+ 					server.TaskStream.Send(task.PB())
+ 				}
+ 			}
+@@ -103,7 +103,7 @@ func DispatchTask(serviceSentinelDispatchBus <-chan *model.Service) {
+ 					continue
+ 				}
+ 
+-				if canSendTaskToServer(task, server) {
++				if singleton.ServiceCanSendToServer(task, server) {
+ 					server.TaskStream.Send(task.PB())
+ 				}
+ 			}
+@@ -178,16 +178,3 @@ func ServeNAT(w http.ResponseWriter, r *http.Request, natConfig *model.NAT) {
+ 
+ 	rpcService.NezhaHandlerSingleton.StartStream(streamId, time.Second*10)
+ }
+-
+-func canSendTaskToServer(task *model.Service, server *model.Server) bool {
+-	var role model.Role
+-	singleton.UserLock.RLock()
+-	if u, ok := singleton.UserInfoMap[task.UserID]; !ok {
+-		role = model.RoleMember
+-	} else {
+-		role = u.Role
+-	}
+-	singleton.UserLock.RUnlock()
+-
+-	return task.UserID == server.UserID || role.IsAdmin()
+-}
+diff --git a/service/rpc/nezha.go b/service/rpc/nezha.go
+index 0125c94..c688ed7 100644
+--- a/service/rpc/nezha.go
++++ b/service/rpc/nezha.go
+@@ -57,7 +57,7 @@ func (s *NezhaHandler) RequestTask(stream pb.NezhaService_RequestTaskServer) err
+ 		case model.TaskTypeCommand:
+ 			// 处理上报的计划任务
+ 			cr, _ := singleton.CronShared.Get(result.GetId())
+-			if cr != nil {
++			if singleton.CronTaskResultAuthorized(cr, server) {
+ 				// 保存当前服务器状态信息
+ 				var curServer model.Server
+ 				copier.Copy(&curServer, server)
+diff --git a/service/singleton/crontask.go b/service/singleton/crontask.go
+index ce73c08..093c2c4 100644
+--- a/service/singleton/crontask.go
++++ b/service/singleton/crontask.go
+@@ -5,6 +5,7 @@ import (
+ 	"fmt"
+ 	"slices"
+ 	"strings"
++	"sync"
+ 
+ 	"github.com/jinzhu/copier"
+ 
+@@ -15,6 +16,13 @@ import (
+ 	pb "github.com/nezhahq/nezha/proto"
+ )
+ 
++var dispatchedCronTasks = struct {
++	sync.Mutex
++	count map[uint64]map[uint64]uint64
++}{
++	count: make(map[uint64]map[uint64]uint64),
++}
++
+ type CronClass struct {
+ 	class[uint64, *model.Cron]
+ 	*cron.Cron
+@@ -90,6 +98,7 @@ func (c *CronClass) Delete(idList []uint64) {
+ 			c.Cron.Remove(cr.CronJobID)
+ 		}
+ 		delete(c.list, id)
++		clearCronTaskDispatch(id)
+ 	}
+ 	c.listMu.Unlock()
+ 
+@@ -149,11 +158,13 @@ func CronTrigger(cr *model.Cron, triggerServer ...uint64) func() {
+ 					return
+ 				}
+ 				if s.TaskStream != nil {
+-					s.TaskStream.Send(&pb.Task{
++					if err := s.TaskStream.Send(&pb.Task{
+ 						Id:   cr.ID,
+ 						Data: cr.Command,
+ 						Type: model.TaskTypeCommand,
+-					})
++					}); err == nil {
++						recordCronTaskDispatch(cr.ID, s.ID)
++					}
+ 				} else {
+ 					// 保存当前服务器状态信息
+ 					curServer := model.Server{}
+@@ -175,11 +186,13 @@ func CronTrigger(cr *model.Cron, triggerServer ...uint64) func() {
+ 				continue
+ 			}
+ 			if s.TaskStream != nil {
+-				s.TaskStream.Send(&pb.Task{
++				if err := s.TaskStream.Send(&pb.Task{
+ 					Id:   cr.ID,
+ 					Data: cr.Command,
+ 					Type: model.TaskTypeCommand,
+-				})
++				}); err == nil {
++					recordCronTaskDispatch(cr.ID, s.ID)
++				}
+ 			} else {
+ 				// 保存当前服务器状态信息
+ 				curServer := model.Server{}
+@@ -191,7 +204,55 @@ func CronTrigger(cr *model.Cron, triggerServer ...uint64) func() {
+ }
+ 
+ func cronCanSendToServer(cr *model.Cron, server *model.Server) bool {
+-	return cr.UserID == server.UserID || userIsAdmin(cr.UserID)
++	return userCanAccessServer(cr.UserID, server)
++}
++
++func userCanAccessServer(userID uint64, server *model.Server) bool {
++	return server != nil && (userID == server.UserID || userIsAdmin(userID))
++}
++
++func recordCronTaskDispatch(cronID, serverID uint64) {
++	dispatchedCronTasks.Lock()
++	defer dispatchedCronTasks.Unlock()
++
++	if dispatchedCronTasks.count[cronID] == nil {
++		dispatchedCronTasks.count[cronID] = make(map[uint64]uint64)
++	}
++	dispatchedCronTasks.count[cronID][serverID]++
++}
++
++func consumeCronTaskDispatch(cronID, serverID uint64) bool {
++	dispatchedCronTasks.Lock()
++	defer dispatchedCronTasks.Unlock()
++
++	serverCounts := dispatchedCronTasks.count[cronID]
++	if serverCounts == nil || serverCounts[serverID] == 0 {
++		return false
++	}
++
++	serverCounts[serverID]--
++	if serverCounts[serverID] == 0 {
++		delete(serverCounts, serverID)
++	}
++	if len(serverCounts) == 0 {
++		delete(dispatchedCronTasks.count, cronID)
++	}
++	return true
++}
++
++func clearCronTaskDispatch(cronID uint64) {
++	dispatchedCronTasks.Lock()
++	defer dispatchedCronTasks.Unlock()
++
++	delete(dispatchedCronTasks.count, cronID)
++}
++
++func CronTaskResultAuthorized(cr *model.Cron, server *model.Server) bool {
++	if cr == nil || server == nil || !cronCanSendToServer(cr, server) {
++		return false
++	}
++
++	return consumeCronTaskDispatch(cr.ID, server.ID)
+ }
+ 
+ func userIsAdmin(userID uint64) bool {
+diff --git a/service/singleton/security_regression_test.go b/service/singleton/security_regression_test.go
+index cd3c3fc..939a6ba 100644
+--- a/service/singleton/security_regression_test.go
++++ b/service/singleton/security_regression_test.go
+@@ -66,6 +66,21 @@ func replaceUserInfoMapForSecurityTest(t *testing.T, users map[uint64]model.User
+ 	})
+ }
+ 
++func resetDispatchedCronTasksForSecurityTest(t *testing.T) {
++	t.Helper()
++
++	dispatchedCronTasks.Lock()
++	original := dispatchedCronTasks.count
++	dispatchedCronTasks.count = make(map[uint64]map[uint64]uint64)
++	dispatchedCronTasks.Unlock()
++
++	t.Cleanup(func() {
++		dispatchedCronTasks.Lock()
++		dispatchedCronTasks.count = original
++		dispatchedCronTasks.Unlock()
++	})
++}
++
+ func TestCronTriggerSkipsServersOwnedByOtherUsers(t *testing.T) {
+ 	firstStream := newCapturedTaskStream()
+ 	secondStream := newCapturedTaskStream()
+@@ -335,6 +350,112 @@ func TestSendTriggerTasksMixedCronIDsOnlyFiresAllowed(t *testing.T) {
+ 	assertNoTask(t, stream)
+ }
+ 
++func TestCronTaskResultRequiresRecordedDispatch(t *testing.T) {
++	resetDispatchedCronTasksForSecurityTest(t)
++
++	server := &model.Server{Common: model.Common{ID: 7, UserID: 200}, Name: "member-server"}
++	cronTask := &model.Cron{
++		Common: model.Common{ID: 42, UserID: 200},
++		Cover:  model.CronCoverAll,
++	}
++
++	if CronTaskResultAuthorized(cronTask, server) {
++		t.Fatal("expected cron result without a recorded dispatch to be rejected")
++	}
++
++	recordCronTaskDispatch(cronTask.ID, server.ID)
++	if !CronTaskResultAuthorized(cronTask, server) {
++		t.Fatal("expected cron result with a recorded dispatch to be accepted")
++	}
++	if CronTaskResultAuthorized(cronTask, server) {
++		t.Fatal("expected recorded dispatch to be consumed after one result")
++	}
++}
++
++func TestCronTaskResultRejectsForeignReporter(t *testing.T) {
++	resetDispatchedCronTasksForSecurityTest(t)
++	replaceUserInfoMapForSecurityTest(t, map[uint64]model.UserInfo{
++		100: {Role: model.RoleMember},
++		200: {Role: model.RoleMember},
++	})
++
++	foreignServer := &model.Server{Common: model.Common{ID: 8, UserID: 200}, Name: "foreign-server"}
++	cronTask := &model.Cron{
++		Common: model.Common{ID: 42, UserID: 100},
++		Cover:  model.CronCoverAll,
++	}
++
++	recordCronTaskDispatch(cronTask.ID, foreignServer.ID)
++	if CronTaskResultAuthorized(cronTask, foreignServer) {
++		t.Fatal("expected cron result from another user's server to be rejected")
++	}
++}
++
++func TestServiceDispatchRejectsUnauthorizedReporter(t *testing.T) {
++	allowedServer := &model.Server{Common: model.Common{ID: 1, UserID: 100}, Name: "allowed"}
++	foreignServer := &model.Server{Common: model.Common{ID: 2, UserID: 200}, Name: "foreign"}
++	replaceServerSharedForSecurityTest(t, allowedServer, foreignServer)
++	replaceUserInfoMapForSecurityTest(t, map[uint64]model.UserInfo{
++		100: {Role: model.RoleMember},
++		200: {Role: model.RoleMember},
++	})
++
++	ss := &ServiceSentinel{
++		serviceReportChannel: make(chan ReportData, 2),
++		services: map[uint64]*model.Service{
++			99: {
++				Common:      model.Common{ID: 99, UserID: 100},
++				Cover:       model.ServiceCoverAll,
++				SkipServers: map[uint64]bool{},
++			},
++		},
++	}
++	report := &pb.TaskResult{Id: 99, Type: model.TaskTypeHTTPGet, Successful: true}
++
++	ss.Dispatch(ReportData{Data: report, Reporter: foreignServer.ID})
++	select {
++	case r := <-ss.serviceReportChannel:
++		t.Fatalf("expected unauthorized report to be rejected, got %+v", r)
++	default:
++	}
++
++	ss.Dispatch(ReportData{Data: report, Reporter: allowedServer.ID})
++	select {
++	case r := <-ss.serviceReportChannel:
++		if r.Reporter != allowedServer.ID {
++			t.Fatalf("expected allowed reporter %d, got %d", allowedServer.ID, r.Reporter)
++		}
++	case <-time.After(time.Second):
++		t.Fatal("expected authorized report to be queued")
++	}
++}
++
++func TestServiceDispatchRejectsReporterOutsideServiceCover(t *testing.T) {
++	skippedServer := &model.Server{Common: model.Common{ID: 1, UserID: 100}, Name: "skipped"}
++	replaceServerSharedForSecurityTest(t, skippedServer)
++
++	ss := &ServiceSentinel{
++		serviceReportChannel: make(chan ReportData, 1),
++		services: map[uint64]*model.Service{
++			99: {
++				Common:      model.Common{ID: 99, UserID: 100},
++				Cover:       model.ServiceCoverAll,
++				SkipServers: map[uint64]bool{skippedServer.ID: true},
++			},
++		},
++	}
++
++	ss.Dispatch(ReportData{
++		Data:     &pb.TaskResult{Id: 99, Type: model.TaskTypeHTTPGet, Successful: true},
++		Reporter: skippedServer.ID,
++	})
++	select {
++	case r := <-ss.serviceReportChannel:
++		t.Fatalf("expected skipped server report to be rejected, got %+v", r)
++	default:
++	}
++}
++
+ func TestClassCheckPermission(t *testing.T) {
+ 	replaceUserInfoMapForSecurityTest(t, map[uint64]model.UserInfo{
+ 		1:   {Role: model.RoleAdmin},
+diff --git a/service/singleton/servicesentinel.go b/service/singleton/servicesentinel.go
+index 205f1d4..26a2005 100644
+--- a/service/singleton/servicesentinel.go
++++ b/service/singleton/servicesentinel.go
+@@ -160,6 +160,13 @@ func (ss *ServiceSentinel) refreshMonthlyServiceStatus() {
+ 
+ // Dispatch 将传入的 ReportData 传给 服务状态汇报管道
+ func (ss *ServiceSentinel) Dispatch(r ReportData) {
++	service, _ := ss.Get(r.Data.GetId())
++	server, _ := ServerShared.Get(r.Reporter)
++	if !ServiceCanSendToServer(service, server) {
++		log.Printf("NEZHA>> Unauthorized service monitor report %+v", r)
++		return
++	}
++
+ 	ss.serviceReportChannel <- r
+ }
+ 
+@@ -472,6 +479,21 @@ func (ss *ServiceSentinel) CheckPermission(c *gin.Context, idList iter.Seq[uint6
+ 	return true
+ }
+ 
++func ServiceCanSendToServer(service *model.Service, server *model.Server) bool {
++	if service == nil || server == nil || !userCanAccessServer(service.UserID, server) {
++		return false
++	}
++
++	switch service.Cover {
++	case model.ServiceCoverIgnoreAll:
++		return service.SkipServers[server.ID]
++	case model.ServiceCoverAll:
++		return !service.SkipServers[server.ID]
++	default:
++		return false
++	}
++}
++
+ // worker 服务监控的实际工作流程
+ func (ss *ServiceSentinel) worker() {
+ 	// 从服务状态汇报管道获取汇报的服务数据

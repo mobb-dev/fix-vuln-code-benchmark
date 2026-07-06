@@ -1,0 +1,8 @@
+Project: googleapis/mcp-toolbox
+Vulnerability type: Improper Authentication (CWE-287)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  internal/auth/generic/generic.go
+    - lines 155-160   in: func discoverOIDCConfig(client *http.Client, AuthorizationServer string) (jwksUR
+    - lines 471-481   in: func (a AuthService) validateClaims(ctx context.Context, iss string, aud []strin

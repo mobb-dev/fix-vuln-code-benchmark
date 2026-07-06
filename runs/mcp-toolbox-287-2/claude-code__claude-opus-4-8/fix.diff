@@ -1,0 +1,31 @@
+diff --git a/internal/auth/generic/generic.go b/internal/auth/generic/generic.go
+index 8a68a6d..8578244 100644
+--- a/internal/auth/generic/generic.go
++++ b/internal/auth/generic/generic.go
+@@ -159,6 +159,12 @@ func discoverOIDCConfig(client *http.Client, AuthorizationServer string) (jwksUR
+ 		return "", "", "", fmt.Errorf("jwks_uri not found in config")
+ 	}
+ 
++	// The issuer is required to bind tokens to this authorization server.
++	// Without it, issuer validation cannot be enforced during token checks.
++	if config.Issuer == "" {
++		return "", "", "", fmt.Errorf("issuer not found in config")
++	}
++
+ 	// Sanitize the resulting JWKS URI before returning it
+ 	parsedJWKS, err := url.Parse(config.JwksUri)
+ 	if err != nil {
+@@ -470,8 +476,11 @@ func (a AuthService) validateClaims(ctx context.Context, iss string, aud []strin
+ 		return fmt.Errorf("failed to get logger from context: %w", err)
+ 	}
+ 
+-	// Validate issuer
+-	if a.issuer != "" && iss != "" {
++	// Validate issuer. When an issuer is configured (discovered from the
++	// authorization server), the token's issuer must match it. A missing or
++	// empty token issuer must not bypass this check, otherwise tokens that are
++	// not bound to the trusted issuer would be accepted.
++	if a.issuer != "" {
+ 		if iss != a.issuer {
+ 			logger.WarnContext(ctx, "issuer validation failed: expected %s, got %s", a.issuer, iss)
+ 			return &MCPAuthError{Code: http.StatusUnauthorized, Message: "issuer validation failed", ScopesRequired: a.ScopesRequired}

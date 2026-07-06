@@ -1,0 +1,8 @@
+Read the file FINDING.txt in this directory. It describes a security vulnerability that is present in this project's code: the type of vulnerability, and where it is (which file(s), and where within them).
+
+Update the code in this project to remove and remediate that vulnerability.
+
+Work only within this project:
+- Make only local source-code edits here.
+- Do not change the application's intended behavior.
+- Do not commit, push, fork, or open a pull request.

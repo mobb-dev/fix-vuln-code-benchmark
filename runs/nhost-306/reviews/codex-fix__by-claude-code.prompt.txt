@@ -1,0 +1,1886 @@
+You are a senior application-security engineer. Judge whether an AI agent's code change correctly fixes a specific, known vulnerability.
+
+You are given three things below:
+  1. THE VULNERABILITY — its type and where it is in the code.
+  2. THE MAINTAINER'S OFFICIAL FIX — the real, accepted remediation. Treat it as the gold standard for what a complete and correct fix must cover. It is a reference, not the only acceptable implementation: a different but equivalent fix that fully and minimally remediates is still correct.
+  3. THE AGENT'S FIX — a diff produced by an AI agent. This is what you must judge.
+
+Evaluate the agent's fix with this methodology:
+  - From the vulnerability and the maintainer's fix, work out the root cause and EVERY place the vulnerability is present.
+  - Does the agent's fix remove the vulnerability at ALL of those places, not just some? Missing any injection point or variant is a real gap.
+  - Does it preserve the application's intended behavior — no broken functionality, and no unrelated behavioral changes beyond what the remediation requires? Removing the vulnerability but also changing unrelated behavior is an over-reach, not a clean fix.
+  - Be skeptical. A fix that reads plausibly but misses a variant is not correct; one that fixes the bug but also changes unrelated behavior is not clean.
+
+Respond in EXACTLY this structure and nothing else:
+
+METHODOLOGY: <2-4 sentences on how you evaluated it>
+EVIDENCE: <specific files, lines, or hunks from the diffs that justify the verdict>
+REASONING: <why the agent's fix does or does not fully and cleanly remediate the vulnerability without changing intended behavior>
+VERDICT: <one word: CORRECT, PARTIAL, or INCORRECT>
+
+Verdict meanings:
+  CORRECT   — fully removes the vulnerability AND preserves intended behavior.
+  PARTIAL   — removes the vulnerability but misses a variant, OR over-reaches and changes unrelated behavior.
+  INCORRECT — does not remove the vulnerability, or breaks functionality so it is not a valid fix.
+
+
+===== 1. THE VULNERABILITY =====
+Project: nhost/nhost
+Vulnerability type: Missing Authentication (CWE-306)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  cli/clienv/filesystem.go
+    - lines 71-76   in: func (p PathStructure) DockerCompose() string {
+
+  cli/cmd/configserver/configserver.go
+    - lines 3-17   in: package configserver
+    - lines 24-32   in: const (
+    - lines 75-85   in: func Command() *cli.Command {
+    - lines 144-150   in: func serve(_ context.Context, cmd *cli.Command) error {
+    - lines 165-173   in: func serve(_ context.Context, cmd *cli.Command) error {
+
+  cli/cmd/configserver/local.go
+    - lines 15-21   in: import (
+    - lines 27-39   in: type Local struct {
+    - lines 91-107   in: func (l *Local) GetApps(
+    - lines 131-137   in: func (l *Local) GetApps(
+    - lines 161-173   in: func (l *Local) UpdateSystemConfig(_ context.Context, _, _ *graph.App, _ logrus.
+    - lines 179-184   in: func (l *Local) UpdateSecrets(_ context.Context, _, newApp *graph.App, _ logrus.
+
+  cli/cmd/dev/cloud.go
+    - lines 204-209   in: func cloud( //nolint:funlen
+
+  cli/cmd/dev/up.go
+    - lines 440-445   in: func up( //nolint:funlen,cyclop
+    - lines 473-478   in: func up( //nolint:funlen,cyclop
+
+  cli/dockercompose/compose.go
+    - lines 332-337   in: func dashboard(
+    - lines 341-346   in: func dashboard(
+    - lines 583-588   in: func getServices( //nolint: funlen,cyclop
+    - lines 627-632   in: func getServices( //nolint: funlen,cyclop
+    - lines 636-642   in: func getServices( //nolint: funlen,cyclop
+    - lines 711-717   in: func mountCACertificates(
+    - lines 726-731   in: func ComposeFileFromConfig(
+    - lines 745-750   in: func ComposeFileFromConfig(
+
+  cli/dockercompose/compose_cloud.go
+    - lines 20-27   in: func dashboardCloud(
+    - lines 85-91   in: func consoleCloud(
+    - lines 101-106   in: func getServicesCloud(
+    - lines 128-133   in: func getServicesCloud(
+    - lines 145-150   in: func getServicesCloud(
+    - lines 169-174   in: func CloudComposeFileFromConfig(
+    - lines 187-192   in: func CloudComposeFileFromConfig(
+
+  cli/dockercompose/configserver.go
+    - lines 10-16   in: func configserver( //nolint: funlen
+    - lines 85-90   in: func configserver( //nolint: funlen
+
+  internal/lib/oapi/middleware/cors.go
+    - lines 10-22   in: import (
+    - lines 84-93   in: func CORS(opts CORSOptions) gin.HandlerFunc { //nolint:cyclop,funlen
+    - lines 138-140   in: func CORS(opts CORSOptions) gin.HandlerFunc { //nolint:cyclop,funlen
+
+  services/auth/go/cmd/serve.go
+    - lines 1371-1376   in: func getDependencies( //nolint:ireturn
+
+  services/storage/cmd/serve.go
+    - lines 61-68   in: const (
+
+  vendor/github.com/rs/cors/cors.go
+    - lines 1-502
+
+  vendor/github.com/rs/cors/internal/sortedset.go
+    - lines 1-113
+
+  vendor/github.com/rs/cors/utils.go
+    - lines 1-34
+
+  vendor/github.com/rs/cors/wrapper/gin/gin.go
+    - lines 1-60
+
+===== 2. MAINTAINER OFFICIAL FIX (gold standard) =====
+--- a/cli/clienv/appid.go
++++ b/cli/clienv/appid.go
+@@ -0,0 +1,42 @@
++package clienv
++
++import (
++	"errors"
++	"fmt"
++	"os"
++	"path/filepath"
++	"strings"
++
++	"github.com/google/uuid"
++)
++
++// GetOrCreateAppID returns the app ID stored at path, creating it with a fresh
++// random UUIDv4 if the file does not exist. The parent directory must already
++// exist.
++func GetOrCreateAppID(path string) (string, error) {
++	b, err := os.ReadFile(path)
++	if err == nil {
++		id := strings.TrimSpace(string(b))
++		if _, err := uuid.Parse(id); err != nil {
++			return "", fmt.Errorf("app id file %s is malformed: %w", path, err)
++		}
++
++		return id, nil
++	}
++
++	if !errors.Is(err, os.ErrNotExist) {
++		return "", fmt.Errorf("failed to read app id file %s: %w", path, err)
++	}
++
++	id := uuid.NewString()
++
++	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:mnd
++		return "", fmt.Errorf("failed to create app id directory: %w", err)
++	}
++
++	if err := os.WriteFile(path, []byte(id+"\n"), 0o600); err != nil { //nolint:mnd
++		return "", fmt.Errorf("failed to write app id file %s: %w", path, err)
++	}
++
++	return id, nil
++}
+--- a/cli/clienv/filesystem.go
++++ b/cli/clienv/filesystem.go
+@@ -71,6 +71,10 @@ func (p PathStructure) DockerCompose() string {
+ 	return filepath.Join(p.dotNhostFolder, "docker-compose.yaml")
+ }
+ 
++func (p PathStructure) AppID() string {
++	return filepath.Join(p.dotNhostFolder, "app_id")
++}
++
+ func (p PathStructure) Functions() string {
+ 	return filepath.Join(p.root, "functions")
+ }
+--- a/cli/cmd/configserver/configserver.go
++++ b/cli/cmd/configserver/configserver.go
+@@ -3,15 +3,17 @@ package configserver
+ import (
+ 	"context"
+ 	"fmt"
++	"net/http"
+ 	"os"
++	"regexp"
+ 
+ 	"github.com/99designs/gqlgen/graphql"
+ 	"github.com/docker/docker/client"
+ 	"github.com/gin-gonic/gin"
+ 	"github.com/google/uuid"
+ 	"github.com/nhost/be/services/mimir/graph"
+ 	"github.com/nhost/nhost/cli/cmd/configserver/logsapi"
+-	cors "github.com/rs/cors/wrapper/gin"
++	oapimw "github.com/nhost/nhost/internal/lib/oapi/middleware"
+ 	"github.com/sirupsen/logrus"
+ 	"github.com/urfave/cli/v3"
+ )
+@@ -24,9 +26,20 @@ const (
+ 	storageLocalConfigPath      = "storage-local-config-path"
+ 	storageLocalSecretsPath     = "storage-local-secrets-path"
+ 	storageLocalRunServicesPath = "storage-local-run-services-path"
++	appIDFlag                   = "app-id"
+ 	dockerComposeProjectEnv     = "DOCKER_COMPOSE_PROJECT"
+ )
+ 
++// dashboardOriginRe matches the origins where the CLI-instantiated dashboard
++// is reachable. The subdomain segment is intentionally restricted to a single
++// DNS label (`[^./]+`) — stricter than traefik's `.+` host-regexp — so that
++// only the canonical `<sub>.dashboard.local.nhost.run` (and the bare
++// `local.dashboard.nhost.run`) form is credentialed-CORS eligible. An optional
++// non-standard HTTP(S) port is permitted.
++var dashboardOriginRe = regexp.MustCompile(
++	`^https?://([^./]+\.dashboard\.local\.nhost\.run|local\.dashboard\.nhost\.run)(:\d+)?$`,
++)
++
+ func Command() *cli.Command {
+ 	return &cli.Command{ //nolint: exhaustruct
+ 		Name:   "configserver",
+@@ -75,11 +88,40 @@ func Command() *cli.Command {
+ 				Category: "plugins",
+ 				Sources:  cli.EnvVars("STORAGE_LOCAL_RUN_SERVICES_PATH"),
+ 			},
++			&cli.StringFlag{ //nolint: exhaustruct
++				Name:     appIDFlag,
++				Usage:    "App ID this configserver instance represents",
++				Value:    ZeroUUID,
++				Category: "server",
++				Sources:  cli.EnvVars("NHOST_APP_ID"),
++			},
+ 		},
+ 		Action: serve,
+ 	}
+ }
+ 
++func corsMiddleware() gin.HandlerFunc {
++	return oapimw.CORS(oapimw.CORSOptions{
++		AllowOriginFunc: dashboardOriginRe.MatchString,
++		AllowedOrigins:  nil,
++		AllowedMethods: []string{
++			http.MethodGet,
++			http.MethodPost,
++			http.MethodPut,
++			http.MethodPatch,
++			http.MethodDelete,
++			http.MethodOptions,
++			http.MethodHead,
++		},
++		// AllowedHeaders: nil reflects the client's Access-Control-Request-Headers,
++		// which is the equivalent of "*" under credentialed CORS.
++		AllowedHeaders:   nil,
++		ExposedHeaders:   nil,
++		AllowCredentials: true,
++		MaxAge:           "",
++	})
++}
++
+ func dummyMiddleware(
+ 	ctx context.Context,
+ 	_ any,
+@@ -144,7 +186,12 @@ func serve(_ context.Context, cmd *cli.Command) error {
+ 	secretsFile := cmd.String(storageLocalSecretsPath)
+ 	runServices := runServicesFiles(cmd.StringSlice(storageLocalRunServicesPath)...)
+ 
+-	st := NewLocal(configFile, secretsFile, runServices)
++	appID := cmd.String(appIDFlag)
++	if _, err := uuid.Parse(appID); err != nil {
++		return fmt.Errorf("invalid --%s value %q: %w", appIDFlag, appID, err)
++	}
++
++	st := NewLocal(appID, configFile, secretsFile, runServices)
+ 
+ 	data, err := st.GetApps(configFile, secretsFile, runServices)
+ 	if err != nil {
+@@ -165,9 +212,9 @@ func serve(_ context.Context, cmd *cli.Command) error {
+ 		dummyMiddleware2,
+ 		cmd.Bool(enablePlaygroundFlag),
+ 		cmd.Root().Version,
+-		[]graphql.FieldMiddleware{},
++		nil,
+ 		gin.Recovery(),
+-		cors.Default(),
++		corsMiddleware(),
+ 	)
+ 
+ 	if err := setupLogsAPI(
+--- a/cli/cmd/configserver/local.go
++++ b/cli/cmd/configserver/local.go
+@@ -15,7 +15,20 @@ import (
+ 	"github.com/sirupsen/logrus"
+ )
+ 
+-const zeroUUID = "00000000-0000-0000-0000-000000000000"
++const ZeroUUID = "00000000-0000-0000-0000-000000000000"
++
++// placeholderSecretValue is substituted into the in-memory configserver state
++// for every secret loaded from .secrets, so real secret material never enters
++// the configserver process's heap or its GraphQL responses. The on-disk
++// .secrets file remains authoritative; UpdateSecrets re-reads it when
++// persisting mutations and only writes through values that differ from this
++// placeholder.
++//
++// The value is intentionally long (>= 64 characters) so that resolved-config
++// validation rules with minimum-length constraints (e.g. HS512 JWT keys) still
++// pass when an unrelated secret is being updated and the others resolve to
++// this placeholder.
++const placeholderSecretValue = "<placeholder-from-local-configserver-substituted-for-real-secret>"
+ 
+ var ErrNotImpl = errors.New("not implemented")
+ 
+@@ -27,13 +40,15 @@ type Local struct {
+ 	config      string
+ 	secrets     string
+ 	runServices map[string]string
++	appID       string
+ }
+ 
+-func NewLocal(config, secrets string, runServices map[string]string) *Local {
++func NewLocal(appID, config, secrets string, runServices map[string]string) *Local {
+ 	return &Local{
+ 		config:      config,
+ 		secrets:     secrets,
+ 		runServices: runServices,
++		appID:       appID,
+ 	}
+ }
+ 
+@@ -91,17 +106,9 @@ func (l *Local) GetApps(
+ 		return nil, fmt.Errorf("failed to fill config: %w", err)
+ 	}
+ 
+-	b, err = os.ReadFile(secretsFile)
++	secrets, err := loadSecretsRedacted(secretsFile)
+ 	if err != nil {
+-		return nil, fmt.Errorf("failed to read secrets file: %w", err)
+-	}
+-
+-	var secrets model.Secrets
+-	if err := env.Unmarshal(b, &secrets); err != nil {
+-		return nil, fmt.Errorf(
+-			"failed to parse secrets, make sure secret values are between quotes: %w",
+-			err,
+-		)
++		return nil, err
+ 	}
+ 
+ 	services, err := l.GetServices(runServicesFiles)
+@@ -131,7 +138,7 @@ func (l *Local) GetApps(
+ 			},
+ 			Secrets:  secrets,
+ 			Services: services,
+-			AppID:    zeroUUID,
++			AppID:    l.appID,
+ 		},
+ 	}, nil
+ }
+@@ -161,13 +168,40 @@ func (l *Local) UpdateSystemConfig(_ context.Context, _, _ *graph.App, _ logrus.
+ 	return ErrNotImpl
+ }
+ 
++// UpdateSecrets persists the secrets changeset implied by newApp.Secrets,
++// merging with the on-disk .secrets file so that placeholder entries (the
++// values we loaded into memory in place of real secrets) never overwrite
++// actual values stored on disk.
++//
++// The reconciliation rules are:
++//   - A name present in newApp.Secrets whose value equals
++//     placeholderSecretValue is treated as "untouched" — the on-disk value is
++//     preserved.
++//   - A name present in newApp.Secrets whose value differs from the
++//     placeholder is treated as a real insert/update — the incoming value is
++//     written through.
++//   - A name present on disk but absent from newApp.Secrets is deleted.
+ func (l *Local) UpdateSecrets(_ context.Context, _, newApp *graph.App, _ logrus.FieldLogger) error {
+-	m := make(map[string]string)
++	onDisk, err := readSecretsMap(l.secrets)
++	if err != nil {
++		return err
++	}
++
++	out := make(map[string]string, len(newApp.Secrets))
++
+ 	for _, v := range newApp.Secrets {
+-		m[v.Name] = v.Value
++		if v.Value == placeholderSecretValue {
++			if existing, ok := onDisk[v.Name]; ok {
++				out[v.Name] = existing
++			}
++
++			continue
++		}
++
++		out[v.Name] = v.Value
+ 	}
+ 
+-	b, err := toml.Marshal(m)
++	b, err := toml.Marshal(out)
+ 	if err != nil {
+ 		return fmt.Errorf("failed to marshal app secrets: %w", err)
+ 	}
+@@ -179,6 +213,57 @@ func (l *Local) UpdateSecrets(_ context.Context, _, newApp *graph.App, _ logrus.
+ 	return nil
+ }
+ 
++// loadSecretsRedacted reads the on-disk .secrets file and returns a
++// model.Secrets whose names match what's on disk but whose values are all
++// replaced with placeholderSecretValue. The configserver never holds real
++// secret material in memory.
++func loadSecretsRedacted(path string) (model.Secrets, error) {
++	b, err := os.ReadFile(path)
++	if err != nil {
++		return nil, fmt.Errorf("failed to read secrets file: %w", err)
++	}
++
++	var secrets model.Secrets
++	if err := env.Unmarshal(b, &secrets); err != nil {
++		return nil, fmt.Errorf(
++			"failed to parse secrets, make sure secret values are between quotes: %w",
++			err,
++		)
++	}
++
++	for _, s := range secrets {
++		s.Value = placeholderSecretValue
++	}
++
++	return secrets, nil
++}
++
++// readSecretsMap reads and parses the local .secrets file into a name->value
++// map. Returns an empty map if the file does not exist; this lets
++// UpdateSecrets bootstrap from a missing file.
++func readSecretsMap(path string) (map[string]string, error) {
++	b, err := os.ReadFile(path)
++	if err != nil {
++		if errors.Is(err, os.ErrNotExist) {
++			return map[string]string{}, nil
++		}
++
++		return nil, fmt.Errorf("failed to read secrets file: %w", err)
++	}
++
++	var secrets model.Secrets
++	if err := env.Unmarshal(b, &secrets); err != nil {
++		return nil, fmt.Errorf("failed to parse secrets file: %w", err)
++	}
++
++	out := make(map[string]string, len(secrets))
++	for _, s := range secrets {
++		out[s.Name] = s.Value
++	}
++
++	return out, nil
++}
++
+ func (l *Local) CreateRunServiceConfig(
+ 	_ context.Context, _ string, _ *graph.Service, _ logrus.FieldLogger,
+ ) error {
+--- a/cli/cmd/dev/cloud.go
++++ b/cli/cmd/dev/cloud.go
+@@ -204,6 +204,7 @@ func cloud( //nolint:funlen
+ 		ports,
+ 		dashboardVersion,
+ 		configserverImage,
++		proj.GetID(),
+ 		caCertificatesPath,
+ 	)
+ 	if err != nil {
+--- a/cli/cmd/dev/up.go
++++ b/cli/cmd/dev/up.go
+@@ -440,6 +440,15 @@ func up( //nolint:funlen,cyclop
+ 		return fmt.Errorf("failed to validate config: %w", err)
+ 	}
+ 
++	if err := os.MkdirAll(ce.Path.DotNhostFolder(), 0o755); err != nil { //nolint:mnd
++		return fmt.Errorf("failed to create .nhost folder: %w", err)
++	}
++
++	appID, err := clienv.GetOrCreateAppID(ce.Path.AppID())
++	if err != nil {
++		return fmt.Errorf("failed to get app id: %w", err)
++	}
++
+ 	ctxWithTimeout, cancel := context.WithTimeout(ctx, 5*time.Second) //nolint:mnd
+ 	defer cancel()
+ 
+@@ -473,6 +482,7 @@ func up( //nolint:funlen,cyclop
+ 		dashboardVersion,
+ 		functionsVersion,
+ 		configserverImage,
++		appID,
+ 		clienv.PathExists(ce.Path.Functions()),
+ 		caCertificatesPath,
+ 		runServicesCfg...,
+--- a/cli/dockercompose/compose.go
++++ b/cli/dockercompose/compose.go
+@@ -332,6 +332,7 @@ func dashboard(
+ 	dashboardVersion string,
+ 	httpPort uint,
+ 	useTLS bool,
++	appID string,
+ ) *Service {
+ 	return &Service{
+ 		Image:      dashboardVersion,
+@@ -341,6 +342,7 @@ func dashboard(
+ 		Environment: map[string]string{
+ 			"NEXT_PUBLIC_ENV":                "dev",
+ 			"NEXT_PUBLIC_NHOST_PLATFORM":     "false",
++			"NEXT_PUBLIC_NHOST_APP_ID":       appID,
+ 			"NEXT_PUBLIC_NHOST_ADMIN_SECRET": cfg.Hasura.AdminSecret,
+ 			"NEXT_PUBLIC_NHOST_AUTH_URL": URL(
+ 				subdomain, "auth", httpPort, useTLS) + "/v1",
+@@ -583,6 +585,7 @@ func getServices( //nolint: funlen,cyclop
+ 	dashboardVersion string,
+ 	functionsVersion string,
+ 	configserviceImage string,
++	appID string,
+ 	startFunctions bool,
+ 	runServices ...*RunService,
+ ) (map[string]*Service, error) {
+@@ -627,6 +630,7 @@ func getServices( //nolint: funlen,cyclop
+ 		rootFolder,
+ 		nhostFolder,
+ 		projectName,
++		appID,
+ 		useTLS,
+ 		runServices...,
+ 	)
+@@ -636,7 +640,7 @@ func getServices( //nolint: funlen,cyclop
+ 
+ 	services := map[string]*Service{
+ 		"console":      console,
+-		"dashboard":    dashboard(cfg, subdomain, dashboardVersion, httpPort, useTLS),
++		"dashboard":    dashboard(cfg, subdomain, dashboardVersion, httpPort, useTLS, appID),
+ 		"graphql":      graphql,
+ 		"minio":        minio,
+ 		"postgres":     postgres,
+@@ -711,7 +715,7 @@ func mountCACertificates(
+ 	}
+ }
+ 
+-func ComposeFileFromConfig(
++func ComposeFileFromConfig( //nolint:funlen
+ 	cfg *model.ConfigConfig,
+ 	subdomain string,
+ 	projectName string,
+@@ -726,6 +730,7 @@ func ComposeFileFromConfig(
+ 	dashboardVersion string,
+ 	functionsVersion string,
+ 	configserverImage string,
++	appID string,
+ 	startFunctions bool,
+ 	caCertificatesPath string,
+ 	runServices ...*RunService,
+@@ -745,6 +750,7 @@ func ComposeFileFromConfig(
+ 		dashboardVersion,
+ 		functionsVersion,
+ 		configserverImage,
++		appID,
+ 		startFunctions,
+ 		runServices...,
+ 	)
+--- a/cli/dockercompose/compose_cloud.go
++++ b/cli/dockercompose/compose_cloud.go
+@@ -20,8 +20,9 @@ func dashboardCloud(
+ 	httpPort uint,
+ 	useTLS bool,
+ 	dashboardVersion string,
++	appID string,
+ ) *Service {
+-	dashboard := dashboard(cfg, subdomain, dashboardVersion, httpPort, useTLS)
++	dashboard := dashboard(cfg, subdomain, dashboardVersion, httpPort, useTLS, appID)
+ 
+ 	dashboard.Environment["NEXT_PUBLIC_NHOST_ADMIN_SECRET"] = cloudAdminSecret
+ 	dashboard.Environment["NEXT_PUBLIC_NHOST_AUTH_URL"] = fmt.Sprintf(
+@@ -85,7 +86,7 @@ func consoleCloud(
+ 	return console, nil
+ }
+ 
+-func getServicesCloud(
++func getServicesCloud( //nolint:funlen
+ 	cfg *model.ConfigConfig,
+ 	subdomain string,
+ 	cloudSubdomain string,
+@@ -101,6 +102,7 @@ func getServicesCloud(
+ 	ports ExposePorts,
+ 	dashboardVersion string,
+ 	configserviceImage string,
++	appID string,
+ ) (map[string]*Service, error) {
+ 	traefik, err := traefik(subdomain, projectName, httpPort, dotNhostFolder)
+ 	if err != nil {
+@@ -128,6 +130,7 @@ func getServicesCloud(
+ 		rootFolder,
+ 		nhostFolder,
+ 		projectName,
++		appID,
+ 		useTLS,
+ 	)
+ 	if err != nil {
+@@ -145,6 +148,7 @@ func getServicesCloud(
+ 			httpPort,
+ 			useTLS,
+ 			dashboardVersion,
++			appID,
+ 		),
+ 		"traefik":      traefik,
+ 		"configserver": cs,
+@@ -169,6 +173,7 @@ func CloudComposeFileFromConfig(
+ 	ports ExposePorts,
+ 	dashboardVersion string,
+ 	configserverImage string,
++	appID string,
+ 	caCertificatesPath string,
+ ) (*ComposeFile, error) {
+ 	services, err := getServicesCloud(
+@@ -187,6 +192,7 @@ func CloudComposeFileFromConfig(
+ 		ports,
+ 		dashboardVersion,
+ 		configserverImage,
++		appID,
+ 	)
+ 	if err != nil {
+ 		return nil, err
+--- a/cli/dockercompose/configserver.go
++++ b/cli/dockercompose/configserver.go
+@@ -10,7 +10,8 @@ func configserver( //nolint: funlen
+ 	image,
+ 	rootPath,
+ 	nhostPath,
+-	projectName string,
++	projectName,
++	appID string,
+ 	useTLS bool,
+ 	runServices ...*RunService,
+ ) (*Service, error) {
+@@ -85,6 +86,7 @@ func configserver( //nolint: funlen
+ 		Environment: map[string]string{
+ 			"DOCKER_HOST":            dockerEndpoint,
+ 			"DOCKER_COMPOSE_PROJECT": projectName,
++			"NHOST_APP_ID":           appID,
+ 		},
+ 		ExtraHosts:  []string{},
+ 		HealthCheck: nil,
+--- a/dashboard/src/features/orgs/utils/local-dashboard/index.ts
++++ b/dashboard/src/features/orgs/utils/local-dashboard/index.ts
+@@ -4,10 +4,10 @@ import {
+   type GetProjectQuery,
+   Sla_Level_Enum,
+ } from '@/utils/__generated__/graphql';
+-import { getHasuraAdminSecret } from '@/utils/env';
++import { getHasuraAdminSecret, getLocalAppId } from '@/utils/env';
+ 
+ export const localApplication: GetProjectQuery['apps'][0] = {
+-  id: '00000000-0000-0000-0000-000000000000',
++  id: getLocalAppId(),
+   slug: 'local',
+   name: 'local',
+   appStates: [
+--- a/dashboard/src/utils/env/env.ts
++++ b/dashboard/src/utils/env/env.ts
+@@ -124,3 +124,22 @@ export function getLogsWebsocketUrl() {
+ export function getDashboardVersion() {
+   return process.env.NEXT_PUBLIC_DASHBOARD_VERSION || '0.0.0-dev';
+ }
++
++const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
++
++/**
++ * App ID used by the local dashboard to talk to the CLI-managed configserver.
++ * The CLI generates and persists this UUID per project; the value is
++ * substituted into the Docker image at runtime by docker-entrypoint.sh. When
++ * the value is missing or has not been substituted (e.g. older CLI), we fall
++ * back to the legacy all-zeros UUID.
++ */
++export function getLocalAppId() {
++  const appId = process.env.NEXT_PUBLIC_NHOST_APP_ID;
++
++  if (!appId || appId.startsWith('__')) {
++    return ZERO_UUID;
++  }
++
++  return appId;
++}
+--- a/services/auth/go/cmd/serve.go
++++ b/services/auth/go/cmd/serve.go
+@@ -1371,6 +1371,7 @@ func getDependencies( //nolint:ireturn
+ 
+ func getCORSOptions() oapimw.CORSOptions {
+ 	return oapimw.CORSOptions{
++		AllowOriginFunc:  nil,
+ 		AllowedOrigins:   []string{"*"},
+ 		AllowedMethods:   []string{"POST", "GET"},
+ 		AllowedHeaders:   nil,
+--- a/services/storage/cmd/serve.go
++++ b/services/storage/cmd/serve.go
+@@ -61,8 +61,9 @@ const (
+ 
+ func getCORSOptions(cmd *cli.Command) oapimw.CORSOptions {
+ 	return oapimw.CORSOptions{
+-		AllowedOrigins: cmd.StringSlice(flagCorsAllowOrigins),
+-		AllowedMethods: []string{"GET", "PUT", "POST", "HEAD", "DELETE"},
++		AllowOriginFunc: nil,
++		AllowedOrigins:  cmd.StringSlice(flagCorsAllowOrigins),
++		AllowedMethods:  []string{"GET", "PUT", "POST", "HEAD", "DELETE"},
+ 		AllowedHeaders: []string{
+ 			"Authorization", "Origin", "if-match", "if-none-match", "if-modified-since", "if-unmodified-since",
+ 			"x-hasura-admin-secret", "x-nhost-bucket-id", "x-nhost-file-name", "x-nhost-file-id",
+--- a/vendor/github.com/rs/cors/cors.go
++++ b/vendor/github.com/rs/cors/cors.go
+@@ -1,502 +0,0 @@
+-/*
+-Package cors is net/http handler to handle CORS related requests
+-as defined by http://www.w3.org/TR/cors/
+-
+-You can configure it by passing an option struct to cors.New:
+-
+-	c := cors.New(cors.Options{
+-	    AllowedOrigins:   []string{"foo.com"},
+-	    AllowedMethods:   []string{http.MethodGet, http.MethodPost, http.MethodDelete},
+-	    AllowCredentials: true,
+-	})
+-
+-Then insert the handler in the chain:
+-
+-	handler = c.Handler(handler)
+-
+-See Options documentation for more options.
+-
+-The resulting handler is a standard net/http handler.
+-*/
+-package cors
+-
+-import (
+-	"log"
+-	"net/http"
+-	"os"
+-	"strconv"
+-	"strings"
+-
+-	"github.com/rs/cors/internal"
+-)
+-
+-var headerVaryOrigin = []string{"Origin"}
+-var headerOriginAll = []string{"*"}
+-var headerTrue = []string{"true"}
+-
+-// Options is a configuration container to setup the CORS middleware.
+-type Options struct {
+-	// AllowedOrigins is a list of origins a cross-domain request can be executed from.
+-	// If the special "*" value is present in the list, all origins will be allowed.
+-	// An origin may contain a wildcard (*) to replace 0 or more characters
+-	// (i.e.: http://*.domain.com). Usage of wildcards implies a small performance penalty.
+-	// Only one wildcard can be used per origin.
+-	// Default value is ["*"]
+-	AllowedOrigins []string
+-	// AllowOriginFunc is a custom function to validate the origin. It take the
+-	// origin as argument and returns true if allowed or false otherwise. If
+-	// this option is set, the content of `AllowedOrigins` is ignored.
+-	AllowOriginFunc func(origin string) bool
+-	// AllowOriginRequestFunc is a custom function to validate the origin. It
+-	// takes the HTTP Request object and the origin as argument and returns true
+-	// if allowed or false otherwise. If headers are used take the decision,
+-	// consider using AllowOriginVaryRequestFunc instead. If this option is set,
+-	// the contents of `AllowedOrigins`, `AllowOriginFunc` are ignored.
+-	//
+-	// Deprecated: use `AllowOriginVaryRequestFunc` instead.
+-	AllowOriginRequestFunc func(r *http.Request, origin string) bool
+-	// AllowOriginVaryRequestFunc is a custom function to validate the origin.
+-	// It takes the HTTP Request object and the origin as argument and returns
+-	// true if allowed or false otherwise with a list of headers used to take
+-	// that decision if any so they can be added to the Vary header. If this
+-	// option is set, the contents of `AllowedOrigins`, `AllowOriginFunc` and
+-	// `AllowOriginRequestFunc` are ignored.
+-	AllowOriginVaryRequestFunc func(r *http.Request, origin string) (bool, []string)
+-	// AllowedMethods is a list of methods the client is allowed to use with
+-	// cross-domain requests. Default value is simple methods (HEAD, GET and POST).
+-	AllowedMethods []string
+-	// AllowedHeaders is list of non simple headers the client is allowed to use with
+-	// cross-domain requests.
+-	// If the special "*" value is present in the list, all headers will be allowed.
+-	// Default value is [].
+-	AllowedHeaders []string
+-	// ExposedHeaders indicates which headers are safe to expose to the API of a CORS
+-	// API specification
+-	ExposedHeaders []string
+-	// MaxAge indicates how long (in seconds) the results of a preflight request
+-	// can be cached. Default value is 0, which stands for no
+-	// Access-Control-Max-Age header to be sent back, resulting in browsers
+-	// using their default value (5s by spec). If you need to force a 0 max-age,
+-	// set `MaxAge` to a negative value (ie: -1).
+-	MaxAge int
+-	// AllowCredentials indicates whether the request can include user credentials like
+-	// cookies, HTTP authentication or client side SSL certificates.
+-	AllowCredentials bool
+-	// AllowPrivateNetwork indicates whether to accept cross-origin requests over a
+-	// private network.
+-	AllowPrivateNetwork bool
+-	// OptionsPassthrough instructs preflight to let other potential next handlers to
+-	// process the OPTIONS method. Turn this on if your application handles OPTIONS.
+-	OptionsPassthrough bool
+-	// Provides a status code to use for successful OPTIONS requests.
+-	// Default value is http.StatusNoContent (204).
+-	OptionsSuccessStatus int
+-	// Debugging flag adds additional output to debug server side CORS issues
+-	Debug bool
+-	// Adds a custom logger, implies Debug is true
+-	Logger Logger
+-}
+-
+-// Logger generic interface for logger
+-type Logger interface {
+-	Printf(string, ...interface{})
+-}
+-
+-// Cors http handler
+-type Cors struct {
+-	// Debug logger
+-	Log Logger
+-	// Normalized list of plain allowed origins
+-	allowedOrigins []string
+-	// List of allowed origins containing wildcards
+-	allowedWOrigins []wildcard
+-	// Optional origin validator function
+-	allowOriginFunc func(r *http.Request, origin string) (bool, []string)
+-	// Normalized list of allowed headers
+-	// Note: the Fetch standard guarantees that CORS-unsafe request-header names
+-	// (i.e. the values listed in the Access-Control-Request-Headers header)
+-	// are unique and sorted;
+-	// see https://fetch.spec.whatwg.org/#cors-unsafe-request-header-names.
+-	allowedHeaders internal.SortedSet
+-	// Normalized list of allowed methods
+-	allowedMethods []string
+-	// Pre-computed normalized list of exposed headers
+-	exposedHeaders []string
+-	// Pre-computed maxAge header value
+-	maxAge []string
+-	// Set to true when allowed origins contains a "*"
+-	allowedOriginsAll bool
+-	// Set to true when allowed headers contains a "*"
+-	allowedHeadersAll bool
+-	// Status code to use for successful OPTIONS requests
+-	optionsSuccessStatus int
+-	allowCredentials     bool
+-	allowPrivateNetwork  bool
+-	optionPassthrough    bool
+-	preflightVary        []string
+-}
+-
+-// New creates a new Cors handler with the provided options.
+-func New(options Options) *Cors {
+-	c := &Cors{
+-		allowCredentials:    options.AllowCredentials,
+-		allowPrivateNetwork: options.AllowPrivateNetwork,
+-		optionPassthrough:   options.OptionsPassthrough,
+-		Log:                 options.Logger,
+-	}
+-	if options.Debug && c.Log == nil {
+-		c.Log = log.New(os.Stdout, "[cors] ", log.LstdFlags)
+-	}
+-
+-	// Allowed origins
+-	switch {
+-	case options.AllowOriginVaryRequestFunc != nil:
+-		c.allowOriginFunc = options.AllowOriginVaryRequestFunc
+-	case options.AllowOriginRequestFunc != nil:
+-		c.allowOriginFunc = func(r *http.Request, origin string) (bool, []string) {
+-			return options.AllowOriginRequestFunc(r, origin), nil
+-		}
+-	case options.AllowOriginFunc != nil:
+-		c.allowOriginFunc = func(r *http.Request, origin string) (bool, []string) {
+-			return options.AllowOriginFunc(origin), nil
+-		}
+-	case len(options.AllowedOrigins) == 0:
+-		if c.allowOriginFunc == nil {
+-			// Default is all origins
+-			c.allowedOriginsAll = true
+-		}
+-	default:
+-		c.allowedOrigins = []string{}
+-		c.allowedWOrigins = []wildcard{}
+-		for _, origin := range options.AllowedOrigins {
+-			// Note: for origins matching, the spec requires a case-sensitive matching.
+-			// As it may error prone, we chose to ignore the spec here.
+-			origin = strings.ToLower(origin)
+-			if origin == "*" {
+-				// If "*" is present in the list, turn the whole list into a match all
+-				c.allowedOriginsAll = true
+-				c.allowedOrigins = nil
+-				c.allowedWOrigins = nil
+-				break
+-			} else if i := strings.IndexByte(origin, '*'); i >= 0 {
+-				// Split the origin in two: start and end string without the *
+-				w := wildcard{origin[0:i], origin[i+1:]}
+-				c.allowedWOrigins = append(c.allowedWOrigins, w)
+-			} else {
+-				c.allowedOrigins = append(c.allowedOrigins, origin)
+-			}
+-		}
+-	}
+-
+-	// Allowed Headers
+-	// Note: the Fetch standard guarantees that CORS-unsafe request-header names
+-	// (i.e. the values listed in the Access-Control-Request-Headers header)
+-	// are lowercase; see https://fetch.spec.whatwg.org/#cors-unsafe-request-header-names.
+-	if len(options.AllowedHeaders) == 0 {
+-		// Use sensible defaults
+-		c.allowedHeaders = internal.NewSortedSet("accept", "content-type", "x-requested-with")
+-	} else {
+-		normalized := convert(options.AllowedHeaders, strings.ToLower)
+-		c.allowedHeaders = internal.NewSortedSet(normalized...)
+-		for _, h := range options.AllowedHeaders {
+-			if h == "*" {
+-				c.allowedHeadersAll = true
+-				c.allowedHeaders = internal.SortedSet{}
+-				break
+-			}
+-		}
+-	}
+-
+-	// Allowed Methods
+-	if len(options.AllowedMethods) == 0 {
+-		// Default is spec's "simple" methods
+-		c.allowedMethods = []string{http.MethodGet, http.MethodPost, http.MethodHead}
+-	} else {
+-		c.allowedMethods = options.AllowedMethods
+-	}
+-
+-	// Options Success Status Code
+-	if options.OptionsSuccessStatus == 0 {
+-		c.optionsSuccessStatus = http.StatusNoContent
+-	} else {
+-		c.optionsSuccessStatus = options.OptionsSuccessStatus
+-	}
+-
+-	// Pre-compute exposed headers header value
+-	if len(options.ExposedHeaders) > 0 {
+-		c.exposedHeaders = []string{strings.Join(convert(options.ExposedHeaders, http.CanonicalHeaderKey), ", ")}
+-	}
+-
+-	// Pre-compute prefight Vary header to save allocations
+-	if c.allowPrivateNetwork {
+-		c.preflightVary = []string{"Origin, Access-Control-Request-Method, Access-Control-Request-Headers, Access-Control-Request-Private-Network"}
+-	} else {
+-		c.preflightVary = []string{"Origin, Access-Control-Request-Method, Access-Control-Request-Headers"}
+-	}
+-
+-	// Precompute max-age
+-	if options.MaxAge > 0 {
+-		c.maxAge = []string{strconv.Itoa(options.MaxAge)}
+-	} else if options.MaxAge < 0 {
+-		c.maxAge = []string{"0"}
+-	}
+-
+-	return c
+-}
+-
+-// Default creates a new Cors handler with default options.
+-func Default() *Cors {
+-	return New(Options{})
+-}
+-
+-// AllowAll create a new Cors handler with permissive configuration allowing all
+-// origins with all standard methods with any header and credentials.
+-func AllowAll() *Cors {
+-	return New(Options{
+-		AllowedOrigins: []string{"*"},
+-		AllowedMethods: []string{
+-			http.MethodHead,
+-			http.MethodGet,
+-			http.MethodPost,
+-			http.MethodPut,
+-			http.MethodPatch,
+-			http.MethodDelete,
+-		},
+-		AllowedHeaders:   []string{"*"},
+-		AllowCredentials: false,
+-	})
+-}
+-
+-// Handler apply the CORS specification on the request, and add relevant CORS headers
+-// as necessary.
+-func (c *Cors) Handler(h http.Handler) http.Handler {
+-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+-		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
+-			c.logf("Handler: Preflight request")
+-			c.handlePreflight(w, r)
+-			// Preflight requests are standalone and should stop the chain as some other
+-			// middleware may not handle OPTIONS requests correctly. One typical example
+-			// is authentication middleware ; OPTIONS requests won't carry authentication
+-			// headers (see #1)
+-			if c.optionPassthrough {
+-				h.ServeHTTP(w, r)
+-			} else {
+-				w.WriteHeader(c.optionsSuccessStatus)
+-			}
+-		} else {
+-			c.logf("Handler: Actual request")
+-			c.handleActualRequest(w, r)
+-			h.ServeHTTP(w, r)
+-		}
+-	})
+-}
+-
+-// HandlerFunc provides Martini compatible handler
+-func (c *Cors) HandlerFunc(w http.ResponseWriter, r *http.Request) {
+-	if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
+-		c.logf("HandlerFunc: Preflight request")
+-		c.handlePreflight(w, r)
+-
+-		w.WriteHeader(c.optionsSuccessStatus)
+-	} else {
+-		c.logf("HandlerFunc: Actual request")
+-		c.handleActualRequest(w, r)
+-	}
+-}
+-
+-// Negroni compatible interface
+-func (c *Cors) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+-	if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
+-		c.logf("ServeHTTP: Preflight request")
+-		c.handlePreflight(w, r)
+-		// Preflight requests are standalone and should stop the chain as some other
+-		// middleware may not handle OPTIONS requests correctly. One typical example
+-		// is authentication middleware ; OPTIONS requests won't carry authentication
+-		// headers (see #1)
+-		if c.optionPassthrough {
+-			next(w, r)
+-		} else {
+-			w.WriteHeader(c.optionsSuccessStatus)
+-		}
+-	} else {
+-		c.logf("ServeHTTP: Actual request")
+-		c.handleActualRequest(w, r)
+-		next(w, r)
+-	}
+-}
+-
+-// handlePreflight handles pre-flight CORS requests
+-func (c *Cors) handlePreflight(w http.ResponseWriter, r *http.Request) {
+-	headers := w.Header()
+-	origin := r.Header.Get("Origin")
+-
+-	if r.Method != http.MethodOptions {
+-		c.logf("  Preflight aborted: %s!=OPTIONS", r.Method)
+-		return
+-	}
+-	// Always set Vary headers
+-	// see https://github.com/rs/cors/issues/10,
+-	//     https://github.com/rs/cors/commit/dbdca4d95feaa7511a46e6f1efb3b3aa505bc43f#commitcomment-12352001
+-	if vary, found := headers["Vary"]; found {
+-		headers["Vary"] = append(vary, c.preflightVary[0])
+-	} else {
+-		headers["Vary"] = c.preflightVary
+-	}
+-	allowed, additionalVaryHeaders := c.isOriginAllowed(r, origin)
+-	if len(additionalVaryHeaders) > 0 {
+-		headers.Add("Vary", strings.Join(convert(additionalVaryHeaders, http.CanonicalHeaderKey), ", "))
+-	}
+-
+-	if origin == "" {
+-		c.logf("  Preflight aborted: empty origin")
+-		return
+-	}
+-	if !allowed {
+-		c.logf("  Preflight aborted: origin '%s' not allowed", origin)
+-		return
+-	}
+-
+-	reqMethod := r.Header.Get("Access-Control-Request-Method")
+-	if !c.isMethodAllowed(reqMethod) {
+-		c.logf("  Preflight aborted: method '%s' not allowed", reqMethod)
+-		return
+-	}
+-	// Note: the Fetch standard guarantees that at most one
+-	// Access-Control-Request-Headers header is present in the preflight request;
+-	// see step 5.2 in https://fetch.spec.whatwg.org/#cors-preflight-fetch-0.
+-	reqHeaders, found := first(r.Header, "Access-Control-Request-Headers")
+-	if found && !c.allowedHeadersAll && !c.allowedHeaders.Subsumes(reqHeaders[0]) {
+-		c.logf("  Preflight aborted: headers '%v' not allowed", reqHeaders[0])
+-		return
+-	}
+-	if c.allowedOriginsAll {
+-		headers["Access-Control-Allow-Origin"] = headerOriginAll
+-	} else {
+-		headers["Access-Control-Allow-Origin"] = r.Header["Origin"]
+-	}
+-	// Spec says: Since the list of methods can be unbounded, simply returning the method indicated
+-	// by Access-Control-Request-Method (if supported) can be enough
+-	headers["Access-Control-Allow-Methods"] = r.Header["Access-Control-Request-Method"]
+-	if found && len(reqHeaders[0]) > 0 {
+-		// Spec says: Since the list of headers can be unbounded, simply returning supported headers
+-		// from Access-Control-Request-Headers can be enough
+-		headers["Access-Control-Allow-Headers"] = reqHeaders
+-	}
+-	if c.allowCredentials {
+-		headers["Access-Control-Allow-Credentials"] = headerTrue
+-	}
+-	if c.allowPrivateNetwork && r.Header.Get("Access-Control-Request-Private-Network") == "true" {
+-		headers["Access-Control-Allow-Private-Network"] = headerTrue
+-	}
+-	if len(c.maxAge) > 0 {
+-		headers["Access-Control-Max-Age"] = c.maxAge
+-	}
+-	if c.Log != nil {
+-		c.logf("  Preflight response headers: %v", headers)
+-	}
+-}
+-
+-// handleActualRequest handles simple cross-origin requests, actual request or redirects
+-func (c *Cors) handleActualRequest(w http.ResponseWriter, r *http.Request) {
+-	headers := w.Header()
+-	origin := r.Header.Get("Origin")
+-
+-	allowed, additionalVaryHeaders := c.isOriginAllowed(r, origin)
+-
+-	// Always set Vary, see https://github.com/rs/cors/issues/10
+-	if vary := headers["Vary"]; vary == nil {
+-		headers["Vary"] = headerVaryOrigin
+-	} else {
+-		headers["Vary"] = append(vary, headerVaryOrigin[0])
+-	}
+-	if len(additionalVaryHeaders) > 0 {
+-		headers.Add("Vary", strings.Join(convert(additionalVaryHeaders, http.CanonicalHeaderKey), ", "))
+-	}
+-	if origin == "" {
+-		c.logf("  Actual request no headers added: missing origin")
+-		return
+-	}
+-	if !allowed {
+-		c.logf("  Actual request no headers added: origin '%s' not allowed", origin)
+-		return
+-	}
+-
+-	// Note that spec does define a way to specifically disallow a simple method like GET or
+-	// POST. Access-Control-Allow-Methods is only used for pre-flight requests and the
+-	// spec doesn't instruct to check the allowed methods for simple cross-origin requests.
+-	// We think it's a nice feature to be able to have control on those methods though.
+-	if !c.isMethodAllowed(r.Method) {
+-		c.logf("  Actual request no headers added: method '%s' not allowed", r.Method)
+-		return
+-	}
+-	if c.allowedOriginsAll {
+-		headers["Access-Control-Allow-Origin"] = headerOriginAll
+-	} else {
+-		headers["Access-Control-Allow-Origin"] = r.Header["Origin"]
+-	}
+-	if len(c.exposedHeaders) > 0 {
+-		headers["Access-Control-Expose-Headers"] = c.exposedHeaders
+-	}
+-	if c.allowCredentials {
+-		headers["Access-Control-Allow-Credentials"] = headerTrue
+-	}
+-	if c.Log != nil {
+-		c.logf("  Actual response added headers: %v", headers)
+-	}
+-}
+-
+-// convenience method. checks if a logger is set.
+-func (c *Cors) logf(format string, a ...interface{}) {
+-	if c.Log != nil {
+-		c.Log.Printf(format, a...)
+-	}
+-}
+-
+-// check the Origin of a request. No origin at all is also allowed.
+-func (c *Cors) OriginAllowed(r *http.Request) bool {
+-	origin := r.Header.Get("Origin")
+-	allowed, _ := c.isOriginAllowed(r, origin)
+-	return allowed
+-}
+-
+-// isOriginAllowed checks if a given origin is allowed to perform cross-domain requests
+-// on the endpoint
+-func (c *Cors) isOriginAllowed(r *http.Request, origin string) (allowed bool, varyHeaders []string) {
+-	if c.allowOriginFunc != nil {
+-		return c.allowOriginFunc(r, origin)
+-	}
+-	if c.allowedOriginsAll {
+-		return true, nil
+-	}
+-	origin = strings.ToLower(origin)
+-	for _, o := range c.allowedOrigins {
+-		if o == origin {
+-			return true, nil
+-		}
+-	}
+-	for _, w := range c.allowedWOrigins {
+-		if w.match(origin) {
+-			return true, nil
+-		}
+-	}
+-	return false, nil
+-}
+-
+-// isMethodAllowed checks if a given method can be used as part of a cross-domain request
+-// on the endpoint
+-func (c *Cors) isMethodAllowed(method string) bool {
+-	if len(c.allowedMethods) == 0 {
+-		// If no method allowed, always return false, even for preflight request
+-		return false
+-	}
+-	if method == http.MethodOptions {
+-		// Always allow preflight requests
+-		return true
+-	}
+-	for _, m := range c.allowedMethods {
+-		if m == method {
+-			return true
+-		}
+-	}
+-	return false
+-}
+--- a/vendor/github.com/rs/cors/internal/sortedset.go
++++ b/vendor/github.com/rs/cors/internal/sortedset.go
+@@ -1,113 +0,0 @@
+-// adapted from github.com/jub0bs/cors
+-package internal
+-
+-import (
+-	"sort"
+-	"strings"
+-)
+-
+-// A SortedSet represents a mathematical set of strings sorted in
+-// lexicographical order.
+-// Each element has a unique position ranging from 0 (inclusive)
+-// to the set's cardinality (exclusive).
+-// The zero value represents an empty set.
+-type SortedSet struct {
+-	m      map[string]int
+-	maxLen int
+-}
+-
+-// NewSortedSet returns a SortedSet that contains all of elems,
+-// but no other elements.
+-func NewSortedSet(elems ...string) SortedSet {
+-	sort.Strings(elems)
+-	m := make(map[string]int)
+-	var maxLen int
+-	i := 0
+-	for _, s := range elems {
+-		if _, exists := m[s]; exists {
+-			continue
+-		}
+-		m[s] = i
+-		i++
+-		maxLen = max(maxLen, len(s))
+-	}
+-	return SortedSet{
+-		m:      m,
+-		maxLen: maxLen,
+-	}
+-}
+-
+-// Size returns the cardinality of set.
+-func (set SortedSet) Size() int {
+-	return len(set.m)
+-}
+-
+-// String sorts joins the elements of set (in lexicographical order)
+-// with a comma and returns the resulting string.
+-func (set SortedSet) String() string {
+-	elems := make([]string, len(set.m))
+-	for elem, i := range set.m {
+-		elems[i] = elem // safe indexing, by construction of SortedSet
+-	}
+-	return strings.Join(elems, ",")
+-}
+-
+-// Subsumes reports whether csv is a sequence of comma-separated names that are
+-//   - all elements of set,
+-//   - sorted in lexicographically order,
+-//   - unique.
+-func (set SortedSet) Subsumes(csv string) bool {
+-	if csv == "" {
+-		return true
+-	}
+-	posOfLastNameSeen := -1
+-	chunkSize := set.maxLen + 1 // (to accommodate for at least one comma)
+-	for {
+-		// As a defense against maliciously long names in csv,
+-		// we only process at most chunkSize bytes per iteration.
+-		end := min(len(csv), chunkSize)
+-		comma := strings.IndexByte(csv[:end], ',')
+-		var name string
+-		if comma == -1 {
+-			name = csv
+-		} else {
+-			name = csv[:comma]
+-		}
+-		pos, found := set.m[name]
+-		if !found {
+-			return false
+-		}
+-		// The names in csv are expected to be sorted in lexicographical order
+-		// and appear at most once in csv.
+-		// Therefore, the positions (in set) of the names that
+-		// appear in csv should form a strictly increasing sequence.
+-		// If that's not actually the case, bail out.
+-		if pos <= posOfLastNameSeen {
+-			return false
+-		}
+-		posOfLastNameSeen = pos
+-		if comma < 0 { // We've now processed all the names in csv.
+-			break
+-		}
+-		csv = csv[comma+1:]
+-	}
+-	return true
+-}
+-
+-// TODO: when updating go directive to 1.21 or later,
+-// use min builtin instead.
+-func min(a, b int) int {
+-	if a < b {
+-		return a
+-	}
+-	return b
+-}
+-
+-// TODO: when updating go directive to 1.21 or later,
+-// use max builtin instead.
+-func max(a, b int) int {
+-	if a > b {
+-		return a
+-	}
+-	return b
+-}
+--- a/vendor/github.com/rs/cors/utils.go
++++ b/vendor/github.com/rs/cors/utils.go
+@@ -1,34 +0,0 @@
+-package cors
+-
+-import (
+-	"net/http"
+-	"strings"
+-)
+-
+-type wildcard struct {
+-	prefix string
+-	suffix string
+-}
+-
+-func (w wildcard) match(s string) bool {
+-	return len(s) >= len(w.prefix)+len(w.suffix) &&
+-		strings.HasPrefix(s, w.prefix) &&
+-		strings.HasSuffix(s, w.suffix)
+-}
+-
+-// convert converts a list of string using the passed converter function
+-func convert(s []string, f func(string) string) []string {
+-	out := make([]string, len(s))
+-	for i := range s {
+-		out[i] = f(s[i])
+-	}
+-	return out
+-}
+-
+-func first(hdrs http.Header, k string) ([]string, bool) {
+-	v, found := hdrs[k]
+-	if !found || len(v) == 0 {
+-		return nil, false
+-	}
+-	return v[:1], true
+-}
+--- a/vendor/github.com/rs/cors/wrapper/gin/gin.go
++++ b/vendor/github.com/rs/cors/wrapper/gin/gin.go
+@@ -1,60 +0,0 @@
+-// Package cors/wrapper/gin provides gin.HandlerFunc to handle CORS related
+-// requests as a wrapper of github.com/rs/cors handler.
+-package gin
+-
+-import (
+-	"net/http"
+-
+-	"github.com/gin-gonic/gin"
+-	"github.com/rs/cors"
+-)
+-
+-// Options is a configuration container to setup the CORS middleware.
+-type Options = cors.Options
+-
+-// corsWrapper is a wrapper of cors.Cors handler which preserves information
+-// about configured 'optionPassthrough' option.
+-type corsWrapper struct {
+-	*cors.Cors
+-	optionsSuccessStatus int
+-	optionsPassthrough   bool
+-}
+-
+-// build transforms wrapped cors.Cors handler into Gin middleware.
+-func (c corsWrapper) build() gin.HandlerFunc {
+-	return func(ctx *gin.Context) {
+-		c.HandlerFunc(ctx.Writer, ctx.Request)
+-		if !c.optionsPassthrough &&
+-			ctx.Request.Method == http.MethodOptions &&
+-			ctx.GetHeader("Access-Control-Request-Method") != "" {
+-			// Abort processing next Gin middlewares.
+-			ctx.AbortWithStatus(c.optionsSuccessStatus)
+-		}
+-	}
+-}
+-
+-// AllowAll creates a new CORS Gin middleware with permissive configuration
+-// allowing all origins with all standard methods with any header and
+-// credentials.
+-func AllowAll() gin.HandlerFunc {
+-	return corsWrapper{Cors: cors.AllowAll()}.build()
+-}
+-
+-// Default creates a new CORS Gin middleware with default options.
+-func Default() gin.HandlerFunc {
+-	return corsWrapper{Cors: cors.Default()}.build()
+-}
+-
+-// New creates a new CORS Gin middleware with the provided options.
+-func New(options Options) gin.HandlerFunc {
+-	status := options.OptionsSuccessStatus
+-	if status == 0 {
+-		status = http.StatusNoContent
+-	}
+-	wrapper := corsWrapper{
+-		Cors:                 cors.New(options),
+-		optionsSuccessStatus: status,
+-		optionsPassthrough:   options.OptionsPassthrough,
+-	}
+-	return wrapper.build()
+-}
+===== 3. THE AGENT FIX TO JUDGE =====
+diff --git a/cli/cmd/configserver/auth_test.go b/cli/cmd/configserver/auth_test.go
+new file mode 100644
+index 00000000..bbb2904c
+--- /dev/null
++++ b/cli/cmd/configserver/auth_test.go
+@@ -0,0 +1,135 @@
++package configserver
++
++import (
++	"net/http"
++	"net/http/httptest"
++	"testing"
++
++	"github.com/99designs/gqlgen/graphql/handler/transport"
++	"github.com/gin-gonic/gin"
++)
++
++func TestAdminSecretAuth(t *testing.T) {
++	gin.SetMode(gin.TestMode)
++
++	cases := []struct {
++		name       string
++		path       string
++		method     string
++		header     string
++		wantStatus int
++	}{
++		{
++			name:       "allows matching admin secret",
++			path:       "/v1/configserver/graphql",
++			method:     http.MethodPost,
++			header:     "secret",
++			wantStatus: http.StatusOK,
++		},
++		{
++			name:       "rejects missing admin secret",
++			path:       "/v1/configserver/graphql",
++			method:     http.MethodPost,
++			wantStatus: http.StatusUnauthorized,
++		},
++		{
++			name:       "rejects wrong admin secret",
++			path:       "/v1/configserver/graphql",
++			method:     http.MethodPost,
++			header:     "wrong",
++			wantStatus: http.StatusUnauthorized,
++		},
++		{
++			name:       "allows health checks",
++			path:       "/healthz",
++			method:     http.MethodGet,
++			wantStatus: http.StatusOK,
++		},
++		{
++			name:       "allows preflight requests",
++			path:       "/v1/configserver/graphql",
++			method:     http.MethodOptions,
++			wantStatus: http.StatusOK,
++		},
++	}
++
++	for _, tc := range cases {
++		t.Run(tc.name, func(t *testing.T) {
++			r := gin.New()
++			r.Use(adminSecretAuth("secret"))
++			r.Any("/*path", func(c *gin.Context) {
++				c.Status(http.StatusOK)
++			})
++
++			req := httptest.NewRequest(tc.method, tc.path, nil)
++			if tc.header != "" {
++				req.Header.Set(adminSecretHeader, tc.header)
++			}
++
++			w := httptest.NewRecorder()
++			r.ServeHTTP(w, req)
++
++			if w.Code != tc.wantStatus {
++				t.Fatalf("status = %d, want %d", w.Code, tc.wantStatus)
++			}
++		})
++	}
++}
++
++func TestWebSocketAdminSecretAuth(t *testing.T) {
++	t.Parallel()
++
++	init := webSocketAdminSecretAuth("secret")
++
++	if _, _, err := init(t.Context(), transport.InitPayload{
++		"headers": map[string]any{
++			"X-Hasura-Admin-Secret": "secret",
++		},
++	}); err != nil {
++		t.Fatalf("expected matching secret to pass: %v", err)
++	}
++
++	if _, _, err := init(t.Context(), transport.InitPayload{
++		"headers": map[string]any{
++			"X-Hasura-Admin-Secret": "wrong",
++		},
++	}); err == nil {
++		t.Fatal("expected wrong secret to fail")
++	}
++}
++
++func TestIsAllowedDashboardOrigin(t *testing.T) {
++	t.Parallel()
++
++	cases := []struct {
++		name   string
++		origin string
++		want   bool
++	}{
++		{
++			name:   "allows local dashboard host",
++			origin: "https://local.dashboard.local.nhost.run",
++			want:   true,
++		},
++		{
++			name:   "allows localhost development",
++			origin: "http://localhost:3000",
++			want:   true,
++		},
++		{
++			name:   "rejects arbitrary origin",
++			origin: "https://example.com",
++			want:   false,
++		},
++	}
++
++	for _, tc := range cases {
++		t.Run(tc.name, func(t *testing.T) {
++			t.Parallel()
++
++			if got := isAllowedDashboardOrigin(tc.origin); got != tc.want {
++				t.Fatalf("isAllowedDashboardOrigin() = %t, want %t", got, tc.want)
++			}
++		})
++	}
++}
+diff --git a/cli/cmd/configserver/configserver.go b/cli/cmd/configserver/configserver.go
+index 18fa8273..d6d3cc78 100644
+--- a/cli/cmd/configserver/configserver.go
++++ b/cli/cmd/configserver/configserver.go
+@@ -2,10 +2,16 @@ package configserver
+ 
+ import (
+ 	"context"
++	"crypto/subtle"
++	"errors"
+ 	"fmt"
++	"net/http"
++	"net/url"
+ 	"os"
++	"strings"
+ 
+ 	"github.com/99designs/gqlgen/graphql"
++	"github.com/99designs/gqlgen/graphql/handler/transport"
+ 	"github.com/docker/docker/client"
+ 	"github.com/gin-gonic/gin"
+ 	"github.com/google/uuid"
+@@ -21,12 +27,16 @@ const (
+ 	debugFlag                   = "debug"
+ 	logFormatJSONFlag           = "log-format-json"
+ 	enablePlaygroundFlag        = "enable-playground"
++	adminSecretFlag             = "admin-secret"
+ 	storageLocalConfigPath      = "storage-local-config-path"
+ 	storageLocalSecretsPath     = "storage-local-secrets-path"
+ 	storageLocalRunServicesPath = "storage-local-run-services-path"
+ 	dockerComposeProjectEnv     = "DOCKER_COMPOSE_PROJECT"
++	adminSecretHeader           = "x-hasura-admin-secret"
+ )
+ 
++var ErrInvalidAdminSecret = errors.New("invalid admin secret")
++
+ func Command() *cli.Command {
+ 	return &cli.Command{ //nolint: exhaustruct
+ 		Name:   "configserver",
+@@ -55,6 +65,12 @@ func Command() *cli.Command {
+ 				Category: "server",
+ 				Sources:  cli.EnvVars("ENABLE_PLAYGROUND"),
+ 			},
++			&cli.StringFlag{ //nolint: exhaustruct
++				Name:     adminSecretFlag,
++				Usage:    "admin secret required to access the config server",
++				Category: "server",
++				Sources:  cli.EnvVars("NHOST_ADMIN_SECRET"),
++			},
+ 			&cli.StringFlag{ //nolint: exhaustruct
+ 				Name:     storageLocalConfigPath,
+ 				Usage:    "Path to the local mimir config file",
+@@ -108,11 +124,99 @@ func runServicesFiles(runServices ...string) map[string]string {
+ 	return m
+ }
+ 
++func validAdminSecret(got, want string) bool {
++	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
++}
++
++func isWebSocketUpgrade(c *gin.Context) bool {
++	return strings.EqualFold(c.GetHeader("Upgrade"), "websocket") &&
++		strings.Contains(strings.ToLower(c.GetHeader("Connection")), "upgrade")
++}
++
++func isAllowedDashboardOrigin(origin string) bool {
++	if origin == "" {
++		return false
++	}
++
++	u, err := url.Parse(origin)
++	if err != nil {
++		return false
++	}
++
++	host := u.Hostname()
++
++	return strings.HasSuffix(host, ".dashboard.local.nhost.run") ||
++		host == "local.dashboard.nhost.run" ||
++		host == "localhost" ||
++		host == "127.0.0.1" ||
++		host == "::1"
++}
++
++func adminSecretAuth(adminSecret string) gin.HandlerFunc {
++	return func(c *gin.Context) {
++		switch {
++		case c.Request.Method == http.MethodOptions:
++			c.Next()
++			return
++		case c.Request.URL.Path == "/healthz" || c.Request.URL.Path == "/metrics":
++			c.Next()
++			return
++		case isWebSocketUpgrade(c):
++			c.Next()
++			return
++		}
++
++		if !validAdminSecret(c.GetHeader(adminSecretHeader), adminSecret) {
++			c.AbortWithStatus(http.StatusUnauthorized)
++			return
++		}
++
++		c.Next()
++	}
++}
++
++func getInitPayloadHeader(initPayload transport.InitPayload, name string) string {
++	raw, ok := initPayload["headers"]
++	if !ok {
++		return initPayload.GetString(name)
++	}
++
++	headers, ok := raw.(map[string]any)
++	if !ok {
++		return ""
++	}
++
++	for k, v := range headers {
++		if strings.EqualFold(k, name) {
++			s, ok := v.(string)
++			if ok {
++				return s
++			}
++		}
++	}
++
++	return ""
++}
++
++func webSocketAdminSecretAuth(adminSecret string) transport.WebsocketInitFunc {
++	return func(
++		ctx context.Context,
++		initPayload transport.InitPayload,
++	) (context.Context, *transport.InitPayload, error) {
++		if !validAdminSecret(getInitPayloadHeader(initPayload, adminSecretHeader), adminSecret) {
++			return ctx, nil, ErrInvalidAdminSecret
++		}
++
++		return ctx, nil, nil
++	}
++}
++
+ func setupLogsAPI(
+ 	r *gin.Engine,
+ 	logger logrus.FieldLogger,
+ 	enablePlayground bool,
+ 	version string,
++	adminSecret string,
+ ) error {
+ 	dockerClient, err := client.NewClientWithOpts(
+ 		client.FromEnv,
+@@ -130,7 +234,14 @@ func setupLogsAPI(
+ 		Logger:      logger,
+ 	}
+ 
+-	logsapi.AddRoutes(r, "/v1/logs", logsResolver, enablePlayground, version)
++	logsapi.AddRoutes(
++		r,
++		"/v1/logs",
++		logsResolver,
++		enablePlayground,
++		version,
++		webSocketAdminSecretAuth(adminSecret),
++	)
+ 
+ 	return nil
+ }
+@@ -151,6 +262,14 @@ func serve(_ context.Context, cmd *cli.Command) error {
+ 		return fmt.Errorf("failed to get data from plugin: %w", err)
+ 	}
+ 
++	adminSecret := cmd.String(adminSecretFlag)
++	if adminSecret == "" && len(data) > 0 && data[0].Config != nil {
++		adminSecret = data[0].Config.GetHasura().GetAdminSecret()
++	}
++	if adminSecret == "" {
++		return errors.New("admin secret is required") //nolint:err113
++	}
++
+ 	plugins := []graph.Plugin{st}
+ 
+ 	resolver, err := graph.NewResolver(graph.NewMapStoreFromData(data), nil, Querier{}, plugins)
+@@ -167,11 +286,20 @@ func serve(_ context.Context, cmd *cli.Command) error {
+ 		cmd.Root().Version,
+ 		[]graphql.FieldMiddleware{},
+ 		gin.Recovery(),
+-		cors.Default(),
++		cors.New(cors.Options{
++			AllowOriginFunc: isAllowedDashboardOrigin,
++			AllowedHeaders:  []string{"Content-Type", adminSecretHeader},
++			AllowedMethods: []string{
++				http.MethodGet,
++				http.MethodPost,
++				http.MethodOptions,
++			},
++		}),
++		adminSecretAuth(adminSecret),
+ 	)
+ 
+ 	if err := setupLogsAPI(
+-		r, logger, cmd.Bool(enablePlaygroundFlag), cmd.Root().Version,
++		r, logger, cmd.Bool(enablePlaygroundFlag), cmd.Root().Version, adminSecret,
+ 	); err != nil {
+ 		return err
+ 	}
+diff --git a/cli/cmd/configserver/logsapi/router.go b/cli/cmd/configserver/logsapi/router.go
+index 22328f3b..0120933f 100644
+--- a/cli/cmd/configserver/logsapi/router.go
++++ b/cli/cmd/configserver/logsapi/router.go
+@@ -50,6 +50,7 @@ func AddRoutes(
+ 	resolver *Resolver,
+ 	enablePlayground bool,
+ 	version string,
++	webSocketInit transport.WebsocketInitFunc,
+ ) {
+ 	srv := handler.New(
+ 		generated.NewExecutableSchema(generated.Config{ //nolint:exhaustruct
+@@ -59,6 +60,7 @@ func AddRoutes(
+ 	srv.AddTransport(transport.POST{})    //nolint:exhaustruct
+ 	srv.AddTransport(transport.Websocket{ //nolint:exhaustruct
+ 		KeepAlivePingInterval: wsKeepAlivePingPeriod,
++		InitFunc:              webSocketInit,
+ 		Upgrader: websocket.Upgrader{ //nolint:exhaustruct
+ 			CheckOrigin: checkWebSocketOrigin,
+ 		},
+diff --git a/cli/dockercompose/compose.go b/cli/dockercompose/compose.go
+index 7b89a43c..4363fca6 100644
+--- a/cli/dockercompose/compose.go
++++ b/cli/dockercompose/compose.go
+@@ -628,6 +628,7 @@ func getServices( //nolint: funlen,cyclop
+ 		nhostFolder,
+ 		projectName,
+ 		useTLS,
++		cfg.GetHasura().GetAdminSecret(),
+ 		runServices...,
+ 	)
+ 	if err != nil {
+diff --git a/cli/dockercompose/compose_cloud.go b/cli/dockercompose/compose_cloud.go
+index ce89a8c5..fa5b9edd 100644
+--- a/cli/dockercompose/compose_cloud.go
++++ b/cli/dockercompose/compose_cloud.go
+@@ -129,6 +129,7 @@ func getServicesCloud(
+ 		nhostFolder,
+ 		projectName,
+ 		useTLS,
++		cloudAdminSecret,
+ 	)
+ 	if err != nil {
+ 		return nil, err
+diff --git a/cli/dockercompose/configserver.go b/cli/dockercompose/configserver.go
+index 2547dc84..1204a3d7 100644
+--- a/cli/dockercompose/configserver.go
++++ b/cli/dockercompose/configserver.go
+@@ -12,6 +12,7 @@ func configserver( //nolint: funlen
+ 	nhostPath,
+ 	projectName string,
+ 	useTLS bool,
++	adminSecret string,
+ 	runServices ...*RunService,
+ ) (*Service, error) {
+ 	bindings := make([]Volume, 0, len(runServices))
+@@ -81,10 +82,12 @@ func configserver( //nolint: funlen
+ 			"configserver",
+ 			"--enable-playground",
+ 			"--debug",
++			"--admin-secret=" + adminSecret,
+ 		}, extraArgs...),
+ 		Environment: map[string]string{
+ 			"DOCKER_HOST":            dockerEndpoint,
+ 			"DOCKER_COMPOSE_PROJECT": projectName,
++			"NHOST_ADMIN_SECRET":     adminSecret,
+ 		},
+ 		ExtraHosts:  []string{},
+ 		HealthCheck: nil,
+diff --git a/dashboard/src/features/orgs/projects/hooks/useLocalMimirClient/useLocalMimirClient.ts b/dashboard/src/features/orgs/projects/hooks/useLocalMimirClient/useLocalMimirClient.ts
+index b27ede09..8adf48f6 100644
+--- a/dashboard/src/features/orgs/projects/hooks/useLocalMimirClient/useLocalMimirClient.ts
++++ b/dashboard/src/features/orgs/projects/hooks/useLocalMimirClient/useLocalMimirClient.ts
+@@ -1,6 +1,6 @@
+ import { ApolloClient, HttpLink, InMemoryCache } from '@apollo/client';
+ import { useMemo } from 'react';
+-import { getConfigServerUrl } from '@/utils/env';
++import { getConfigServerUrl, getHasuraAdminSecret } from '@/utils/env';
+ 
+ /**
+  * It creates a new Apollo Client instance that connects to the local mimir when running the a local nhost project
+@@ -13,6 +13,9 @@ export default function useLocalMimirClient() {
+         cache: new InMemoryCache(),
+         link: new HttpLink({
+           uri: getConfigServerUrl(),
++          headers: {
++            'x-hasura-admin-secret': getHasuraAdminSecret(),
++          },
+         }),
+       }),
+     [],
+diff --git a/dashboard/src/utils/localLogsClient/localLogsClient.ts b/dashboard/src/utils/localLogsClient/localLogsClient.ts
+index db7748ff..cf6185d1 100644
+--- a/dashboard/src/utils/localLogsClient/localLogsClient.ts
++++ b/dashboard/src/utils/localLogsClient/localLogsClient.ts
+@@ -7,13 +7,27 @@ import {
+ import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
+ import { getMainDefinition } from '@apollo/client/utilities';
+ import { createClient } from 'graphql-ws';
+-import { getGraphqlLogsServiceUrl, getLogsWebsocketUrl } from '@/utils/env';
++import {
++  getGraphqlLogsServiceUrl,
++  getHasuraAdminSecret,
++  getLogsWebsocketUrl,
++} from '@/utils/env';
++
++const getAdminSecretHeaders = () => ({
++  'x-hasura-admin-secret': getHasuraAdminSecret(),
++});
+ 
+-const httpLink = createHttpLink({ uri: getGraphqlLogsServiceUrl() });
++const httpLink = createHttpLink({
++  uri: getGraphqlLogsServiceUrl(),
++  headers: getAdminSecretHeaders(),
++});
+ 
+ const wsLink = new GraphQLWsLink(
+   createClient({
+     url: getLogsWebsocketUrl(),
++    connectionParams: () => ({
++      headers: getAdminSecretHeaders(),
++    }),
+     webSocketImpl: WebSocket,
+   }),
+ );

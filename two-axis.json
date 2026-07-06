@@ -1,0 +1,398 @@
+{
+  "appium-mcp-79": {
+    "claude": {
+      "verdict": "CORRECT",
+      "security": "closed",
+      "build": "compiles"
+    },
+    "codex": {
+      "verdict": "CORRECT",
+      "security": "closed",
+      "build": "compiles"
+    }
+  },
+  "arc-22": {
+    "claude": {
+      "verdict": "PARTIAL",
+      "security": "partly",
+      "build": "compiles"
+    },
+    "codex": {
+      "verdict": "PARTIAL",
+      "security": "partly",
+      "build": "compiles"
+    }
+  },
+  "async-http-client-200": {
+    "claude": {
+      "verdict": "CORRECT",
+      "security": "closed",
+      "build": "compiles"
+    },
+    "codex": {
+      "verdict": "INCORRECT",
+      "security": "open",
+      "build": "compiles"
+    }
+  },
+  "camel-288": {
+    "claude": {
+      "verdict": "PARTIAL",
+      "security": "closed",
+      "build": "unverified"
+    },
+    "codex": {
+      "verdict": "PARTIAL",
+      "security": "closed",
+      "build": "unverified"
+    }
+  },
+  "camel-915": {
+    "claude": {
+      "verdict": "CORRECT",
+      "security": "closed",
+      "build": "unverified"
+    },
+    "codex": {
+      "verdict": "PARTIAL",
+      "security": "closed",
+      "build": "unverified"
+    }
+  },
+  "devguard-285": {
+    "claude": {
+      "verdict": "PARTIAL",
+      "security": "closed",
+      "build": "compiles"
+    },
+    "codex": {
+      "verdict": "PARTIAL",
+      "security": "closed",
+      "build": "compiles"
+    }
+  },
+  "dex-285": {
+    "claude": {
+      "verdict": "INCORRECT",
+      "security": "open",
+      "build": "compiles"
+    },
+    "codex": {
+      "verdict": "PARTIAL",
+      "security": "closed",
+      "build": "compiles"
+    }
+  },
+  "dnsproxy-362": {
+    "claude": {
+      "verdict": "INCORRECT",
+      "security": "open",
+      "build": "compiles"
+    },
+    "codex": {
+      "verdict": "PARTIAL",
+      "security": "partly",
+      "build": "compiles"
+    }
+  },
+  "dulwich-78": {
+    "claude": {
+      "verdict": "PARTIAL",
+      "security": "partly",
+      "build": "compiles"
+    },
+    "codex": {
+      "verdict": "PARTIAL",
+      "security": "closed",
+      "build": "compiles"
+    }
+  },
+  "epa4all-client-295": {
+    "claude": {
+      "verdict": "CORRECT",
+      "security": "closed",
+      "build": "compiles"
+    },
+    "codex": {
+      "verdict": "CORRECT",
+      "security": "closed",
+      "build": "compiles"
+    }
+  },
+  "hono-185": {
+    "claude": {
+      "verdict": "INCORRECT",
+      "security": "open",
+      "build": "unverified"
+    },
+    "codex": {
+      "verdict": "PARTIAL",
+      "security": "partly",
+      "build": "unverified"
+    }
+  },
+  "httpcomponents-client-304": {
+    "claude": {
+      "verdict": "PARTIAL",
+      "security": "partly",
+      "build": "compiles"
+    },
+    "codex": {
+      "verdict": "INCORRECT",
+      "security": "na",
+      "build": "broken"
+    }
+  },
+  "jupyter-server-79": {
+    "claude": {
+      "verdict": "CORRECT",
+      "security": "closed",
+      "build": "compiles"
+    },
+    "codex": {
+      "verdict": "CORRECT",
+      "security": "closed",
+      "build": "compiles"
+    }
+  },
+  "klever-go-400": {
+    "claude": {
+      "verdict": "PARTIAL",
+      "security": "partly",
+      "build": "compiles"
+    },
+    "codex": {
+      "verdict": "PARTIAL",
+      "security": "partly",
+      "build": "compiles"
+    }
+  },
+  "langflow-200": {
+    "claude": {
+      "verdict": "INCORRECT",
+      "security": "open",
+      "build": "compiles"
+    },
+    "codex": {
+      "verdict": "INCORRECT",
+      "security": "open",
+      "build": "compiles"
+    }
+  },
+  "langflow-639": {
+    "claude": {
+      "verdict": "INCORRECT",
+      "security": "open",
+      "build": "compiles"
+    },
+    "codex": {
+      "verdict": "CORRECT",
+      "security": "closed",
+      "build": "compiles"
+    }
+  },
+  "mcp-toolbox-287": {
+    "claude": {
+      "verdict": "PARTIAL",
+      "security": "partly",
+      "build": "compiles"
+    },
+    "codex": {
+      "verdict": "PARTIAL",
+      "security": "partly",
+      "build": "compiles"
+    }
+  },
+  "mcp-toolbox-287-2": {
+    "claude": {
+      "verdict": "CORRECT",
+      "security": "closed",
+      "build": "compiles"
+    },
+    "codex": {
+      "verdict": "PARTIAL",
+      "security": "closed",
+      "build": "compiles"
+    }
+  },
+  "nebula-mesh-285": {
+    "claude": {
+      "verdict": "PARTIAL",
+      "security": "partly",
+      "build": "compiles"
+    },
+    "codex": {
+      "verdict": "PARTIAL",
+      "security": "partly",
+      "build": "compiles"
+    }
+  },
+  "nebula-mesh-862": {
+    "claude": {
+      "verdict": "INCORRECT",
+      "security": "open",
+      "build": "none"
+    },
+    "codex": {
+      "verdict": "INCORRECT",
+      "security": "open",
+      "build": "compiles"
+    }
+  },
+  "nezha-862": {
+    "claude": {
+      "verdict": "PARTIAL",
+      "security": "partly",
+      "build": "compiles"
+    },
+    "codex": {
+      "verdict": "CORRECT",
+      "security": "closed",
+      "build": "compiles"
+    }
+  },
+  "nhost-306": {
+    "claude": {
+      "verdict": "PARTIAL",
+      "security": "partly",
+      "build": "unverified"
+    },
+    "codex": {
+      "verdict": "PARTIAL",
+      "security": "partly",
+      "build": "unverified"
+    }
+  },
+  "openbao-617": {
+    "claude": {
+      "verdict": "INCORRECT",
+      "security": "open",
+      "build": "unverified"
+    },
+    "codex": {
+      "verdict": "INCORRECT",
+      "security": "open",
+      "build": "none"
+    }
+  },
+  "openmrs-core-94": {
+    "claude": {
+      "verdict": "PARTIAL",
+      "security": "partly",
+      "build": "unverified"
+    },
+    "codex": {
+      "verdict": "PARTIAL",
+      "security": "partly",
+      "build": "unverified"
+    }
+  },
+  "opentelemetry-go-789": {
+    "claude": {
+      "verdict": "PARTIAL",
+      "security": "partly",
+      "build": "unverified"
+    },
+    "codex": {
+      "verdict": "PARTIAL",
+      "security": "closed",
+      "build": "unverified"
+    }
+  },
+  "opentelemetry-operator-200": {
+    "claude": {
+      "verdict": "INCORRECT",
+      "security": "open",
+      "build": "compiles"
+    },
+    "codex": {
+      "verdict": "INCORRECT",
+      "security": "open",
+      "build": "compiles"
+    }
+  },
+  "pdm-22": {
+    "claude": {
+      "verdict": "PARTIAL",
+      "security": "partly",
+      "build": "compiles"
+    },
+    "codex": {
+      "verdict": "PARTIAL",
+      "security": "closed",
+      "build": "compiles"
+    }
+  },
+  "python-zeep-918": {
+    "claude": {
+      "verdict": "PARTIAL",
+      "security": "partly",
+      "build": "compiles"
+    },
+    "codex": {
+      "verdict": "PARTIAL",
+      "security": "partly",
+      "build": "compiles"
+    }
+  },
+  "scim-patch": {
+    "claude": {
+      "verdict": "CORRECT",
+      "security": "closed",
+      "build": "compiles"
+    },
+    "codex": {
+      "verdict": "CORRECT",
+      "security": "closed",
+      "build": "compiles"
+    }
+  },
+  "tilt-306": {
+    "claude": {
+      "verdict": "INCORRECT",
+      "security": "open",
+      "build": "unverified"
+    },
+    "codex": {
+      "verdict": "CORRECT",
+      "security": "closed",
+      "build": "compiles"
+    }
+  },
+  "vert-x-295": {
+    "claude": {
+      "verdict": "PARTIAL",
+      "security": "closed",
+      "build": "compiles"
+    },
+    "codex": {
+      "verdict": "CORRECT",
+      "security": "closed",
+      "build": "compiles"
+    }
+  },
+  "yt-dlp-200": {
+    "claude": {
+      "verdict": "PARTIAL",
+      "security": "partly",
+      "build": "compiles"
+    },
+    "codex": {
+      "verdict": "PARTIAL",
+      "security": "closed",
+      "build": "compiles"
+    }
+  },
+  "yt-dlp-78": {
+    "claude": {
+      "verdict": "PARTIAL",
+      "security": "partly",
+      "build": "compiles"
+    },
+    "codex": {
+      "verdict": "CORRECT",
+      "security": "closed",
+      "build": "compiles"
+    }
+  }
+}

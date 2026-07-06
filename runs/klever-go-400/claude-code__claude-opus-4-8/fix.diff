@@ -1,0 +1,98 @@
+diff --git a/common/errors.go b/common/errors.go
+index 5cc8991..01a1bb5 100644
+--- a/common/errors.go
++++ b/common/errors.go
+@@ -775,6 +775,9 @@ var ErrTransactionTimeExpired = errors.New("transaction time expired")
+ // ErrNotCompressed ...
+ var ErrNotCompressed = errors.New("not compressed")
+ 
++// ErrDecompressedDataTooLarge signals that decompressing a batch would exceed the maximum allowed size
++var ErrDecompressedDataTooLarge = errors.New("decompressed data exceeds maximum allowed size")
++
+ // ErrAlreadyCompressed ...
+ var ErrAlreadyCompressed = errors.New("already compressed")
+ 
+diff --git a/data/batch/batch.go b/data/batch/batch.go
+index 60446ef..b567a50 100644
+--- a/data/batch/batch.go
++++ b/data/batch/batch.go
+@@ -12,6 +12,13 @@ import (
+ 	"github.com/klever-io/klever-go/tools/marshal"
+ )
+ 
++// maxDecompressedBatchSize is the hard upper bound on the number of bytes a
++// single batch is allowed to expand to when decompressed. It guards against
++// decompression-bomb style attacks (CWE-400) where a small compressed payload
++// (the wire message is itself capped below 1MB) expands into an enormous buffer
++// and exhausts node memory. The bound is far above any legitimate batch size.
++const maxDecompressedBatchSize = 64 * 1024 * 1024 // 64MB
++
+ // New returns a new batch from given buffers
+ func New(buffs ...[]byte) *Batch {
+ 	return &Batch{
+@@ -32,7 +39,7 @@ func compressGzip(data []byte) ([]byte, error) {
+ 	return b.Bytes(), nil
+ }
+ 
+-func decompressGzip(data []byte) ([]byte, error) {
++func decompressGzip(data []byte, maxSize int) ([]byte, error) {
+ 	rdata := bytes.NewReader(data)
+ 
+ 	reader, err := gzip.NewReader(rdata)
+@@ -40,7 +47,12 @@ func decompressGzip(data []byte) ([]byte, error) {
+ 		return nil, err
+ 	}
+ 
+-	result, err := io.ReadAll(reader)
++	// Bound the number of bytes pulled from the decompressor to maxSize to
++	// prevent decompression-bomb attacks (CWE-400). We allow reading up to
++	// maxSize+1 bytes so an oversized stream can be detected and rejected
++	// instead of being silently truncated.
++	limited := io.LimitReader(reader, int64(maxSize)+1)
++	result, err := io.ReadAll(limited)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+@@ -49,6 +61,10 @@ func decompressGzip(data []byte) ([]byte, error) {
+ 		return nil, err
+ 	}
+ 
++	if len(result) > maxSize {
++		return nil, common.ErrDecompressedDataTooLarge
++	}
++
+ 	return result, nil
+ }
+ 
+@@ -65,7 +81,7 @@ func compressLZ4(data []byte) ([]byte, error) {
+ }
+ 
+ func decompressLZ4(dataSize int32, data []byte) ([]byte, error) {
+-	return decompressGzip(data)
++	return decompressGzip(data, maxDecompressedBatchSize)
+ 	/*output := make([]byte, dataSize)
+ 	_, err := lz4.Uncompress(output, data)
+ 	if err != nil {
+@@ -111,6 +127,13 @@ func (ba *Batch) Decompress(m marshal.Marshalizer) error {
+ 		return common.ErrNotCompressed
+ 	}
+ 
++	// Reject batches whose declared uncompressed size already exceeds the hard
++	// cap before doing any work. This protects allocation paths that size their
++	// output buffer from the (attacker-controlled) DataSize field (CWE-400).
++	if ba.DataSize < 0 || ba.DataSize > maxDecompressedBatchSize {
++		return common.ErrDecompressedDataTooLarge
++	}
++
+ 	var result []byte
+ 	var err error
+ 	if ba.Algo == CType_LZ4 {
+@@ -119,7 +142,7 @@ func (ba *Batch) Decompress(m marshal.Marshalizer) error {
+ 			return err
+ 		}
+ 	} else {
+-		result, err = decompressGzip(ba.Stream)
++		result, err = decompressGzip(ba.Stream, maxDecompressedBatchSize)
+ 		if err != nil {
+ 			return err
+ 		}

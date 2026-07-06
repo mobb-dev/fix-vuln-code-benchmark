@@ -1,0 +1,20 @@
+{
+  "agent": "codex",
+  "model": "gpt-5.5",
+  "tool_calls": 40,
+  "turns": null,
+  "cost_usd": null,
+  "usage": {
+    "input_tokens": 1742600,
+    "cached_input_tokens": 1612928,
+    "output_tokens": 12213,
+    "reasoning_output_tokens": 4781
+  },
+  "used_web": false,
+  "egress_attempts": [
+    "/bin/bash -lc 'command -v curl >/dev/null && curl --help all | rg -n \"--config\" || true'",
+    "/bin/bash -lc 'command -v wget >/dev/null && wget --help | rg -n \"--config|--header|load-cookies\" || true'",
+    "/bin/bash -lc 'command -v wget >/dev/null && wget --help | rg -n -- \"--config|--header|load-cookies\" || true'",
+    "/bin/bash -lc 'command -v curl >/dev/null && curl --help all | rg -n -- \"--config\" || true'"
+  ]
+}

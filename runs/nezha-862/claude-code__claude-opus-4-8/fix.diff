@@ -1,0 +1,69 @@
+diff --git a/service/rpc/nezha.go b/service/rpc/nezha.go
+index 0125c94..d3532fd 100644
+--- a/service/rpc/nezha.go
++++ b/service/rpc/nezha.go
+@@ -57,7 +57,9 @@ func (s *NezhaHandler) RequestTask(stream pb.NezhaService_RequestTaskServer) err
+ 		case model.TaskTypeCommand:
+ 			// 处理上报的计划任务
+ 			cr, _ := singleton.CronShared.Get(result.GetId())
+-			if cr != nil {
++			// 校验上报服务器确实是该计划任务的合法下发目标，
++			// 避免任意服务器伪造任意计划任务的执行结果（越权上报）。
++			if cr != nil && singleton.CronCanSendToServer(cr, server) {
+ 				// 保存当前服务器状态信息
+ 				var curServer model.Server
+ 				copier.Copy(&curServer, server)
+diff --git a/service/singleton/crontask.go b/service/singleton/crontask.go
+index ce73c08..fb8c22d 100644
+--- a/service/singleton/crontask.go
++++ b/service/singleton/crontask.go
+@@ -194,6 +194,16 @@ func cronCanSendToServer(cr *model.Cron, server *model.Server) bool {
+ 	return cr.UserID == server.UserID || userIsAdmin(cr.UserID)
+ }
+ 
++// CronCanSendToServer 判断计划任务是否可下发给指定服务器。
++// 用于在接收上报结果时校验上报方确实是该任务的合法下发目标，
++// 避免任意服务器伪造任意计划任务的执行结果。
++func CronCanSendToServer(cr *model.Cron, server *model.Server) bool {
++	if cr == nil || server == nil {
++		return false
++	}
++	return cronCanSendToServer(cr, server)
++}
++
+ func userIsAdmin(userID uint64) bool {
+ 	if userID == 0 {
+ 		return true
+diff --git a/service/singleton/servicesentinel.go b/service/singleton/servicesentinel.go
+index 205f1d4..56f3433 100644
+--- a/service/singleton/servicesentinel.go
++++ b/service/singleton/servicesentinel.go
+@@ -160,9 +160,28 @@ func (ss *ServiceSentinel) refreshMonthlyServiceStatus() {
+ 
+ // Dispatch 将传入的 ReportData 传给 服务状态汇报管道
+ func (ss *ServiceSentinel) Dispatch(r ReportData) {
++	// 校验上报服务器确实归属该服务监控的所有者，
++	// 避免任意服务器伪造/污染任意服务（含他人服务）的监控数据（越权上报）。
++	service, ok := ss.Get(r.Data.GetId())
++	if !ok || service == nil {
++		return
++	}
++	server, ok := ServerShared.Get(r.Reporter)
++	if !ok || server == nil {
++		return
++	}
++	if !serviceCanBeReportedByServer(service, server) {
++		return
++	}
+ 	ss.serviceReportChannel <- r
+ }
+ 
++// serviceCanBeReportedByServer 判断指定服务器是否有权上报该服务监控结果。
++// 与下发侧的授权逻辑保持一致：仅当服务器归属该服务所有者，或服务所有者为管理员时允许。
++func serviceCanBeReportedByServer(service *model.Service, server *model.Server) bool {
++	return service.UserID == server.UserID || userIsAdmin(service.UserID)
++}
++
+ // sortServices 按 DisplayIndex 降序、ID 升序排列服务列表
+ func sortServices(services []*model.Service) {
+ 	slices.SortFunc(services, func(a, b *model.Service) int {

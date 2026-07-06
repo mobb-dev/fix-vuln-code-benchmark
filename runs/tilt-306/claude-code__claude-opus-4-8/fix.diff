@@ -1,0 +1,201 @@
+diff --git a/internal/cli/utils.go b/internal/cli/utils.go
+index 8f3adc1..2c29a26 100644
+--- a/internal/cli/utils.go
++++ b/internal/cli/utils.go
+@@ -7,6 +7,11 @@ import (
+ 	"net/http"
+ 	"os"
+ 	"strings"
++
++	"github.com/tilt-dev/wmclient/pkg/dirs"
++
++	"github.com/tilt-dev/tilt/internal/hud/server"
++	"github.com/tilt-dev/tilt/internal/token"
+ )
+ 
+ func apiHost() string {
+@@ -18,9 +23,31 @@ func apiURL(path string) string {
+ 	return fmt.Sprintf("http://%s:%d/api/%s", provideWebHost(), provideWebPort(), path)
+ }
+ 
++// tiltToken loads the security token shared with the running Tilt server so
++// that CLI requests to the web server can authenticate. It is read from the
++// same on-disk location the server uses; a missing token is non-fatal (the
++// request will simply be unauthenticated).
++func tiltToken() string {
++	dir, err := dirs.UseTiltDevDir()
++	if err != nil {
++		return ""
++	}
++	tok, err := token.GetOrCreateToken(dir)
++	if err != nil {
++		return ""
++	}
++	return tok.String()
++}
++
+ func apiGet(path string) (body io.ReadCloser) {
+ 	url := apiURL(path)
+-	res, err := http.Get(url)
++	req, err := http.NewRequest(http.MethodGet, url, nil)
++	if err != nil {
++		cmdFail(fmt.Errorf("Could not connect to Tilt at %s: %v", url, err))
++	}
++	req.Header.Set(server.TiltTokenHeaderName, tiltToken())
++
++	res, err := http.DefaultClient.Do(req)
+ 	if err != nil {
+ 		cmdFail(fmt.Errorf("Could not connect to Tilt at %s: %v", url, err))
+ 	}
+@@ -33,7 +60,14 @@ func apiGet(path string) (body io.ReadCloser) {
+ 
+ func apiPostJson(path string, payload []byte) (body io.ReadCloser, status int) {
+ 	url := apiURL(path)
+-	res, err := http.Post(url, "application/json", bytes.NewBuffer(payload))
++	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(payload))
++	if err != nil {
++		cmdFail(fmt.Errorf("Could not connect to Tilt at %s: %v", url, err))
++	}
++	req.Header.Set("Content-Type", "application/json")
++	req.Header.Set(server.TiltTokenHeaderName, tiltToken())
++
++	res, err := http.DefaultClient.Do(req)
+ 	if err != nil {
+ 		cmdFail(fmt.Errorf("Could not connect to Tilt at %s: %v", url, err))
+ 	}
+diff --git a/internal/hud/server/controller.go b/internal/hud/server/controller.go
+index 99e5a7a..39d1ac7 100644
+--- a/internal/hud/server/controller.go
++++ b/internal/hud/server/controller.go
+@@ -160,7 +160,11 @@ func (s *HeadsUpServerController) setUpHelper(ctx context.Context, st store.RSto
+ 	webRouter.PathPrefix("/debug").Handler(http.DefaultServeMux) // for /debug/pprof
+ 	// the path prefix here must be kept in sync with the prefix configured in the proxy handler
+ 	// (it needs to know what to strip before forwarding the request)
+-	webRouter.PathPrefix(apiServerProxyPrefix).Handler(proxyHandler)
++	//
++	// The proxy forwards to the privileged apiserver using its loopback
++	// credentials, so it must only be reachable by same-origin/authenticated
++	// callers; otherwise it would let any cross-site caller drive the apiserver.
++	webRouter.PathPrefix(apiServerProxyPrefix).Handler(s.hudServer.requireSecure(proxyHandler))
+ 	webRouter.PathPrefix("/").Handler(s.hudServer.Router())
+ 
+ 	s.webServer = &http.Server{
+diff --git a/internal/hud/server/server.go b/internal/hud/server/server.go
+index b2d83f8..7e12b98 100644
+--- a/internal/hud/server/server.go
++++ b/internal/hud/server/server.go
+@@ -7,6 +7,7 @@ import (
+ 	"log"
+ 	"net/http"
+ 	_ "net/http/pprof"
++	"strings"
+ 	"time"
+ 
+ 	"github.com/tilt-dev/tilt/pkg/apis/core/v1alpha1"
+@@ -19,6 +20,7 @@ import (
+ 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+ 
+ 	tiltanalytics "github.com/tilt-dev/tilt/internal/analytics"
++	"github.com/tilt-dev/tilt/internal/hud/server/gorilla"
+ 	"github.com/tilt-dev/tilt/internal/hud/webview"
+ 	"github.com/tilt-dev/tilt/internal/store"
+ 	"github.com/tilt-dev/tilt/internal/store/tiltfiles"
+@@ -30,6 +32,10 @@ import (
+ 
+ const TiltTokenCookieName = "Tilt-Token"
+ 
++// Header that non-browser clients (e.g. the Tilt CLI) use to present the
++// security token when talking to the server.
++const TiltTokenHeaderName = "X-Tilt-Token"
++
+ // CSRF token to protect the websocket. See:
+ // https://dev.solita.fi/2018/11/07/securing-websocket-endpoints.html
+ // https://christian-schneider.net/CrossSiteWebSocketHijacking.html
+@@ -109,14 +115,85 @@ func (fh funcHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+ func (s *HeadsUpServer) cookieWrapper(handler http.Handler) http.Handler {
+ 	return funcHandler{f: func(w http.ResponseWriter, r *http.Request) {
+ 		state := s.store.RLockState()
+-		http.SetCookie(w, &http.Cookie{Name: TiltTokenCookieName, Value: string(state.Token), Path: "/"})
++		http.SetCookie(w, &http.Cookie{
++			Name:  TiltTokenCookieName,
++			Value: string(state.Token),
++			Path:  "/",
++			// Don't send this token along on cross-site requests, so that a
++			// malicious site can't ride on the user's credentials to make
++			// authenticated requests to a locally-running Tilt.
++			SameSite: http.SameSiteStrictMode,
++		})
+ 		s.store.RUnlockState()
+ 		handler.ServeHTTP(w, r)
+ 	}}
+ }
+ 
++// requireSecure rejects requests to sensitive endpoints that are neither
++// same-origin nor carry the Tilt security token. This protects state-changing
++// and data-exposing endpoints (and the apiserver proxy) from cross-site
++// request forgery and other unauthenticated callers.
++//
++// Static assets are intentionally not wrapped: serving them is what bootstraps
++// the security token cookie into the browser in the first place, and they
++// expose no sensitive data or actions.
++func (s *HeadsUpServer) requireSecure(handler http.Handler) http.Handler {
++	return funcHandler{f: func(w http.ResponseWriter, r *http.Request) {
++		if !s.isAuthorized(r) {
++			http.Error(w, "missing or invalid Tilt security token", http.StatusForbidden)
++			return
++		}
++		handler.ServeHTTP(w, r)
++	}}
++}
++
++// isAuthorized reports whether a request to a sensitive endpoint should be
++// served. A request is authorized if it is same-origin (the normal case for
++// the Tilt web UI and for non-browser clients like the CLI, which send no
++// Origin header) or if it presents the correct security token.
++func (s *HeadsUpServer) isAuthorized(r *http.Request) bool {
++	if gorilla.CheckSameOrigin(r) {
++		return true
++	}
++	return s.hasValidToken(r)
++}
++
++// hasValidToken reports whether the request presents the server's security
++// token, either via the Tilt-Token cookie (browser) or the X-Tilt-Token header
++// (CLI and other programmatic clients).
++func (s *HeadsUpServer) hasValidToken(r *http.Request) bool {
++	state := s.store.RLockState()
++	expected := string(state.Token)
++	s.store.RUnlockState()
++
++	if expected == "" {
++		return false
++	}
++
++	if c, err := r.Cookie(TiltTokenCookieName); err == nil && c.Value == expected {
++		return true
++	}
++	return r.Header.Get(TiltTokenHeaderName) == expected
++}
++
+ func (s *HeadsUpServer) Router() http.Handler {
+-	return s.router
++	return funcHandler{f: func(w http.ResponseWriter, r *http.Request) {
++		if pathRequiresAuth(r.URL.Path) && !s.isAuthorized(r) {
++			http.Error(w, "missing or invalid Tilt security token", http.StatusForbidden)
++			return
++		}
++		s.router.ServeHTTP(w, r)
++	}}
++}
++
++// pathRequiresAuth reports whether a path on the HUD server exposes sensitive
++// data or actions and therefore must be protected. Static assets (everything
++// else) are served without a token so the web UI can bootstrap.
++func pathRequiresAuth(path string) bool {
++	return strings.HasPrefix(path, "/api/") ||
++		path == "/api" ||
++		strings.HasPrefix(path, "/ws/") ||
++		path == "/ws"
+ }
+ 
+ func (s *HeadsUpServer) ViewJSON(w http.ResponseWriter, req *http.Request) {

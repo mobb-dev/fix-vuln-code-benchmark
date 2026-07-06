@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/honojs/hono.git
+FIX_COMMIT=c831020fb1fa2e929d222f6c84e1abfe013e512b
+VULN_FILE=src/middleware/ip-restriction/index.ts
+CWE_ID=CWE-185
+CWE_NAME="CWE-185"
+LANGUAGE=node
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="src/middleware/ip-restriction/index.test.ts src/utils/ipaddr.test.ts"
+PREP_CMD="npm install --no-audit --no-fund --silent 2>/dev/null || yarn --silent 2>/dev/null || pnpm i --silent 2>/dev/null || true"
+TEST_CMD="npx --yes jest src/middleware/ip-restriction/index.test.ts || npx --yes mocha src/middleware/ip-restriction/index.test.ts || npm test"

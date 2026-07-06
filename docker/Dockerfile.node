@@ -1,0 +1,5 @@
+# Node toolchain plus the Claude and Codex CLIs, for running JavaScript/TypeScript cases in a container.
+FROM node:22
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN npm install -g @anthropic-ai/claude-code && (npm install -g @openai/codex || echo "codex CLI skipped")
+WORKDIR /work

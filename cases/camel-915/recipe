@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/apache/camel.git
+FIX_COMMIT=05cffa5ec05ff2ec3c50a77825625da6e426e7a8
+VULN_FILE=components/camel-coap/src/main/java/org/apache/camel/coap/CamelCoapResource.java
+CWE_ID=CWE-915
+CWE_NAME="Object Attribute Modification"
+LANGUAGE=java
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="components/camel-coap/src/test/java/org/apache/camel/coap/CoAPHeaderFilterStrategyTest.java"
+PREP_CMD="mvn -q -pl components/camel-coap -am -DskipTests install"
+TEST_CMD="mvn -q -pl components/camel-coap -Dtest=CoAPHeaderFilterStrategyTest test"

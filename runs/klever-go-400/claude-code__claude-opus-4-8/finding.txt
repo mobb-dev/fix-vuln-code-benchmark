@@ -1,0 +1,40 @@
+Project: klever-io/klever-go
+Vulnerability type: Uncontrolled Resource Consumption (CWE-400)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  common/errors.go
+    - lines 778-783   in: var ErrNotCompressed = errors.New("not compressed")
+
+  core/process/errors.go
+    - lines 56-61   in: var ErrEmptyPeerID = errors.New("empty peer ID")
+
+  core/process/interceptors/baseDataInterceptor.go
+    - lines 18-24   in: type baseDataInterceptor struct {
+    - lines 29-34   in: func (bdi *baseDataInterceptor) preProcessMessage(message p2p.MessageP2P, fromCo
+    - lines 38-53   in: func (bdi *baseDataInterceptor) preProcessMessage(message p2p.MessageP2P, fromCo
+    - lines 92-108   in: func (bdi *baseDataInterceptor) processInterceptedData(data process.InterceptedD
+
+  core/process/interceptors/multiDataInterceptor.go
+    - lines 10-15   in: import (
+    - lines 92-97   in: func (mdi *MultiDataInterceptor) ProcessReceivedMessage(message p2p.MessageP2P,
+    - lines 102-113   in: func (mdi *MultiDataInterceptor) ProcessReceivedMessage(message p2p.MessageP2P,
+
+  core/process/interceptors/processor/hdrInterceptorProcessor.go
+    - lines 1-6
+    - lines 68-74   in: func (hip *HdrInterceptorProcessor) Save(data process.InterceptedData, _ core.Pe
+    - lines 96-105   in: func (hip *HdrInterceptorProcessor) IsInterfaceNil() bool {
+
+  core/process/interceptors/processor/txInterceptorProcessor.go
+    - lines 70-76   in: func (txip *TxInterceptorProcessor) Save(data process.InterceptedData, _ core.Pe
+    - lines 90-96   in: func (txip *TxInterceptorProcessor) Notify(data process.InterceptedData, _ core.
+
+  core/process/interceptors/singleDataInterceptor.go
+    - lines 69-77   in: func NewSingleDataInterceptor(arg ArgSingleDataInterceptor) (*SingleDataIntercep
+    - lines 124-142   in: func (sdi *SingleDataInterceptor) ProcessReceivedMessage(message p2p.MessageP2P,
+
+  data/batch/batch.go
+    - lines 12-17   in: import (
+    - lines 32-52   in: func compressGzip(data []byte) ([]byte, error) {
+    - lines 64-71   in: func compressLZ4(data []byte) ([]byte, error) {
+    - lines 114-130   in: func (ba *Batch) Decompress(m marshal.Marshalizer) error {

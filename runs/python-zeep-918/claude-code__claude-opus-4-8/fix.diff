@@ -1,0 +1,61 @@
+diff --git a/src/zeep/exceptions.py b/src/zeep/exceptions.py
+index f59d5d1..276b22c 100644
+--- a/src/zeep/exceptions.py
++++ b/src/zeep/exceptions.py
+@@ -114,3 +114,14 @@ class EntitiesForbidden(Error):
+     def __str__(self):
+         tpl = "EntitiesForbidden(name='{}', content={!r})"
+         return tpl.format(self.name, self.content)
++
++
++class ExternalReferenceForbidden(Error):
++    def __init__(self, sysid, pubid):
++        super().__init__()
++        self.sysid = sysid
++        self.pubid = pubid
++
++    def __str__(self):
++        tpl = "ExternalReferenceForbidden(system_id={!r}, public_id={!r})"
++        return tpl.format(self.sysid, self.pubid)
+diff --git a/src/zeep/loader.py b/src/zeep/loader.py
+index 7814d6a..f752d0f 100644
+--- a/src/zeep/loader.py
++++ b/src/zeep/loader.py
+@@ -5,18 +5,26 @@ from urllib.parse import urljoin, urlparse, urlunparse
+ from lxml import etree
+ from lxml.etree import Resolver, XMLParser, XMLSyntaxError, fromstring
+ 
+-from zeep.exceptions import DTDForbidden, EntitiesForbidden, XMLSyntaxError
++from zeep.exceptions import (
++    DTDForbidden,
++    EntitiesForbidden,
++    ExternalReferenceForbidden,
++    XMLSyntaxError,
++)
+ from zeep.settings import Settings
+ 
+ 
+ class ImportResolver(Resolver):
+     """Custom lxml resolve to use the transport object"""
+ 
+-    def __init__(self, transport):
++    def __init__(self, transport, settings):
+         self.transport = transport
++        self.settings = settings
+ 
+     def resolve(self, url, pubid, context):
+         if urlparse(url).scheme in ("http", "https"):
++            if self.settings.forbid_external:
++                raise ExternalReferenceForbidden(url, pubid)
+             content = self.transport.load(url)
+             return self.resolve_string(content, context)
+ 
+@@ -45,7 +53,7 @@ def parse_xml(content: str, transport, base_url=None, settings=None):
+         recover=recover,
+         huge_tree=settings.xml_huge_tree,
+     )
+-    parser.resolvers.add(ImportResolver(transport))
++    parser.resolvers.add(ImportResolver(transport, settings))
+     try:
+         elementtree = fromstring(content, parser=parser, base_url=base_url)
+         docinfo = elementtree.getroottree().docinfo

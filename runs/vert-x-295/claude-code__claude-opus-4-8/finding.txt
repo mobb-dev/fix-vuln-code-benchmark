@@ -1,0 +1,19 @@
+Project: eclipse-vertx/vert.x
+Vulnerability type: Allocation of Resources Without Limits or Throttling (CWE-770)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextManager.java
+    - lines 17-22
+    - lines 36-41
+    - lines 50-55   in: public class SslContextManager {
+    - lines 109-118   in: public synchronized int sniEntrySize() {
+    - lines 236-258   in: private Future<Config> buildConfig(SSLOptions sslOptions, boolean force, Context
+
+  vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextProvider.java
+    - lines 15-20
+    - lines 23-29
+    - lines 35-40
+    - lines 54-60   in: private static int idx(boolean useAlpn) {
+    - lines 88-94   in: public boolean useWorkerPool() {
+    - lines 123-129   in: public SslContext sslContext(String serverName, boolean useAlpn, boolean server)

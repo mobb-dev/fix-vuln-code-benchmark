@@ -1,0 +1,27 @@
+Project: open-telemetry/opentelemetry-go
+Vulnerability type: Memory Allocation with Excessive Size Value (CWE-789)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  baggage/baggage.go
+    - lines 14-21   in: import (
+    - lines 29-35   in: var (
+    - lines 309-318   in: func newInvalidMember() Member {
+    - lines 430-435   in: type Baggage struct { //nolint:golint
+    - lines 441-465   in: func New(members ...Member) (Baggage, error) {
+    - lines 470-505   in: func New(members ...Member) (Baggage, error) {
+
+  internal/global/handler.go
+    - lines 5-37
+
+  internal/global/state.go
+    - lines 8-23   in: import (
+    - lines 32-43   in: type (
+    - lines 53-59   in: var (
+    - lines 63-88   in: func GetErrorHandler() ErrorHandler {
+    - lines 174-185   in: func SetMeterProvider(mp metric.MeterProvider) {
+
+  propagation/baggage.go
+    - lines 7-15   in: import (
+    - lines 50-55   in: func extractSingleBaggage(parent context.Context, carrier TextMapCarrier) contex
+    - lines 60-76   in: func extractMultiBaggage(parent context.Context, carrier ValuesGetter) context.C

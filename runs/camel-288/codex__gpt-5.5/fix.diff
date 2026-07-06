@@ -1,0 +1,382 @@
+diff --git a/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/BasicAuthenticationConfigurer.java b/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/BasicAuthenticationConfigurer.java
+index bef37925..6251ef8c 100644
+--- a/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/BasicAuthenticationConfigurer.java
++++ b/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/BasicAuthenticationConfigurer.java
+@@ -21,12 +21,10 @@ import io.vertx.ext.auth.properties.PropertyFileAuthentication;
+ import io.vertx.ext.web.handler.AuthenticationHandler;
+ import io.vertx.ext.web.handler.BasicAuthHandler;
+ import org.apache.camel.component.platform.http.vertx.auth.AuthenticationConfig;
+-import org.apache.camel.component.platform.http.vertx.auth.AuthenticationConfig.AuthenticationConfigEntry;
+ import org.apache.camel.main.HttpManagementServerConfigurationProperties;
+ import org.apache.camel.main.HttpServerConfigurationProperties;
+ 
+ import static io.vertx.ext.web.handler.BasicAuthHandler.DEFAULT_REALM;
+-import static org.apache.camel.util.ObjectHelper.isNotEmpty;
+ 
+ public class BasicAuthenticationConfigurer implements MainAuthenticationConfigurer {
+ 
+@@ -35,28 +33,17 @@ public class BasicAuthenticationConfigurer implements MainAuthenticationConfigur
+             AuthenticationConfig authenticationConfig,
+             HttpServerConfigurationProperties properties) {
+         String authPropertiesFileName = properties.getBasicPropertiesFile();
+-        String path
+-                = isNotEmpty(properties.getAuthenticationPath()) ? properties.getAuthenticationPath() : properties.getPath();
+-        // root means to authenticate everything
+-        if ("/".equals(path)) {
+-            path = "/*";
+-        }
+         String realm = properties.getAuthenticationRealm() != null ? properties.getAuthenticationRealm() : DEFAULT_REALM;
+ 
+-        AuthenticationConfigEntry entry = new AuthenticationConfigEntry();
+-        entry.setPath(path);
+-        entry.setAuthenticationHandlerFactory(new AuthenticationConfig.AuthenticationHandlerFactory() {
+-            @Override
+-            public <T extends AuthenticationProvider> AuthenticationHandler createAuthenticationHandler(
+-                    T authenticationProvider) {
+-                return BasicAuthHandler.create(authenticationProvider, realm);
+-            }
+-        });
+-        entry.setAuthenticationProviderFactory(
+-                vertx -> PropertyFileAuthentication.create(vertx, authPropertiesFileName));
+-
+-        authenticationConfig.getEntries().add(entry);
+-        authenticationConfig.setEnabled(true);
++        addAuthenticationConfigEntries(authenticationConfig, properties.getAuthenticationPath(), properties.getPath(),
++                vertx -> PropertyFileAuthentication.create(vertx, authPropertiesFileName),
++                new AuthenticationConfig.AuthenticationHandlerFactory() {
++                    @Override
++                    public <T extends AuthenticationProvider> AuthenticationHandler createAuthenticationHandler(
++                            T authenticationProvider) {
++                        return BasicAuthHandler.create(authenticationProvider, realm);
++                    }
++                });
+     }
+ 
+     @Override
+@@ -64,27 +51,16 @@ public class BasicAuthenticationConfigurer implements MainAuthenticationConfigur
+             AuthenticationConfig authenticationConfig,
+             HttpManagementServerConfigurationProperties properties) {
+         String authPropertiesFileName = properties.getBasicPropertiesFile();
+-        String path
+-                = isNotEmpty(properties.getAuthenticationPath()) ? properties.getAuthenticationPath() : properties.getPath();
+-        // root means to authenticate everything
+-        if ("/".equals(path)) {
+-            path = "/*";
+-        }
+         String realm = properties.getAuthenticationRealm() != null ? properties.getAuthenticationRealm() : DEFAULT_REALM;
+ 
+-        AuthenticationConfigEntry entry = new AuthenticationConfigEntry();
+-        entry.setPath(path);
+-        entry.setAuthenticationHandlerFactory(new AuthenticationConfig.AuthenticationHandlerFactory() {
+-            @Override
+-            public <T extends AuthenticationProvider> AuthenticationHandler createAuthenticationHandler(
+-                    T authenticationProvider) {
+-                return BasicAuthHandler.create(authenticationProvider, realm);
+-            }
+-        });
+-        entry.setAuthenticationProviderFactory(
+-                vertx -> PropertyFileAuthentication.create(vertx, authPropertiesFileName));
+-
+-        authenticationConfig.getEntries().add(entry);
+-        authenticationConfig.setEnabled(true);
++        addAuthenticationConfigEntries(authenticationConfig, properties.getAuthenticationPath(), properties.getPath(),
++                vertx -> PropertyFileAuthentication.create(vertx, authPropertiesFileName),
++                new AuthenticationConfig.AuthenticationHandlerFactory() {
++                    @Override
++                    public <T extends AuthenticationProvider> AuthenticationHandler createAuthenticationHandler(
++                            T authenticationProvider) {
++                        return BasicAuthHandler.create(authenticationProvider, realm);
++                    }
++                });
+     }
+ }
+diff --git a/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/JWTAuthenticationConfigurer.java b/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/JWTAuthenticationConfigurer.java
+index 61616107..b55f0f20 100644
+--- a/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/JWTAuthenticationConfigurer.java
++++ b/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/JWTAuthenticationConfigurer.java
+@@ -23,13 +23,10 @@ import io.vertx.ext.auth.jwt.JWTAuthOptions;
+ import io.vertx.ext.web.handler.AuthenticationHandler;
+ import io.vertx.ext.web.handler.JWTAuthHandler;
+ import org.apache.camel.component.platform.http.vertx.auth.AuthenticationConfig;
+-import org.apache.camel.component.platform.http.vertx.auth.AuthenticationConfig.AuthenticationConfigEntry;
+ import org.apache.camel.component.platform.http.vertx.auth.AuthenticationConfig.AuthenticationHandlerFactory;
+ import org.apache.camel.main.HttpManagementServerConfigurationProperties;
+ import org.apache.camel.main.HttpServerConfigurationProperties;
+ 
+-import static org.apache.camel.util.ObjectHelper.isNotEmpty;
+-
+ public class JWTAuthenticationConfigurer implements MainAuthenticationConfigurer {
+ 
+     @Override
+@@ -37,34 +34,24 @@ public class JWTAuthenticationConfigurer implements MainAuthenticationConfigurer
+             AuthenticationConfig authenticationConfig,
+             HttpServerConfigurationProperties properties) {
+ 
+-        String path
+-                = isNotEmpty(properties.getAuthenticationPath()) ? properties.getAuthenticationPath() : properties.getPath();
+-        // root means to authenticate everything
+-        if ("/".equals(path)) {
+-            path = "/*";
+-        }
+         String realm = properties.getAuthenticationRealm() != null ? properties.getAuthenticationRealm() : null;
+ 
+-        AuthenticationConfigEntry entry = new AuthenticationConfigEntry();
+-        entry.setPath(path);
+-        entry.setAuthenticationHandlerFactory(new AuthenticationHandlerFactory() {
+-            @Override
+-            public <T extends AuthenticationProvider> AuthenticationHandler createAuthenticationHandler(
+-                    T authenticationProvider) {
+-                JWTAuth authProvider = (JWTAuth) authenticationProvider;
+-                return JWTAuthHandler.create(authProvider, realm);
+-            }
+-        });
+-        entry.setAuthenticationProviderFactory(vertx -> JWTAuth.create(
+-                vertx,
+-                new JWTAuthOptions(
+-                        new JsonObject().put("keyStore", new JsonObject()
+-                                .put("type", properties.getJwtKeystoreType())
+-                                .put("path", properties.getJwtKeystorePath())
+-                                .put("password", properties.getJwtKeystorePassword())))));
+-
+-        authenticationConfig.getEntries().add(entry);
+-        authenticationConfig.setEnabled(true);
++        addAuthenticationConfigEntries(authenticationConfig, properties.getAuthenticationPath(), properties.getPath(),
++                vertx -> JWTAuth.create(
++                        vertx,
++                        new JWTAuthOptions(
++                                new JsonObject().put("keyStore", new JsonObject()
++                                        .put("type", properties.getJwtKeystoreType())
++                                        .put("path", properties.getJwtKeystorePath())
++                                        .put("password", properties.getJwtKeystorePassword())))),
++                new AuthenticationHandlerFactory() {
++                    @Override
++                    public <T extends AuthenticationProvider> AuthenticationHandler createAuthenticationHandler(
++                            T authenticationProvider) {
++                        JWTAuth authProvider = (JWTAuth) authenticationProvider;
++                        return JWTAuthHandler.create(authProvider, realm);
++                    }
++                });
+     }
+ 
+     @Override
+@@ -72,33 +59,23 @@ public class JWTAuthenticationConfigurer implements MainAuthenticationConfigurer
+             AuthenticationConfig authenticationConfig,
+             HttpManagementServerConfigurationProperties properties) {
+ 
+-        String path
+-                = isNotEmpty(properties.getAuthenticationPath()) ? properties.getAuthenticationPath() : properties.getPath();
+-        // root means to authenticate everything
+-        if ("/".equals(path)) {
+-            path = "/*";
+-        }
+         String realm = properties.getAuthenticationRealm() != null ? properties.getAuthenticationRealm() : null;
+ 
+-        AuthenticationConfigEntry entry = new AuthenticationConfigEntry();
+-        entry.setPath(path);
+-        entry.setAuthenticationHandlerFactory(new AuthenticationHandlerFactory() {
+-            @Override
+-            public <T extends AuthenticationProvider> AuthenticationHandler createAuthenticationHandler(
+-                    T authenticationProvider) {
+-                JWTAuth authProvider = (JWTAuth) authenticationProvider;
+-                return JWTAuthHandler.create(authProvider, realm);
+-            }
+-        });
+-        entry.setAuthenticationProviderFactory(vertx -> JWTAuth.create(
+-                vertx,
+-                new JWTAuthOptions(
+-                        new JsonObject().put("keyStore", new JsonObject()
+-                                .put("type", properties.getJwtKeystoreType())
+-                                .put("path", properties.getJwtKeystorePath())
+-                                .put("password", properties.getJwtKeystorePassword())))));
+-
+-        authenticationConfig.getEntries().add(entry);
+-        authenticationConfig.setEnabled(true);
++        addAuthenticationConfigEntries(authenticationConfig, properties.getAuthenticationPath(), properties.getPath(),
++                vertx -> JWTAuth.create(
++                        vertx,
++                        new JWTAuthOptions(
++                                new JsonObject().put("keyStore", new JsonObject()
++                                        .put("type", properties.getJwtKeystoreType())
++                                        .put("path", properties.getJwtKeystorePath())
++                                        .put("password", properties.getJwtKeystorePassword())))),
++                new AuthenticationHandlerFactory() {
++                    @Override
++                    public <T extends AuthenticationProvider> AuthenticationHandler createAuthenticationHandler(
++                            T authenticationProvider) {
++                        JWTAuth authProvider = (JWTAuth) authenticationProvider;
++                        return JWTAuthHandler.create(authProvider, realm);
++                    }
++                });
+     }
+ }
+diff --git a/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/MainAuthenticationConfigurer.java b/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/MainAuthenticationConfigurer.java
+index 72011adc..e0fd1e9f 100644
+--- a/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/MainAuthenticationConfigurer.java
++++ b/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/MainAuthenticationConfigurer.java
+@@ -16,10 +16,18 @@
+  */
+ package org.apache.camel.component.platform.http.main.authentication;
+ 
++import java.util.LinkedHashSet;
++import java.util.Set;
++
+ import org.apache.camel.component.platform.http.vertx.auth.AuthenticationConfig;
++import org.apache.camel.component.platform.http.vertx.auth.AuthenticationConfig.AuthenticationConfigEntry;
++import org.apache.camel.component.platform.http.vertx.auth.AuthenticationConfig.AuthenticationHandlerFactory;
++import org.apache.camel.component.platform.http.vertx.auth.AuthenticationConfig.AuthenticationProviderFactory;
+ import org.apache.camel.main.HttpManagementServerConfigurationProperties;
+ import org.apache.camel.main.HttpServerConfigurationProperties;
+ 
++import static org.apache.camel.util.ObjectHelper.isNotEmpty;
++
+ /**
+  * Configure authentication on the embedded HTTP server.
+  */
+@@ -30,4 +38,37 @@ public interface MainAuthenticationConfigurer {
+     void configureAuthentication(
+             AuthenticationConfig authenticationConfig, HttpManagementServerConfigurationProperties properties);
+ 
++    default void addAuthenticationConfigEntries(
++            AuthenticationConfig authenticationConfig, String authenticationPath, String serverPath,
++            AuthenticationProviderFactory authenticationProviderFactory,
++            AuthenticationHandlerFactory authenticationHandlerFactory) {
++        for (String path : resolveAuthenticationPaths(authenticationPath, serverPath)) {
++            AuthenticationConfigEntry entry = new AuthenticationConfigEntry();
++            entry.setPath(path);
++            entry.setAuthenticationHandlerFactory(authenticationHandlerFactory);
++            entry.setAuthenticationProviderFactory(authenticationProviderFactory);
++            authenticationConfig.getEntries().add(entry);
++        }
++        authenticationConfig.setEnabled(true);
++    }
++
++    default Set<String> resolveAuthenticationPaths(String authenticationPath, String serverPath) {
++        String path = isNotEmpty(authenticationPath) ? authenticationPath : serverPath;
++        Set<String> paths = new LinkedHashSet<>();
++
++        if ("/".equals(path) || "/*".equals(path)) {
++            paths.add("/*");
++        } else if (path.endsWith("/*")) {
++            paths.add(path.substring(0, path.length() - 2));
++            paths.add(path);
++        } else if (path.endsWith("*")) {
++            paths.add(path);
++        } else {
++            paths.add(path);
++            paths.add(path.endsWith("/") ? path + "*" : path + "/*");
++        }
++
++        return paths;
++    }
++
+ }
+diff --git a/components/camel-platform-http-main/src/test/java/org/apache/camel/component/platform/http/main/authentication/AuthenticationConfigurerPathTest.java b/components/camel-platform-http-main/src/test/java/org/apache/camel/component/platform/http/main/authentication/AuthenticationConfigurerPathTest.java
+new file mode 100644
+index 00000000..d60da662
+--- /dev/null
++++ b/components/camel-platform-http-main/src/test/java/org/apache/camel/component/platform/http/main/authentication/AuthenticationConfigurerPathTest.java
+@@ -0,0 +1,104 @@
++/*
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++package org.apache.camel.component.platform.http.main.authentication;
++
++import java.util.List;
++
++import org.apache.camel.component.platform.http.vertx.auth.AuthenticationConfig;
++import org.apache.camel.component.platform.http.vertx.auth.AuthenticationConfig.AuthenticationConfigEntry;
++import org.apache.camel.main.HttpManagementServerConfigurationProperties;
++import org.apache.camel.main.HttpServerConfigurationProperties;
++import org.junit.jupiter.api.Test;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertTrue;
++
++class AuthenticationConfigurerPathTest {
++
++    @Test
++    void basicAuthenticationProtectsConfiguredServerPathAndDescendants() {
++        HttpServerConfigurationProperties properties = new HttpServerConfigurationProperties(null);
++        properties.setPath("/api");
++        properties.setBasicPropertiesFile("camel-platform-http-vertx-auth.properties");
++
++        AuthenticationConfig authenticationConfig = new AuthenticationConfig();
++        new BasicAuthenticationConfigurer().configureAuthentication(authenticationConfig, properties);
++
++        assertTrue(authenticationConfig.isEnabled());
++        assertEquals(List.of("/api", "/api/*"), paths(authenticationConfig));
++    }
++
++    @Test
++    void basicAuthenticationProtectsConfiguredManagementPathAndDescendants() {
++        HttpManagementServerConfigurationProperties properties = new HttpManagementServerConfigurationProperties(null);
++        properties.setPath("/observe");
++        properties.setBasicPropertiesFile("camel-platform-http-vertx-auth.properties");
++
++        AuthenticationConfig authenticationConfig = new AuthenticationConfig();
++        new BasicAuthenticationConfigurer().configureAuthentication(authenticationConfig, properties);
++
++        assertTrue(authenticationConfig.isEnabled());
++        assertEquals(List.of("/observe", "/observe/*"), paths(authenticationConfig));
++    }
++
++    @Test
++    void jwtAuthenticationProtectsAuthenticationPathAndDescendants() {
++        HttpServerConfigurationProperties properties = new HttpServerConfigurationProperties(null);
++        properties.setAuthenticationPath("/secure");
++        properties.setJwtKeystoreType("jks");
++        properties.setJwtKeystorePath("test-camel-main-auth-jwt.jks");
++        properties.setJwtKeystorePassword("changeme");
++
++        AuthenticationConfig authenticationConfig = new AuthenticationConfig();
++        new JWTAuthenticationConfigurer().configureAuthentication(authenticationConfig, properties);
++
++        assertTrue(authenticationConfig.isEnabled());
++        assertEquals(List.of("/secure", "/secure/*"), paths(authenticationConfig));
++    }
++
++    @Test
++    void wildcardAuthenticationPathIsPreserved() {
++        HttpServerConfigurationProperties properties = new HttpServerConfigurationProperties(null);
++        properties.setAuthenticationPath("/*");
++        properties.setBasicPropertiesFile("camel-platform-http-vertx-auth.properties");
++
++        AuthenticationConfig authenticationConfig = new AuthenticationConfig();
++        new BasicAuthenticationConfigurer().configureAuthentication(authenticationConfig, properties);
++
++        assertTrue(authenticationConfig.isEnabled());
++        assertEquals(List.of("/*"), paths(authenticationConfig));
++    }
++
++    @Test
++    void childWildcardAuthenticationPathAlsoProtectsBasePath() {
++        HttpServerConfigurationProperties properties = new HttpServerConfigurationProperties(null);
++        properties.setAuthenticationPath("/secure/*");
++        properties.setBasicPropertiesFile("camel-platform-http-vertx-auth.properties");
++
++        AuthenticationConfig authenticationConfig = new AuthenticationConfig();
++        new BasicAuthenticationConfigurer().configureAuthentication(authenticationConfig, properties);
++
++        assertTrue(authenticationConfig.isEnabled());
++        assertEquals(List.of("/secure", "/secure/*"), paths(authenticationConfig));
++    }
++
++    private static List<String> paths(AuthenticationConfig authenticationConfig) {
++        return authenticationConfig.getEntries().stream()
++                .map(AuthenticationConfigEntry::getPath)
++                .toList();
++    }
++}

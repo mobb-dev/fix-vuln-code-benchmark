@@ -1,0 +1,15 @@
+Project: nezhahq/nezha
+Vulnerability type: Missing Authorization (CWE-862)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  service/rpc/nezha.go
+    - lines 56-63   in: RequestTask stream loop, case model.TaskTypeCommand (a reported cron result is accepted for any cron with only a `if cr != nil` check, never verifying the reporting server was actually assigned that task)
+
+  service/singleton/crontask.go
+    - lines 113-118   in: func (c *CronClass) SendTriggerTasks(taskIDs []uint64, triggerServer uint64, triggerOwner uint64) {
+    - lines 137-170   in: func CronTrigger(cr *model.Cron, triggerServer ...uint64) func() {
+    - lines 193-196   in: func cronCanSendToServer(cr *model.Cron, server *model.Server) bool {
+
+  service/singleton/servicesentinel.go
+    - lines 161-164   in: func (ss *ServiceSentinel) Dispatch(r ReportData) {   (service-monitor reports are ingested without verifying the reporting server belongs to the service owner)

@@ -1,0 +1,79 @@
+Project: openbao/openbao
+Vulnerability type: Reachable Assertion (CWE-617)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  builtin/logical/transit/backend.go
+    - lines 142-147   in: func GetCacheSizeFromStorage(ctx context.Context, s logical.Storage) (int, error
+    - lines 167-173   in: func (b *backend) GetPolicy(ctx context.Context, polReq keysutil.PolicyRequest,
+    - lines 235-241   in: func (b *backend) autoRotateKeys(ctx context.Context, req *logical.Request) erro
+    - lines 260-268   in: func (b *backend) autoRotateKeys(ctx context.Context, req *logical.Request) erro
+
+  builtin/logical/transit/path_byok.go
+    - lines 81-89   in: func (b *backend) pathPolicyBYOKExportRead(ctx context.Context, req *logical.Req
+    - lines 100-108   in: func (b *backend) pathPolicyBYOKExportRead(ctx context.Context, req *logical.Req
+
+  builtin/logical/transit/path_certificates.go
+    - lines 94-102   in: func (b *backend) pathCreateCSRWrite(ctx context.Context, req *logical.Request,
+    - lines 163-169   in: func (b *backend) pathImportCertChainWrite(ctx context.Context, req *logical.Req
+    - lines 174-182   in: func (b *backend) pathImportCertChainWrite(ctx context.Context, req *logical.Req
+
+  builtin/logical/transit/path_datakey.go
+    - lines 117-125   in: func (b *backend) pathDatakeyWrite(ctx context.Context, req *logical.Request, d
+
+  builtin/logical/transit/path_decrypt.go
+    - lines 163-171   in: func (b *backend) pathDecryptWrite(ctx context.Context, req *logical.Request, d
+
+  builtin/logical/transit/path_derive_key.go
+    - lines 137-145   in: func (b *backend) pathPolicyDeriveKeyWrite(ctx context.Context, req *logical.Req
+
+  builtin/logical/transit/path_encrypt.go
+    - lines 288-294   in: func (b *backend) pathEncryptExistenceCheck(ctx context.Context, req *logical.Re
+    - lines 418-426   in: func (b *backend) pathEncryptWrite(ctx context.Context, req *logical.Request, d
+
+  builtin/logical/transit/path_export.go
+    - lines 112-120   in: func (b *backend) pathPolicyExportRead(ctx context.Context, req *logical.Request
+
+  builtin/logical/transit/path_hmac.go
+    - lines 135-143   in: func (b *backend) pathHMACWrite(ctx context.Context, req *logical.Request, d *fr
+    - lines 256-264   in: func (b *backend) pathHMACVerify(ctx context.Context, req *logical.Request, d *f
+
+  builtin/logical/transit/path_import.go
+    - lines 230-238   in: func (b *backend) pathImportWrite(ctx context.Context, req *logical.Request, d *
+    - lines 271-295   in: func (b *backend) pathImportVersionWrite(ctx context.Context, req *logical.Reque
+
+  builtin/logical/transit/path_keys.go
+    - lines 313-321   in: func (b *backend) pathPolicyWrite(ctx context.Context, req *logical.Request, d *
+    - lines 349-357   in: func (b *backend) pathPolicyRead(ctx context.Context, req *logical.Request, d *f
+    - lines 528-534   in: func (b *backend) pathPolicySoftDelete(ctx context.Context, req *logical.Request
+    - lines 538-546   in: func (b *backend) pathPolicySoftDelete(ctx context.Context, req *logical.Request
+    - lines 575-581   in: func (b *backend) pathPolicySoftDeleteRestore(ctx context.Context, req *logical.
+    - lines 585-593   in: func (b *backend) pathPolicySoftDeleteRestore(ctx context.Context, req *logical.
+
+  builtin/logical/transit/path_keys_config.go
+    - lines 88-94   in: func (b *backend) pathKeysConfigWrite(ctx context.Context, req *logical.Request,
+    - lines 101-109   in: func (b *backend) pathKeysConfigWrite(ctx context.Context, req *logical.Request,
+
+  builtin/logical/transit/path_rewrap.go
+    - lines 128-136   in: func (b *backend) pathRewrapWrite(ctx context.Context, req *logical.Request, d *
+
+  builtin/logical/transit/path_rotate.go
+    - lines 49-55   in: func (b *backend) pathRotateWrite(ctx context.Context, req *logical.Request, d *
+    - lines 59-67   in: func (b *backend) pathRotateWrite(ctx context.Context, req *logical.Request, d *
+
+  builtin/logical/transit/path_sign_verify.go
+    - lines 368-376   in: func (b *backend) pathSignWrite(ctx context.Context, req *logical.Request, d *fr
+    - lines 604-612   in: func (b *backend) pathVerifyWrite(ctx context.Context, req *logical.Request, d *
+
+  builtin/logical/transit/path_trim.go
+    - lines 58-64   in: func (b *backend) pathTrimUpdate() framework.OperationFunc {
+    - lines 68-76   in: func (b *backend) pathTrimUpdate() framework.OperationFunc {
+
+  builtin/logical/transit/path_wrapping_key.go
+    - lines 85-93   in: func (b *backend) getWrappingKey(ctx context.Context, storage logical.Storage) (
+
+  sdk/helper/keysutil/lock_manager.go
+    - lines 276-284   in: func (lm *LockManager) BackupPolicy(ctx context.Context, storage logical.Storage
+    - lines 293-298   in: func (lm *LockManager) GetPolicy(ctx context.Context, req PolicyRequest, rand io
+    - lines 304-323   in: func (lm *LockManager) GetPolicy(ctx context.Context, req PolicyRequest, rand io
+    - lines 370-376   in: func (lm *LockManager) GetPolicy(ctx context.Context, req PolicyRequest, rand io

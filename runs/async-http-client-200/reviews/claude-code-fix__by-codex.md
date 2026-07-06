@@ -1,0 +1,7 @@
+METHODOLOGY: I compared the vulnerable redirect credential propagation paths against the maintainer’s accepted fix. I checked whether the agent removes all credential-like headers at the same security boundary and whether it preserves the special NTLM/SCRAM behavior and redirect logging semantics.
+
+EVIDENCE: The official fix imports `COOKIE`, includes `request.getHeaders().contains(COOKIE)` in the strip-credentials debug condition around `exitAfterHandlingRedirect`, and removes `AUTHORIZATION`, `PROXY_AUTHORIZATION`, and `COOKIE` together when `stripAuthorization` is true in `propagatedHeaders`. The agent imports `COOKIE` and removes it in a separate `if (stripAuthorization)` block after the existing authorization-removal branch, but it does not update the debug condition in `exitAfterHandlingRedirect` to account for cookie-only credential stripping.
+
+REASONING: The security-critical propagation behavior is fixed: when redirect handling decides credentials must be stripped, the agent removes the original `Cookie` header, while preserving the existing NTLM/SCRAM case where only auth headers are removed. However, it misses one of the identified vulnerable line ranges and one behavior covered by the gold standard: cookie-only credential stripping will happen silently because the logging condition still only checks realm or `Authorization`. That does not leave the information exposure in place, but it is an incomplete remediation relative to all affected locations.
+
+VERDICT: PARTIAL

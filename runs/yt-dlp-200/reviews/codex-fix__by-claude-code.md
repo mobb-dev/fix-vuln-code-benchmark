@@ -1,0 +1,10 @@
+METHODOLOGY: I derived the root cause (cookies/headers passed as command-line arguments to external downloaders are exposed to other local users via the process list — CWE-200) and the gold-standard remediation (move curl cookies off the argv, keep wget/aria2c cookies in 0600 temp files, and thread `input=` through `Popen.run`). I then checked whether the agent removes argv exposure at every injection point (Curl, Wget, Aria2c) and whether it introduces any behavior change beyond that remediation.
+
+EVIDENCE:
+- `external.py` CurlFD `_make_cmd`: replaces `cmd += ['--cookie', cookie_header]` and `--header` with a `.curl.conf` written via `_write_tmpfile` and passed as `--config <file>`. Wget and Aria2c likewise move `load-cookies`/`header` into `--config=`/`--conf-path=` temp files. Cookies/headers no longer appear on argv at any of the three sites.
+- `common.py`: adds `_debug_cmd_args` redaction of sensitive options/headers in `_debug_cmd`.
+- `_utils.py`: changes `kill(self, *, timeout=0)` → `timeout=None` and `if timeout != 0` → `if timeout is not None`. This is NOT the maintainer's change (the maintainer added `input=` to `Popen.run`, leaving `kill` untouched). Effect: `communicate_or_kill` calls `self.kill(timeout=None)`; previously `None != 0` was True so it waited indefinitely after killing — now `None is not None` is False, so it no longer waits.
+
+REASONING: The agent genuinely removes the argv exposure at all three vulnerable downloaders by relocating cookies and headers into mode-0600 temp config files — a valid equivalent to the maintainer's stdin approach (wget/aria2c already used temp files, so the file pattern is accepted), and it even hardens headers and debug logging. So the CWE-200 process-list leak is closed everywhere it existed. However, the diff also rewrites `Popen.kill`'s timeout semantics, which is unrelated to this fix and is a real behavioral regression: the wait-after-kill in `communicate_or_kill`'s failure path is silently dropped, so killed subprocesses are no longer reaped/awaited. That is over-reach changing unrelated behavior, which downgrades an otherwise-complete remediation.
+
+VERDICT: PARTIAL

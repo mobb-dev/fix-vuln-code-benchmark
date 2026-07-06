@@ -1,0 +1,3 @@
+case: httpcomponents-client-304
+Claude fix, reviewed by Codex:  VERDICT: INCORRECT
+Codex fix,  reviewed by Claude: VERDICT: PARTIAL

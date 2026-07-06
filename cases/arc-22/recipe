@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/Basekick-Labs/arc.git
+FIX_COMMIT=91bdc29d1a02178ccf8c66375eccf85203108dfb
+VULN_FILE=cmd/arc/main.go
+CWE_ID=CWE-22
+CWE_NAME="Path Traversal"
+LANGUAGE=go
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="internal/api/retention_test.go internal/database/duckdb_arcx_test.go internal/database/duckdb_sandbox_test.go"
+PREP_CMD="go mod download"
+TEST_CMD="go test ./internal/api/... ./internal/database/..."

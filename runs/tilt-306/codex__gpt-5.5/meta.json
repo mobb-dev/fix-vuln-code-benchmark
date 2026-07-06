@@ -1,0 +1,17 @@
+{
+  "agent": "codex",
+  "model": "gpt-5.5",
+  "tool_calls": 48,
+  "turns": null,
+  "cost_usd": null,
+  "usage": {
+    "input_tokens": 1275748,
+    "cached_input_tokens": 1197824,
+    "output_tokens": 9990,
+    "reasoning_output_tokens": 2199
+  },
+  "used_web": false,
+  "egress_attempts": [
+    "/bin/bash -lc \"rg \\\"fetch\\\\(|axios|XMLHttpRequest|websocket_token|/api/|/proxy|Tilt-Token|Cookie\\\" web/src internal/hud/server -g '*.{ts,tsx,js,go}'\""
+  ]
+}

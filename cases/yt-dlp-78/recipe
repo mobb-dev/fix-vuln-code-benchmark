@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/yt-dlp/yt-dlp.git
+FIX_COMMIT=5faffa999fd33b373d47773e8ee639d072accec2
+VULN_FILE=yt_dlp/YoutubeDL.py
+CWE_ID=CWE-78
+CWE_NAME="OS Command Injection"
+LANGUAGE=python
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="test/test_postprocessors.py"
+PREP_CMD="pip install -e '.[test]' 2>/dev/null || pip install -e '.[dev]' 2>/dev/null || pip install -e . 2>/dev/null || uv sync --dev 2>/dev/null || true; pip install -q pytest pytest-asyncio 2>/dev/null || true"
+TEST_CMD="python -m pytest test/test_postprocessors.py -x"

@@ -1,0 +1,15 @@
+{
+  "agent": "codex",
+  "model": "gpt-5.5",
+  "tool_calls": 28,
+  "turns": null,
+  "cost_usd": null,
+  "usage": {
+    "input_tokens": 476666,
+    "cached_input_tokens": 418176,
+    "output_tokens": 5508,
+    "reasoning_output_tokens": 1816
+  },
+  "used_web": false,
+  "egress_attempts": []
+}

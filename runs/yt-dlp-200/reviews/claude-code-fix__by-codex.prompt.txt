@@ -1,0 +1,218 @@
+You are a senior application-security engineer. Judge whether an AI agent's code change correctly fixes a specific, known vulnerability.
+
+You are given three things below:
+  1. THE VULNERABILITY — its type and where it is in the code.
+  2. THE MAINTAINER'S OFFICIAL FIX — the real, accepted remediation. Treat it as the gold standard for what a complete and correct fix must cover. It is a reference, not the only acceptable implementation: a different but equivalent fix that fully and minimally remediates is still correct.
+  3. THE AGENT'S FIX — a diff produced by an AI agent. This is what you must judge.
+
+Evaluate the agent's fix with this methodology:
+  - From the vulnerability and the maintainer's fix, work out the root cause and EVERY place the vulnerability is present.
+  - Does the agent's fix remove the vulnerability at ALL of those places, not just some? Missing any injection point or variant is a real gap.
+  - Does it preserve the application's intended behavior — no broken functionality, and no unrelated behavioral changes beyond what the remediation requires? Removing the vulnerability but also changing unrelated behavior is an over-reach, not a clean fix.
+  - Be skeptical. A fix that reads plausibly but misses a variant is not correct; one that fixes the bug but also changes unrelated behavior is not clean.
+
+Respond in EXACTLY this structure and nothing else:
+
+METHODOLOGY: <2-4 sentences on how you evaluated it>
+EVIDENCE: <specific files, lines, or hunks from the diffs that justify the verdict>
+REASONING: <why the agent's fix does or does not fully and cleanly remediate the vulnerability without changing intended behavior>
+VERDICT: <one word: CORRECT, PARTIAL, or INCORRECT>
+
+Verdict meanings:
+  CORRECT   — fully removes the vulnerability AND preserves intended behavior.
+  PARTIAL   — removes the vulnerability but misses a variant, OR over-reaches and changes unrelated behavior.
+  INCORRECT — does not remove the vulnerability, or breaks functionality so it is not a valid fix.
+
+
+===== 1. THE VULNERABILITY =====
+Project: yt-dlp/yt-dlp
+Vulnerability type: Information Exposure (CWE-200)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  yt_dlp/downloader/external.py
+    - lines 1-5
+    - lines 16-21
+    - lines 26-31
+    - lines 136-142   in: def _write_cookies(self):
+    - lines 195-206   in: def _call_process(self, cmd, info_dict):
+    - lines 222-227   in: def _make_cmd(self, tmpfilename, info_dict):
+    - lines 244-251   in: class WgetFD(ExternalFD):
+    - lines 301-308   in: def _make_cmd(self, tmpfilename, info_dict):
+
+  yt_dlp/utils/_utils.py
+    - lines 915-924   in: def kill(self, *, timeout=0):
+
+===== 2. MAINTAINER OFFICIAL FIX (gold standard) =====
+--- a/yt_dlp/downloader/external.py
++++ b/yt_dlp/downloader/external.py
+@@ -1,5 +1,6 @@
+ import enum
+ import functools
++import io
+ import json
+ import os
+ import re
+@@ -16,6 +17,7 @@
+     Popen,
+     RetryManager,
+     _configuration_args,
++    _get_exe_version_output,
+     check_executable,
+     classproperty,
+     cli_bool_option,
+@@ -26,6 +28,7 @@
+     find_available_port,
+     remove_end,
+     traverse_obj,
++    version_tuple,
+ )
+ 
+ 
+@@ -136,7 +139,9 @@ def _write_cookies(self):
+             self._cookies_tempfile = tmp_cookies.name
+             self.to_screen(f'[download] Writing temporary cookies file to "{self._cookies_tempfile}"')
+         # real_download resets _cookies_tempfile; if it's None then save() will write to cookiejar.filename
+-        self.ydl.cookiejar.save(self._cookies_tempfile)
++        self.ydl.cookiejar.save(self._cookies_tempfile, True, True)
++        with open(self.ydl.cookiejar.filename or self._cookies_tempfile, "r") as file:
++            print("cookies", repr(file.read()))
+         return self.ydl.cookiejar.filename or self._cookies_tempfile
+ 
+     def _call_downloader(self, tmpfilename, info_dict):
+@@ -195,12 +200,39 @@ def _call_process(self, cmd, info_dict):
+ class CurlFD(ExternalFD):
+     AVAILABLE_OPT = '-V'
+     _CAPTURE_STDERR = False  # curl writes the progress to stderr
++    _MIN_VERSION_FOR_STDIN_COOKIES = (7, 59)
++
++    @classmethod
++    def available(cls, path=None):
++        if path is None:
++            path = 'curl'
++        output = _get_exe_version_output(path, ['-V'])
++        if not output:
++            return False
++        parts = output.split(' ', maxsplit=2)
++        if len(parts) < 3:
++            return False
++
++        cls.exe = path
++        cls._curl_version = version_tuple(parts[1])
++        return path
+ 
+     def _make_cmd(self, tmpfilename, info_dict):
+         cmd = [self.exe, '--location', '-o', tmpfilename, '--compressed']
+-        cookie_header = self.ydl.cookiejar.get_cookie_header(info_dict['url'])
+-        if cookie_header:
+-            cmd += ['--cookie', cookie_header]
++
++        if self._curl_version >= self._MIN_VERSION_FOR_STDIN_COOKIES:
++            # Supports `--cookies -`
++            cmd += ['--cookie', '-']
++        elif os.path.islink('/dev/fd/0'):
++            cmd += ['--cookie', '/dev/fd/0']
++        else:
++            cookies_file = self._write_cookies()
++            if '=' in cookies_file:
++                # XXX: what to raise here?
++                raise RuntimeError('curl version too old or temp directory contains `=`; please use another downloader or update curl')
++            assert cookies_file != '-'
++            cmd += ['--cookie', cookies_file]
++
+         if info_dict.get('http_headers') is not None:
+             for key, val in info_dict['http_headers'].items():
+                 cmd += ['--header', f'{key}: {val}']
+@@ -222,6 +254,16 @@ def _make_cmd(self, tmpfilename, info_dict):
+         cmd += ['--', info_dict['url']]
+         return cmd
+ 
++    def _call_process(self, cmd, info_dict):
++        if self._curl_version > self._MIN_VERSION_FOR_STDIN_COOKIES or os.path.islink('/dev/fd/0'):
++            # Supports `--cookies -` or reading from device file as `--cookies /dev/fd/0`
++            buffer = io.StringIO()
++            self.ydl.cookiejar._really_save(buffer, True, True)
++            return Popen.run(cmd, text=True, input=buffer.getvalue())
++
++        # Cookies already passed via cookiesfile
++        return Popen.run(cmd, text=True)
++
+ 
+ class AxelFD(ExternalFD):
+     AVAILABLE_OPT = '-V'
+@@ -244,8 +286,7 @@ class WgetFD(ExternalFD):
+ 
+     def _make_cmd(self, tmpfilename, info_dict):
+         cmd = [self.exe, '-O', tmpfilename, '-nv', '--compression=auto']
+-        if self.ydl.cookiejar.get_cookie_header(info_dict['url']):
+-            cmd += ['--load-cookies', self._write_cookies()]
++        cmd += ['--load-cookies', self._write_cookies()]
+         if info_dict.get('http_headers') is not None:
+             for key, val in info_dict['http_headers'].items():
+                 cmd += ['--header', f'{key}: {val}']
+@@ -301,8 +342,7 @@ def _make_cmd(self, tmpfilename, info_dict):
+         else:
+             cmd += ['--min-split-size', '1M']
+ 
+-        if self.ydl.cookiejar.get_cookie_header(info_dict['url']):
+-            cmd += [f'--load-cookies={self._write_cookies()}']
++        cmd += [f'--load-cookies={self._write_cookies()}']
+         if info_dict.get('http_headers') is not None:
+             for key, val in info_dict['http_headers'].items():
+                 cmd += ['--header', f'{key}: {val}']
+--- a/yt_dlp/utils/_utils.py
++++ b/yt_dlp/utils/_utils.py
+@@ -915,10 +915,12 @@ def kill(self, *, timeout=0):
+             self.wait(timeout=timeout)
+ 
+     @classmethod
+-    def run(cls, *args, timeout=None, **kwargs):
++    def run(cls, *args, timeout=None, input=None, **kwargs):
++        if input is not None and kwargs.get('stdin') is None:
++            kwargs['stdin'] = subprocess.PIPE
+         with cls(*args, **kwargs) as proc:
+             default = '' if proc.__text_mode else b''
+-            stdout, stderr = proc.communicate_or_kill(timeout=timeout)
++            stdout, stderr = proc.communicate_or_kill(input=input, timeout=timeout)
+             return stdout or default, stderr or default, proc.returncode
+ 
+ 
+===== 3. THE AGENT FIX TO JUDGE =====
+diff --git a/test/test_downloader_external.py b/test/test_downloader_external.py
+index 62f7d45..544fb9c 100644
+--- a/test/test_downloader_external.py
++++ b/test/test_downloader_external.py
+@@ -86,10 +86,14 @@ def test_make_cmd(self):
+         with FakeYDL() as ydl:
+             downloader = CurlFD(ydl, {})
+             self.assertNotIn('--cookie', downloader._make_cmd('test', TEST_INFO))
+-            # Test cookie header is added
++            # Test cookiejar tempfile arg is added (cookies are passed via a
++            # file rather than inline on the command line to avoid leaking them
++            # through the process table and to scope them per-domain)
+             ydl.cookiejar.set_cookie(http.cookiejar.Cookie(**TEST_COOKIE))
+-            self.assertIn('--cookie', downloader._make_cmd('test', TEST_INFO))
+-            self.assertIn('test=ytdlp', downloader._make_cmd('test', TEST_INFO))
++            cmd = downloader._make_cmd('test', TEST_INFO)
++            self.assertIn('--cookie', cmd)
++            self.assertIn(downloader._cookies_tempfile, cmd)
++            self.assertNotIn('test=ytdlp', cmd)
+ 
+ 
+ class TestAria2cFD(unittest.TestCase):
+diff --git a/yt_dlp/downloader/external.py b/yt_dlp/downloader/external.py
+index 79c1048..32d579b 100644
+--- a/yt_dlp/downloader/external.py
++++ b/yt_dlp/downloader/external.py
+@@ -198,9 +198,8 @@ class CurlFD(ExternalFD):
+ 
+     def _make_cmd(self, tmpfilename, info_dict):
+         cmd = [self.exe, '--location', '-o', tmpfilename, '--compressed']
+-        cookie_header = self.ydl.cookiejar.get_cookie_header(info_dict['url'])
+-        if cookie_header:
+-            cmd += ['--cookie', cookie_header]
++        if self.ydl.cookiejar.get_cookie_header(info_dict['url']):
++            cmd += ['--cookie', self._write_cookies()]
+         if info_dict.get('http_headers') is not None:
+             for key, val in info_dict['http_headers'].items():
+                 cmd += ['--header', f'{key}: {val}']

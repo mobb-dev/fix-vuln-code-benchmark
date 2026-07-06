@@ -1,0 +1,402 @@
+{
+  "nebula-mesh-862": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "mcp-toolbox-287": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "tilt-306": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "openmrs-core-94": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "camel-915": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "jupyter-server-79": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "langflow-639": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "langflow-200": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "nebula-mesh-285": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "klever-go-400": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "arc-22": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "devguard-285": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "arc-200": {
+    "verdict": "NO-VERDICT",
+    "rc": 0
+  },
+  "mcp-toolbox-287-2": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "opentelemetry-operator-200": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "zitadel-287": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "nezha-862": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "arcane-22": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "dex-285": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "nuclio-862": {
+    "verdict": "INCONCLUSIVE",
+    "rc": 0
+  },
+  "nhost-306": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "cli-22": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "opentelemetry-go-789": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "ironic-standalone-operator-862": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "dnsproxy-362": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "microceph-23": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "olivetin-20": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "openbao-617": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "ironic-standalone-operator-668": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "cluster-api-provider-metal3-863": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "hugo-79": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "openbao-863": {
+    "verdict": "TIMEOUT",
+    "rc": 124
+  },
+  "hugo-59": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "amazon-redshift-python-driver-94": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "yt-dlp-78": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "airflow-22": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "pipecat-862": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "dulwich-78": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "pdm-22": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "ouroboros-426": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "python-zeep-918": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "aiohttp-770": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "pypdf-400": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "python-zeroconf-400": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "pypdf-835": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "python-zeroconf-400-2": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "hermes-agent-276": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "yt-dlp-200": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "aiohttp-502": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "authlib-601": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "vllm-94": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "vllm-409": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "arcadedb-863": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "polaris-20-2": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "xwiki-platform-862": {
+    "verdict": "NO-VERDICT",
+    "rc": 0
+  },
+  "kafka-1285": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "polaris-20": {
+    "verdict": "INCONCLUSIVE",
+    "rc": 0
+  },
+  "apktool-22": {
+    "verdict": "NO-VERDICT",
+    "rc": 0
+  },
+  "epa4all-client-347": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "bc-java-400": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "cometd-400": {
+    "verdict": "INCONCLUSIVE",
+    "rc": 0
+  },
+  "spring-ai-276": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "httpcomponents-client-304": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "epa4all-client-295": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "camel-288": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "async-http-client-200": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "appsmith-89": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "keycloak-472": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "dsf-613": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "dsf-670": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "spring-cloud-aws-345": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "opentelemetry-java-770": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "dynamic-datasource-74": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "spring-security-367": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "vert-x-295": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "geoserver-20": {
+    "verdict": "NO-VERDICT",
+    "rc": 0
+  },
+  "spring-security-297": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "keycloak-1286": {
+    "verdict": "TIMEOUT",
+    "rc": 124
+  },
+  "agentic-flow-78": {
+    "verdict": "INCONCLUSIVE",
+    "rc": 0
+  },
+  "theia-829": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "tinacms-79": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "angular-328": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "aws-cdk-78": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "budibase-284": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "tinacms-94": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "angular-346": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "pi-379": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "parse-server-407": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "contracts-wizard-94": {
+    "verdict": "NO-VERDICT",
+    "rc": 0
+  },
+  "react-router-770": {
+    "verdict": "INCONCLUSIVE",
+    "rc": 0
+  },
+  "hulumi-284": {
+    "verdict": "NO-VERDICT",
+    "rc": 0
+  },
+  "cyclonedx-node-npm-78": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "appium-mcp-79": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "typeorm-89": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "parse-server-639": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "hono-185": {
+    "verdict": "VERIFIED",
+    "rc": 0
+  },
+  "nuxt-749": {
+    "verdict": "TIMEOUT",
+    "rc": 124
+  },
+  "pi-829": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "langgraphjs-943": {
+    "verdict": "NOT VERIFIED",
+    "rc": 0
+  },
+  "nuxt-276": {
+    "verdict": "TIMEOUT",
+    "rc": 124
+  }
+}

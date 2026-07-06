@@ -1,0 +1,17 @@
+Project: nezhahq/nezha
+Vulnerability type: Missing Authorization (CWE-862)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  service/singleton/crontask.go
+    - lines 5-10   in: import (
+    - lines 15-23   in: import (
+    - lines 64-70   in: func NewCronClass() *CronClass {
+    - lines 78-83   in: func (c *CronClass) Update(cr *model.Cron) {
+    - lines 92-97   in: func (c *CronClass) Delete(idList []uint64) {
+    - lines 130-135   in: func cronCanBeTriggeredByOwner(cr *model.Cron, triggerOwner uint64) bool {
+    - lines 149-159   in: func CronTrigger(cr *model.Cron, triggerServer ...uint64) func() {
+
+  service/singleton/servicesentinel.go
+    - lines 472-487   in: func (ss *ServiceSentinel) CheckPermission(c *gin.Context, idList iter.Seq[uint6
+    - lines 607-613   in: func (ss *ServiceSentinel) worker() {

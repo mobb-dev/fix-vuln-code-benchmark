@@ -1,0 +1,20 @@
+diff --git a/upstream/doh.go b/upstream/doh.go
+index 239aa47..3092cd4 100644
+--- a/upstream/doh.go
++++ b/upstream/doh.go
+@@ -620,10 +620,13 @@ func (p *dnsOverHTTPS) probeH3(
+ 	probeTLSCfg.VerifyConnection = nil
+ 
+ 	// Run probeQUIC and probeTLS in parallel and see which one is faster.
++	// Each goroutine must use its own *tls.Config clone, since a *tls.Config
++	// is not safe for concurrent use by the QUIC and TLS handshakes that run
++	// simultaneously below.
+ 	chQUIC := make(chan error, 1)
+ 	chTLS := make(chan error, 1)
+-	go p.probeQUIC(addr, probeTLSCfg, chQUIC)
+-	go p.probeTLS(dialContext, probeTLSCfg, chTLS)
++	go p.probeQUIC(addr, probeTLSCfg.Clone(), chQUIC)
++	go p.probeTLS(dialContext, probeTLSCfg.Clone(), chTLS)
+ 
+ 	select {
+ 	case quicErr := <-chQUIC:

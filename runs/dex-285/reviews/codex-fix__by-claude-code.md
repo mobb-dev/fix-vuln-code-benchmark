@@ -1,0 +1,11 @@
+METHODOLOGY: I identified the root cause as the connector interface needing to thread connector-state data (`[]byte`) through `LoginURL` (now returning it) and `HandleCallback` (now accepting it), per the gold standard, which makes purely signature-level changes and leaves the connectors' URL/redirect logic untouched. I then checked whether the agent (a) made those exact signature changes at both sites and (b) avoided altering unrelated behavior.
+
+EVIDENCE:
+- Signature changes match gold standard: `authproxy.go` `LoginURL(...) (string, []byte, error)` and `HandleCallback(s, connData []byte, r)`; `oauth.go` likewise. ✔
+- Over-reach in `oauth.go`: the agent adds `pathSuffix`/`rawPathSuffix` fields and rewrites `LoginURL` to append the connector ID to the callback path (`u.Path += c.pathSuffix; u.RawPath = escapedPath + c.rawPathSuffix`) and compares `c.redirectURI != connectorCallbackURL` against the suffixed URL. The gold standard keeps the original `if c.redirectURI != callbackURL` check unchanged.
+- This behavioral change is confirmed by the agent's own test edits: `RedirectURI: serverURL + "/callback/id"` and `redirectURI == testServer.URL+"/callback/id"` — i.e., existing OAuth configs expecting `/callback` would now fail to match.
+- Additional `authproxy.go` change not in gold standard: `rawPathSuffix` field plus `u.RawPath = escapedPath + m.rawPathSuffix`.
+
+REASONING: The agent correctly performs the interface plumbing that constitutes the actual remediation (adding the `[]byte` connector-data parameter to both `LoginURL` and `HandleCallback` in both connectors), so the vulnerability's interface contract is satisfied at all named sites. However, it also introduces path-suffix manipulation that the maintainer deliberately did not make. In the OAuth connector this changes the expected redirect-URI semantics — the configured `redirectURI` must now include the connector ID (`/callback/id`) or `LoginURL` will reject it — which alters intended behavior and breaks existing deployments. That extra, unrelated behavioral change is an over-reach beyond a clean, minimal remediation.
+
+VERDICT: PARTIAL

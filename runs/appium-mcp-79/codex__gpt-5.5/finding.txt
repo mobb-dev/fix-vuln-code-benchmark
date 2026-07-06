@@ -1,0 +1,9 @@
+Project: appium/appium-mcp
+Vulnerability type: Cross-site Scripting (CWE-79)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  src/ui/mcp-ui-utils.ts
+    - lines 720-743   in: export function createLocatorGeneratorUI(
+    - lines 895-900   in: export function createLocatorGeneratorUI(
+    - lines 1633-1635   in: export function addUIResourceToResponse(

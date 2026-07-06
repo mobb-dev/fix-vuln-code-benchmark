@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/openbao/openbao.git
+FIX_COMMIT=db57c62602b25da12951f3f0edb888e7c4da61e5
+VULN_FILE=builtin/logical/transit/backend.go
+CWE_ID=CWE-617
+CWE_NAME="Reachable Assertion"
+LANGUAGE=go
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="builtin/logical/transit/backend_test.go builtin/logical/transit/path_hmac_test.go builtin/logical/transit/path_keys_test.go builtin/logical/transit/path_sign_verify_test.go"
+PREP_CMD="go mod download"
+TEST_CMD="go test ./builtin/logical/transit/..."

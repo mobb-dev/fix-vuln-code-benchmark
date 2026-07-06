@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/thomaspoignant/scim-patch.git
+FIX_COMMIT=260f9cd2ac5ceac3976978850bb47dcb391720f6
+VULN_FILE=src/scimPatch.ts
+CWE_ID=CWE-1321
+CWE_NAME="Prototype Pollution"
+LANGUAGE=node
+# Used by verify.sh (execution verification): maintainer test, env prep, test command (runs compiled output).
+TEST_FILES="test/prototypePollution.test.ts"
+PREP_CMD="npm install --no-audit --no-fund"
+TEST_CMD="npm run build && ./node_modules/.bin/mocha lib/test/prototypePollution.test.js"

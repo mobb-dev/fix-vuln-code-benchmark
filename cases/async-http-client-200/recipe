@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/AsyncHttpClient/async-http-client.git
+FIX_COMMIT=3b0e3e9e
+VULN_FILE=client/src/main/java/org/asynchttpclient/netty/handler/intercept/Redirect30xInterceptor.java
+CWE_ID=CWE-200
+CWE_NAME="Information Exposure"
+LANGUAGE=java
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="client/src/test/java/org/asynchttpclient/RedirectCredentialSecurityTest.java"
+PREP_CMD="mvn -q -pl client -am -DskipTests install"
+TEST_CMD="mvn -q -pl client -Dtest=RedirectCredentialSecurityTest test"

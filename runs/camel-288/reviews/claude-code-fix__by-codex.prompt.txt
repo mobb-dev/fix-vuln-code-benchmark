@@ -1,0 +1,254 @@
+You are a senior application-security engineer. Judge whether an AI agent's code change correctly fixes a specific, known vulnerability.
+
+You are given three things below:
+  1. THE VULNERABILITY — its type and where it is in the code.
+  2. THE MAINTAINER'S OFFICIAL FIX — the real, accepted remediation. Treat it as the gold standard for what a complete and correct fix must cover. It is a reference, not the only acceptable implementation: a different but equivalent fix that fully and minimally remediates is still correct.
+  3. THE AGENT'S FIX — a diff produced by an AI agent. This is what you must judge.
+
+Evaluate the agent's fix with this methodology:
+  - From the vulnerability and the maintainer's fix, work out the root cause and EVERY place the vulnerability is present.
+  - Does the agent's fix remove the vulnerability at ALL of those places, not just some? Missing any injection point or variant is a real gap.
+  - Does it preserve the application's intended behavior — no broken functionality, and no unrelated behavioral changes beyond what the remediation requires? Removing the vulnerability but also changing unrelated behavior is an over-reach, not a clean fix.
+  - Be skeptical. A fix that reads plausibly but misses a variant is not correct; one that fixes the bug but also changes unrelated behavior is not clean.
+
+Respond in EXACTLY this structure and nothing else:
+
+METHODOLOGY: <2-4 sentences on how you evaluated it>
+EVIDENCE: <specific files, lines, or hunks from the diffs that justify the verdict>
+REASONING: <why the agent's fix does or does not fully and cleanly remediate the vulnerability without changing intended behavior>
+VERDICT: <one word: CORRECT, PARTIAL, or INCORRECT>
+
+Verdict meanings:
+  CORRECT   — fully removes the vulnerability AND preserves intended behavior.
+  PARTIAL   — removes the vulnerability but misses a variant, OR over-reaches and changes unrelated behavior.
+  INCORRECT — does not remove the vulnerability, or breaks functionality so it is not a valid fix.
+
+
+===== 1. THE VULNERABILITY =====
+Project: apache/camel
+Vulnerability type: Authentication Bypass Using an Alternate Path or Channel (CWE-288)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/BasicAuthenticationConfigurer.java
+    - lines 26-32
+    - lines 35-46   in: public void configureAuthentication(
+    - lines 64-75   in: public void configureAuthentication(
+
+  components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/JWTAuthenticationConfigurer.java
+    - lines 28-48
+    - lines 72-83   in: public void configureAuthentication(
+
+  components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/MainAuthenticationConfigurer.java
+    - lines 19-24
+    - lines 30-33   in: public interface MainAuthenticationConfigurer {
+
+===== 2. MAINTAINER OFFICIAL FIX (gold standard) =====
+--- a/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/BasicAuthenticationConfigurer.java
++++ b/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/BasicAuthenticationConfigurer.java
+@@ -26,7 +26,6 @@
+ import org.apache.camel.main.HttpServerConfigurationProperties;
+ 
+ import static io.vertx.ext.web.handler.BasicAuthHandler.DEFAULT_REALM;
+-import static org.apache.camel.util.ObjectHelper.isNotEmpty;
+ 
+ public class BasicAuthenticationConfigurer implements MainAuthenticationConfigurer {
+ 
+@@ -35,12 +34,7 @@ public void configureAuthentication(
+             AuthenticationConfig authenticationConfig,
+             HttpServerConfigurationProperties properties) {
+         String authPropertiesFileName = properties.getBasicPropertiesFile();
+-        String path
+-                = isNotEmpty(properties.getAuthenticationPath()) ? properties.getAuthenticationPath() : properties.getPath();
+-        // root means to authenticate everything
+-        if ("/".equals(path)) {
+-            path = "/*";
+-        }
++        String path = resolveAuthenticationPath(properties.getAuthenticationPath(), properties.getPath());
+         String realm = properties.getAuthenticationRealm() != null ? properties.getAuthenticationRealm() : DEFAULT_REALM;
+ 
+         AuthenticationConfigEntry entry = new AuthenticationConfigEntry();
+@@ -64,12 +58,7 @@ public void configureAuthentication(
+             AuthenticationConfig authenticationConfig,
+             HttpManagementServerConfigurationProperties properties) {
+         String authPropertiesFileName = properties.getBasicPropertiesFile();
+-        String path
+-                = isNotEmpty(properties.getAuthenticationPath()) ? properties.getAuthenticationPath() : properties.getPath();
+-        // root means to authenticate everything
+-        if ("/".equals(path)) {
+-            path = "/*";
+-        }
++        String path = resolveAuthenticationPath(properties.getAuthenticationPath(), properties.getPath());
+         String realm = properties.getAuthenticationRealm() != null ? properties.getAuthenticationRealm() : DEFAULT_REALM;
+ 
+         AuthenticationConfigEntry entry = new AuthenticationConfigEntry();
+--- a/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/JWTAuthenticationConfigurer.java
++++ b/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/JWTAuthenticationConfigurer.java
+@@ -28,21 +28,14 @@
+ import org.apache.camel.main.HttpManagementServerConfigurationProperties;
+ import org.apache.camel.main.HttpServerConfigurationProperties;
+ 
+-import static org.apache.camel.util.ObjectHelper.isNotEmpty;
+-
+ public class JWTAuthenticationConfigurer implements MainAuthenticationConfigurer {
+ 
+     @Override
+     public void configureAuthentication(
+             AuthenticationConfig authenticationConfig,
+             HttpServerConfigurationProperties properties) {
+ 
+-        String path
+-                = isNotEmpty(properties.getAuthenticationPath()) ? properties.getAuthenticationPath() : properties.getPath();
+-        // root means to authenticate everything
+-        if ("/".equals(path)) {
+-            path = "/*";
+-        }
++        String path = resolveAuthenticationPath(properties.getAuthenticationPath(), properties.getPath());
+         String realm = properties.getAuthenticationRealm() != null ? properties.getAuthenticationRealm() : null;
+ 
+         AuthenticationConfigEntry entry = new AuthenticationConfigEntry();
+@@ -72,12 +65,7 @@ public void configureAuthentication(
+             AuthenticationConfig authenticationConfig,
+             HttpManagementServerConfigurationProperties properties) {
+ 
+-        String path
+-                = isNotEmpty(properties.getAuthenticationPath()) ? properties.getAuthenticationPath() : properties.getPath();
+-        // root means to authenticate everything
+-        if ("/".equals(path)) {
+-            path = "/*";
+-        }
++        String path = resolveAuthenticationPath(properties.getAuthenticationPath(), properties.getPath());
+         String realm = properties.getAuthenticationRealm() != null ? properties.getAuthenticationRealm() : null;
+ 
+         AuthenticationConfigEntry entry = new AuthenticationConfigEntry();
+--- a/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/MainAuthenticationConfigurer.java
++++ b/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/MainAuthenticationConfigurer.java
+@@ -19,6 +19,7 @@
+ import org.apache.camel.component.platform.http.vertx.auth.AuthenticationConfig;
+ import org.apache.camel.main.HttpManagementServerConfigurationProperties;
+ import org.apache.camel.main.HttpServerConfigurationProperties;
++import org.apache.camel.util.ObjectHelper;
+ 
+ /**
+  * Configure authentication on the embedded HTTP server.
+@@ -30,4 +31,15 @@ public interface MainAuthenticationConfigurer {
+     void configureAuthentication(
+             AuthenticationConfig authenticationConfig, HttpManagementServerConfigurationProperties properties);
+ 
++    /**
++     * Resolves the effective authentication path. When no explicit authentication path is configured, defaults to
++     * {@code /*} so that all subpaths under the context path are protected.
++     */
++    default String resolveAuthenticationPath(String authenticationPath, String contextPath) {
++        if (ObjectHelper.isNotEmpty(authenticationPath)) {
++            return authenticationPath;
++        }
++        return "/*";
++    }
++
+ }
+===== 3. THE AGENT FIX TO JUDGE =====
+diff --git a/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/BasicAuthenticationConfigurer.java b/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/BasicAuthenticationConfigurer.java
+index bef37925..b7510999 100644
+--- a/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/BasicAuthenticationConfigurer.java
++++ b/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/BasicAuthenticationConfigurer.java
+@@ -35,12 +35,9 @@ public class BasicAuthenticationConfigurer implements MainAuthenticationConfigur
+             AuthenticationConfig authenticationConfig,
+             HttpServerConfigurationProperties properties) {
+         String authPropertiesFileName = properties.getBasicPropertiesFile();
+-        String path
+-                = isNotEmpty(properties.getAuthenticationPath()) ? properties.getAuthenticationPath() : properties.getPath();
+-        // root means to authenticate everything
+-        if ("/".equals(path)) {
+-            path = "/*";
+-        }
++        // ensure the path protects the configured path and everything below it (CWE-288)
++        String path = MainAuthenticationConfigurer.toAuthenticationPath(
++                isNotEmpty(properties.getAuthenticationPath()) ? properties.getAuthenticationPath() : properties.getPath());
+         String realm = properties.getAuthenticationRealm() != null ? properties.getAuthenticationRealm() : DEFAULT_REALM;
+ 
+         AuthenticationConfigEntry entry = new AuthenticationConfigEntry();
+@@ -64,12 +61,9 @@ public class BasicAuthenticationConfigurer implements MainAuthenticationConfigur
+             AuthenticationConfig authenticationConfig,
+             HttpManagementServerConfigurationProperties properties) {
+         String authPropertiesFileName = properties.getBasicPropertiesFile();
+-        String path
+-                = isNotEmpty(properties.getAuthenticationPath()) ? properties.getAuthenticationPath() : properties.getPath();
+-        // root means to authenticate everything
+-        if ("/".equals(path)) {
+-            path = "/*";
+-        }
++        // ensure the path protects the configured path and everything below it (CWE-288)
++        String path = MainAuthenticationConfigurer.toAuthenticationPath(
++                isNotEmpty(properties.getAuthenticationPath()) ? properties.getAuthenticationPath() : properties.getPath());
+         String realm = properties.getAuthenticationRealm() != null ? properties.getAuthenticationRealm() : DEFAULT_REALM;
+ 
+         AuthenticationConfigEntry entry = new AuthenticationConfigEntry();
+diff --git a/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/JWTAuthenticationConfigurer.java b/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/JWTAuthenticationConfigurer.java
+index 61616107..61e962df 100644
+--- a/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/JWTAuthenticationConfigurer.java
++++ b/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/JWTAuthenticationConfigurer.java
+@@ -37,12 +37,9 @@ public class JWTAuthenticationConfigurer implements MainAuthenticationConfigurer
+             AuthenticationConfig authenticationConfig,
+             HttpServerConfigurationProperties properties) {
+ 
+-        String path
+-                = isNotEmpty(properties.getAuthenticationPath()) ? properties.getAuthenticationPath() : properties.getPath();
+-        // root means to authenticate everything
+-        if ("/".equals(path)) {
+-            path = "/*";
+-        }
++        // ensure the path protects the configured path and everything below it (CWE-288)
++        String path = MainAuthenticationConfigurer.toAuthenticationPath(
++                isNotEmpty(properties.getAuthenticationPath()) ? properties.getAuthenticationPath() : properties.getPath());
+         String realm = properties.getAuthenticationRealm() != null ? properties.getAuthenticationRealm() : null;
+ 
+         AuthenticationConfigEntry entry = new AuthenticationConfigEntry();
+@@ -72,12 +69,9 @@ public class JWTAuthenticationConfigurer implements MainAuthenticationConfigurer
+             AuthenticationConfig authenticationConfig,
+             HttpManagementServerConfigurationProperties properties) {
+ 
+-        String path
+-                = isNotEmpty(properties.getAuthenticationPath()) ? properties.getAuthenticationPath() : properties.getPath();
+-        // root means to authenticate everything
+-        if ("/".equals(path)) {
+-            path = "/*";
+-        }
++        // ensure the path protects the configured path and everything below it (CWE-288)
++        String path = MainAuthenticationConfigurer.toAuthenticationPath(
++                isNotEmpty(properties.getAuthenticationPath()) ? properties.getAuthenticationPath() : properties.getPath());
+         String realm = properties.getAuthenticationRealm() != null ? properties.getAuthenticationRealm() : null;
+ 
+         AuthenticationConfigEntry entry = new AuthenticationConfigEntry();
+diff --git a/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/MainAuthenticationConfigurer.java b/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/MainAuthenticationConfigurer.java
+index 72011adc..84c0fec6 100644
+--- a/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/MainAuthenticationConfigurer.java
++++ b/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/MainAuthenticationConfigurer.java
+@@ -30,4 +30,27 @@ public interface MainAuthenticationConfigurer {
+     void configureAuthentication(
+             AuthenticationConfig authenticationConfig, HttpManagementServerConfigurationProperties properties);
+ 
++    /**
++     * Normalizes the configured authentication path into a wildcard pattern so that authentication is applied to the
++     * configured path <em>and everything beneath it</em>.
++     * <p>
++     * Without this, a non-wildcard path (such as the server context-path or an explicitly configured
++     * {@code authenticationPath}) is registered as an exact-match route, leaving every sub-path reachable without
++     * authentication. That is an authentication bypass using an alternate path (CWE-288).
++     *
++     * @param  path the configured authentication path (may be {@code null} or empty)
++     * @return      a wildcard path that protects the configured path and all sub-paths
++     */
++    static String toAuthenticationPath(String path) {
++        if (path == null || path.isEmpty()) {
++            // protect everything when no path is configured
++            return "/*";
++        }
++        if (!path.endsWith("*")) {
++            // turn the path into a prefix match so sub-paths are also authenticated
++            path = path + "*";
++        }
++        return path;
++    }
++
+ }

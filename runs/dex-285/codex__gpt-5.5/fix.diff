@@ -1,0 +1,270 @@
+diff --git a/connector/authproxy/authproxy.go b/connector/authproxy/authproxy.go
+index f3d87fc..18f4c1b 100644
+--- a/connector/authproxy/authproxy.go
++++ b/connector/authproxy/authproxy.go
+@@ -65,6 +65,7 @@ func (c *Config) Open(id string, logger *slog.Logger) (connector.Connector, erro
+ 		groups:               c.Groups,
+ 		logger:               logger.With(slog.Group("connector", "type", "authproxy", "id", id)),
+ 		pathSuffix:           "/" + id,
++		rawPathSuffix:        "/" + url.PathEscape(id),
+ 	}, nil
+ }
+ 
+@@ -80,23 +81,28 @@ type callback struct {
+ 	groups               []string
+ 	logger               *slog.Logger
+ 	pathSuffix           string
++	rawPathSuffix        string
+ }
+ 
++var _ connector.CallbackConnector = (*callback)(nil)
++
+ // LoginURL returns the URL to redirect the user to login with.
+-func (m *callback) LoginURL(s connector.Scopes, callbackURL, state string) (string, error) {
++func (m *callback) LoginURL(s connector.Scopes, callbackURL, state string) (string, []byte, error) {
+ 	u, err := url.Parse(callbackURL)
+ 	if err != nil {
+-		return "", fmt.Errorf("failed to parse callbackURL %q: %v", callbackURL, err)
++		return "", nil, fmt.Errorf("failed to parse callbackURL %q: %v", callbackURL, err)
+ 	}
++	escapedPath := u.EscapedPath()
+ 	u.Path += m.pathSuffix
++	u.RawPath = escapedPath + m.rawPathSuffix
+ 	v := u.Query()
+ 	v.Set("state", state)
+ 	u.RawQuery = v.Encode()
+-	return u.String(), nil
++	return u.String(), nil, nil
+ }
+ 
+ // HandleCallback parses the request and returns the user's identity
+-func (m *callback) HandleCallback(s connector.Scopes, r *http.Request) (connector.Identity, error) {
++func (m *callback) HandleCallback(s connector.Scopes, connData []byte, r *http.Request) (connector.Identity, error) {
+ 	remoteUser := r.Header.Get(m.userHeader)
+ 	if remoteUser == "" {
+ 		return connector.Identity{}, fmt.Errorf("required HTTP header %s is not set", m.userHeader)
+diff --git a/connector/authproxy/authproxy_test.go b/connector/authproxy/authproxy_test.go
+index fbdd2a5..b9b8d00 100644
+--- a/connector/authproxy/authproxy_test.go
++++ b/connector/authproxy/authproxy_test.go
+@@ -3,6 +3,7 @@ package authproxy
+ import (
+ 	"log/slog"
+ 	"net/http"
++	"net/url"
+ 	"reflect"
+ 	"testing"
+ 
+@@ -36,7 +37,7 @@ func TestUser(t *testing.T) {
+ 		"X-Remote-User": {testUsername},
+ 	}
+ 
+-	ident, err := callback.HandleCallback(connector.Scopes{OfflineAccess: true, Groups: true}, req)
++	ident, err := callback.HandleCallback(connector.Scopes{OfflineAccess: true, Groups: true}, nil, req)
+ 	expectNil(t, err)
+ 
+ 	// If not specified, the userID and email should fall back to the remote user
+@@ -47,6 +48,22 @@ func TestUser(t *testing.T) {
+ 	expectEquals(t, len(ident.Groups), 0)
+ }
+ 
++func TestLoginURL(t *testing.T) {
++	config := Config{}
++
++	conn, _ := config.Open("test/connector", logger)
++	callback := conn.(*callback)
++
++	loginURL, connData, err := callback.LoginURL(connector.Scopes{}, "https://example.com/callback", "some-state")
++	expectNil(t, err)
++	expectEquals(t, len(connData), 0)
++
++	u, err := url.Parse(loginURL)
++	expectNil(t, err)
++	expectEquals(t, u.EscapedPath(), "/callback/test%2Fconnector")
++	expectEquals(t, u.Query().Get("state"), "some-state")
++}
++
+ func TestExtraHeaders(t *testing.T) {
+ 	config := Config{}
+ 
+@@ -62,7 +79,7 @@ func TestExtraHeaders(t *testing.T) {
+ 		"X-Remote-User-Email": {testEmail},
+ 	}
+ 
+-	ident, err := callback.HandleCallback(connector.Scopes{OfflineAccess: true, Groups: true}, req)
++	ident, err := callback.HandleCallback(connector.Scopes{OfflineAccess: true, Groups: true}, nil, req)
+ 	expectNil(t, err)
+ 
+ 	expectEquals(t, ident.UserID, testUserID)
+@@ -85,7 +102,7 @@ func TestSingleGroup(t *testing.T) {
+ 		"X-Remote-Group": {testGroup1},
+ 	}
+ 
+-	ident, err := callback.HandleCallback(connector.Scopes{OfflineAccess: true, Groups: true}, req)
++	ident, err := callback.HandleCallback(connector.Scopes{OfflineAccess: true, Groups: true}, nil, req)
+ 	expectNil(t, err)
+ 
+ 	expectEquals(t, ident.UserID, testEmail)
+@@ -106,7 +123,7 @@ func TestMultipleGroup(t *testing.T) {
+ 		"X-Remote-Group": {testGroup1 + ", " + testGroup2 + ", " + testGroup3 + ", " + testGroup4},
+ 	}
+ 
+-	ident, err := callback.HandleCallback(connector.Scopes{OfflineAccess: true, Groups: true}, req)
++	ident, err := callback.HandleCallback(connector.Scopes{OfflineAccess: true, Groups: true}, nil, req)
+ 	expectNil(t, err)
+ 
+ 	expectEquals(t, ident.UserID, testEmail)
+@@ -132,7 +149,7 @@ func TestMultipleGroupWithCustomSeparator(t *testing.T) {
+ 		"X-Remote-Group": {testGroup1 + ";" + testGroup2 + ";" + testGroup3 + ";" + testGroup4},
+ 	}
+ 
+-	ident, err := callback.HandleCallback(connector.Scopes{OfflineAccess: true, Groups: true}, req)
++	ident, err := callback.HandleCallback(connector.Scopes{OfflineAccess: true, Groups: true}, nil, req)
+ 	expectNil(t, err)
+ 
+ 	expectEquals(t, ident.UserID, testEmail)
+@@ -158,7 +175,7 @@ func TestStaticGroup(t *testing.T) {
+ 		"X-Remote-Group": {testGroup1 + ", " + testGroup2 + ", " + testGroup3 + ", " + testGroup4},
+ 	}
+ 
+-	ident, err := callback.HandleCallback(connector.Scopes{OfflineAccess: true, Groups: true}, req)
++	ident, err := callback.HandleCallback(connector.Scopes{OfflineAccess: true, Groups: true}, nil, req)
+ 	expectNil(t, err)
+ 
+ 	expectEquals(t, ident.UserID, testEmail)
+diff --git a/connector/oauth/oauth.go b/connector/oauth/oauth.go
+index 413a813..6adae65 100644
+--- a/connector/oauth/oauth.go
++++ b/connector/oauth/oauth.go
+@@ -8,6 +8,7 @@ import (
+ 	"fmt"
+ 	"log/slog"
+ 	"net/http"
++	"net/url"
+ 	"strings"
+ 
+ 	"golang.org/x/oauth2"
+@@ -30,6 +31,8 @@ type oauthConnector struct {
+ 	emailKey             string
+ 	emailVerifiedKey     string
+ 	groupsKey            string
++	pathSuffix           string
++	rawPathSuffix        string
+ 	httpClient           *http.Client
+ 	logger               *slog.Logger
+ }
+@@ -106,6 +109,8 @@ func (c *Config) Open(id string, logger *slog.Logger) (connector.Connector, erro
+ 		groupsKey:            groupsKey,
+ 		emailKey:             emailKey,
+ 		emailVerifiedKey:     emailVerifiedKey,
++		pathSuffix:           "/" + id,
++		rawPathSuffix:        "/" + url.PathEscape(id),
+ 	}
+ 
+ 	oauthConn.httpClient, err = httpclient.NewHTTPClient(c.RootCAs, c.InsecureSkipVerify)
+@@ -116,9 +121,20 @@ func (c *Config) Open(id string, logger *slog.Logger) (connector.Connector, erro
+ 	return oauthConn, err
+ }
+ 
+-func (c *oauthConnector) LoginURL(scopes connector.Scopes, callbackURL, state string) (string, error) {
+-	if c.redirectURI != callbackURL {
+-		return "", fmt.Errorf("expected callback URL %q did not match the URL in the config %q", callbackURL, c.redirectURI)
++var _ connector.CallbackConnector = (*oauthConnector)(nil)
++
++func (c *oauthConnector) LoginURL(scopes connector.Scopes, callbackURL, state string) (string, []byte, error) {
++	u, err := url.Parse(callbackURL)
++	if err != nil {
++		return "", nil, fmt.Errorf("failed to parse callbackURL %q: %v", callbackURL, err)
++	}
++	escapedPath := u.EscapedPath()
++	u.Path += c.pathSuffix
++	u.RawPath = escapedPath + c.rawPathSuffix
++	connectorCallbackURL := u.String()
++
++	if c.redirectURI != connectorCallbackURL {
++		return "", nil, fmt.Errorf("expected callback URL %q did not match the URL in the config %q", connectorCallbackURL, c.redirectURI)
+ 	}
+ 
+ 	oauth2Config := &oauth2.Config{
+@@ -129,10 +145,10 @@ func (c *oauthConnector) LoginURL(scopes connector.Scopes, callbackURL, state st
+ 		Scopes:       c.scopes,
+ 	}
+ 
+-	return oauth2Config.AuthCodeURL(state), nil
++	return oauth2Config.AuthCodeURL(state), nil, nil
+ }
+ 
+-func (c *oauthConnector) HandleCallback(s connector.Scopes, r *http.Request) (identity connector.Identity, err error) {
++func (c *oauthConnector) HandleCallback(s connector.Scopes, connData []byte, r *http.Request) (identity connector.Identity, err error) {
+ 	q := r.URL.Query()
+ 	if errType := q.Get("error"); errType != "" {
+ 		return identity, errors.New(q.Get("error_description"))
+diff --git a/connector/oauth/oauth_test.go b/connector/oauth/oauth_test.go
+index 2f6b0b9..4c3ff8f 100644
+--- a/connector/oauth/oauth_test.go
++++ b/connector/oauth/oauth_test.go
+@@ -32,7 +32,7 @@ func TestOpen(t *testing.T) {
+ 
+ 	assert.Equal(t, conn.clientID, "testClient")
+ 	assert.Equal(t, conn.clientSecret, "testSecret")
+-	assert.Equal(t, conn.redirectURI, testServer.URL+"/callback")
++	assert.Equal(t, conn.redirectURI, testServer.URL+"/callback/id")
+ 	assert.Equal(t, conn.tokenURL, testServer.URL+"/token")
+ 	assert.Equal(t, conn.authorizationURL, testServer.URL+"/authorize")
+ 	assert.Equal(t, conn.userInfoURL, testServer.URL+"/userinfo")
+@@ -50,8 +50,9 @@ func TestLoginURL(t *testing.T) {
+ 
+ 	conn := newConnector(t, testServer.URL)
+ 
+-	loginURL, err := conn.LoginURL(connector.Scopes{}, conn.redirectURI, "some-state")
++	loginURL, connData, err := conn.LoginURL(connector.Scopes{}, testServer.URL+"/callback", "some-state")
+ 	assert.Equal(t, err, nil)
++	assert.Equal(t, len(connData), 0)
+ 
+ 	expectedURL, err := url.Parse(testServer.URL + "/authorize")
+ 	assert.Equal(t, err, nil)
+@@ -86,7 +87,7 @@ func TestHandleCallBackForGroupsInUserInfo(t *testing.T) {
+ 	conn := newConnector(t, testServer.URL)
+ 	req := newRequestWithAuthCode(t, testServer.URL, "TestHandleCallBackForGroupsInUserInfo")
+ 
+-	identity, err := conn.HandleCallback(connector.Scopes{Groups: true}, req)
++	identity, err := conn.HandleCallback(connector.Scopes{Groups: true}, nil, req)
+ 	assert.Equal(t, err, nil)
+ 
+ 	sort.Strings(identity.Groups)
+@@ -122,7 +123,7 @@ func TestHandleCallBackForGroupMapsInUserInfo(t *testing.T) {
+ 	conn := newConnector(t, testServer.URL)
+ 	req := newRequestWithAuthCode(t, testServer.URL, "TestHandleCallBackForGroupMapsInUserInfo")
+ 
+-	identity, err := conn.HandleCallback(connector.Scopes{Groups: true}, req)
++	identity, err := conn.HandleCallback(connector.Scopes{Groups: true}, nil, req)
+ 	assert.Equal(t, err, nil)
+ 
+ 	sort.Strings(identity.Groups)
+@@ -156,7 +157,7 @@ func TestHandleCallBackForGroupsInToken(t *testing.T) {
+ 	conn := newConnector(t, testServer.URL)
+ 	req := newRequestWithAuthCode(t, testServer.URL, "TestHandleCallBackForGroupsInToken")
+ 
+-	identity, err := conn.HandleCallback(connector.Scopes{Groups: true}, req)
++	identity, err := conn.HandleCallback(connector.Scopes{Groups: true}, nil, req)
+ 	assert.Equal(t, err, nil)
+ 
+ 	assert.Equal(t, len(identity.Groups), 1)
+@@ -186,7 +187,7 @@ func TestHandleCallbackForNumericUserID(t *testing.T) {
+ 	conn := newConnector(t, testServer.URL)
+ 	req := newRequestWithAuthCode(t, testServer.URL, "TestHandleCallbackForNumericUserID")
+ 
+-	identity, err := conn.HandleCallback(connector.Scopes{Groups: true}, req)
++	identity, err := conn.HandleCallback(connector.Scopes{Groups: true}, nil, req)
+ 	assert.Equal(t, err, nil)
+ 
+ 	assert.Equal(t, identity.UserID, "1000")
+@@ -257,7 +258,7 @@ func newConnector(t *testing.T, serverURL string) *oauthConnector {
+ 	testConfig := Config{
+ 		ClientID:         "testClient",
+ 		ClientSecret:     "testSecret",
+-		RedirectURI:      serverURL + "/callback",
++		RedirectURI:      serverURL + "/callback/id",
+ 		TokenURL:         serverURL + "/token",
+ 		AuthorizationURL: serverURL + "/authorize",
+ 		UserInfoURL:      serverURL + "/userinfo",

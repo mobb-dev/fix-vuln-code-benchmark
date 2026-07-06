@@ -1,0 +1,41 @@
+diff --git a/service/singleton/crontask.go b/service/singleton/crontask.go
+index ce73c08..a7adbf2 100644
+--- a/service/singleton/crontask.go
++++ b/service/singleton/crontask.go
+@@ -194,6 +194,36 @@ func cronCanSendToServer(cr *model.Cron, server *model.Server) bool {
+ 	return cr.UserID == server.UserID || userIsAdmin(cr.UserID)
+ }
+ 
++// CanReportCronResult 校验某台服务器是否有权上报该计划任务的执行结果。
++// 任务结果 ID 来自 agent，因此必须确认该 cron 确实本应派发给当前 reporter，
++// 否则任何 agent 都能伪造任意计划任务的结果（越权 / 缺失鉴权 CWE-862）。
++// 判定逻辑与 CronTrigger 的派发逻辑保持一致。
++func CanReportCronResult(cr *model.Cron, server *model.Server) bool {
++	if cr == nil || cr.ID == 0 || server == nil {
++		return false
++	}
++
++	// 任务与服务器必须满足归属关系（同一用户，或任务属于管理员）
++	if !cronCanSendToServer(cr, server) {
++		return false
++	}
++
++	inList := slices.Contains(cr.Servers, server.ID)
++	switch cr.Cover {
++	case model.CronCoverAll:
++		// 覆盖全部服务器，但忽略列表中的服务器
++		return !inList
++	case model.CronCoverIgnoreAll:
++		// 仅覆盖列表中的服务器
++		return inList
++	case model.CronCoverAlertTrigger:
++		// 由触发该任务的服务器执行，归属校验已足够
++		return true
++	default:
++		return false
++	}
++}
++
+ func userIsAdmin(userID uint64) bool {
+ 	if userID == 0 {
+ 		return true

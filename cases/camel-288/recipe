@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/apache/camel.git
+FIX_COMMIT=6ec12cbebfc1b6360cdaac1c1f8c681864911695
+VULN_FILE=components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/BasicAuthenticationConfigurer.java
+CWE_ID=CWE-288
+CWE_NAME="CWE-288"
+LANGUAGE=java
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="components/camel-platform-http-main/src/test/java/org/apache/camel/component/platform/http/main/authentication/BasicAuthenticationNonRootPathTest.java components/camel-platform-http-main/src/test/java/org/apache/camel/component/platform/http/main/authentication/BasicAuthenticationSelectivePathTest.java components/camel-platform-http-main/src/test/resources/basic-auth-nonroot-path-selective.properties components/camel-platform-http-main/src/test/resources/basic-auth-nonroot-path.properties"
+PREP_CMD="mvn -q -pl components/camel-platform-http-main -am -DskipTests install"
+TEST_CMD="mvn -q -pl components/camel-platform-http-main -Dtest=BasicAuthenticationNonRootPathTest,BasicAuthenticationSelectivePathTest test"

@@ -1,0 +1,10 @@
+METHODOLOGY: I identified the root cause from the maintainer's fix — the original `if a.issuer != "" && iss != ""` guard in `validateClaims` silently skipped issuer validation whenever a token presented an empty issuer claim, and `discoverOIDCConfig` never required a non-empty issuer. The complete fix must (a) reject tokens with a missing issuer and (b) require the discovered config to contain an issuer. I checked whether the agent covers both points and whether it introduces behavior the maintainer deliberately left untouched.
+
+EVIDENCE:
+- `discoverOIDCConfig`: agent adds `if config.Issuer == "" { return ... "issuer not found in config" }` — matches the maintainer hunk exactly.
+- `validateClaims` (line ~527): agent replaces the bypass with `if a.issuer != "" && iss == ""` → reject, then `if a.issuer != "" && iss != a.issuer` → reject. This closes the empty-issuer bypass.
+- Over-reach hunks NOT in the maintainer fix: new `validateAuthEndpointURL`/`isLoopbackHost`, and conversion of the `AuthorizationServer` and `jwks_uri` checks from `log.Printf("WARNING: HTTP instead of HTTPS...")` (allowed) to hard `return ... "must use https"` errors, plus new introspection-endpoint validation in `Initialize` and `discoverOIDCConfig`, plus added issuer validation inside `GetClaimsFromHeader`.
+
+REASONING: The agent does fully remediate the actual CWE-287 issuer-validation bypass at both identified locations, and given the new `config.Issuer == ""` guard the slightly weaker `a.issuer != ""` condition is functionally equivalent to the maintainer's mandatory check on the real path. However, the agent goes well beyond the remediation: it turns previously-permitted HTTP endpoints (AuthorizationServer, JWKS URI) into hard failures, adds introspection-endpoint URL validation, and adds issuer checks in `GetClaimsFromHeader`. The maintainer deliberately preserved the HTTP-as-warning behavior; converting it to rejection changes intended behavior and could break existing HTTP-configured deployments. That is an over-reach beyond the scope of the vulnerability.
+
+VERDICT: PARTIAL

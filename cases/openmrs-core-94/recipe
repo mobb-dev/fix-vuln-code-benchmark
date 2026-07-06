@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/openmrs/openmrs-core.git
+FIX_COMMIT=8d1c193
+VULN_FILE=api/src/main/java/org/openmrs/util/ConceptReferenceRangeUtility.java
+CWE_ID=CWE-94
+CWE_NAME="Code Injection"
+LANGUAGE=java
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="api/src/test/java/org/openmrs/util/ConceptReferenceRangeUtilityTest.java"
+PREP_CMD="mvn -q -pl api -am -DskipTests install"
+TEST_CMD="mvn -q -pl api -Dtest=ConceptReferenceRangeUtilityTest test"

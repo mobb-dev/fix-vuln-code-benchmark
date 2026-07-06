@@ -1,0 +1,38 @@
+diff --git a/test/test_downloader_external.py b/test/test_downloader_external.py
+index 62f7d45..544fb9c 100644
+--- a/test/test_downloader_external.py
++++ b/test/test_downloader_external.py
+@@ -86,10 +86,14 @@ def test_make_cmd(self):
+         with FakeYDL() as ydl:
+             downloader = CurlFD(ydl, {})
+             self.assertNotIn('--cookie', downloader._make_cmd('test', TEST_INFO))
+-            # Test cookie header is added
++            # Test cookiejar tempfile arg is added (cookies are passed via a
++            # file rather than inline on the command line to avoid leaking them
++            # through the process table and to scope them per-domain)
+             ydl.cookiejar.set_cookie(http.cookiejar.Cookie(**TEST_COOKIE))
+-            self.assertIn('--cookie', downloader._make_cmd('test', TEST_INFO))
+-            self.assertIn('test=ytdlp', downloader._make_cmd('test', TEST_INFO))
++            cmd = downloader._make_cmd('test', TEST_INFO)
++            self.assertIn('--cookie', cmd)
++            self.assertIn(downloader._cookies_tempfile, cmd)
++            self.assertNotIn('test=ytdlp', cmd)
+ 
+ 
+ class TestAria2cFD(unittest.TestCase):
+diff --git a/yt_dlp/downloader/external.py b/yt_dlp/downloader/external.py
+index 79c1048..32d579b 100644
+--- a/yt_dlp/downloader/external.py
++++ b/yt_dlp/downloader/external.py
+@@ -198,9 +198,8 @@ class CurlFD(ExternalFD):
+ 
+     def _make_cmd(self, tmpfilename, info_dict):
+         cmd = [self.exe, '--location', '-o', tmpfilename, '--compressed']
+-        cookie_header = self.ydl.cookiejar.get_cookie_header(info_dict['url'])
+-        if cookie_header:
+-            cmd += ['--cookie', cookie_header]
++        if self.ydl.cookiejar.get_cookie_header(info_dict['url']):
++            cmd += ['--cookie', self._write_cookies()]
+         if info_dict.get('http_headers') is not None:
+             for key, val in info_dict['http_headers'].items():
+                 cmd += ['--header', f'{key}: {val}']

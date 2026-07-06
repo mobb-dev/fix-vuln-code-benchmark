@@ -1,0 +1,13 @@
+{
+  "agent": "claude-code",
+  "model": "claude-opus-4-8",
+  "tool_calls": 24,
+  "turns": 25,
+  "cost_usd": 2.2633950000000005,
+  "usage": null,
+  "used_web": false,
+  "egress_attempts": [
+    "cd /tmp && rm -rf upstream && timeout 60 git clone --depth 1 --filter=blob:none --sparse https://github.com/eclipse-vertx/vert.x.git upstream 2>&1 | tail -5 && echo \"CLONE_OK\" || echo \"CLONE_FAIL\"",
+    "env | grep -i proxy; echo \"---try raw---\"; timeout 20 curl -s -o /tmp/up_provider.java -w \"%{http_code}\\n\" \"https://raw.githubusercontent.com/eclipse-vertx/vert.x/5.0.1/vertx-core/src/main/java/io/ver"
+  ]
+}

@@ -1,0 +1,26 @@
+diff --git a/client/src/main/java/org/asynchttpclient/netty/handler/intercept/Redirect30xInterceptor.java b/client/src/main/java/org/asynchttpclient/netty/handler/intercept/Redirect30xInterceptor.java
+index 70cf6c1..41f85ac 100644
+--- a/client/src/main/java/org/asynchttpclient/netty/handler/intercept/Redirect30xInterceptor.java
++++ b/client/src/main/java/org/asynchttpclient/netty/handler/intercept/Redirect30xInterceptor.java
+@@ -41,6 +41,7 @@ import java.util.Set;
+ import static io.netty.handler.codec.http.HttpHeaderNames.AUTHORIZATION;
+ import static io.netty.handler.codec.http.HttpHeaderNames.CONTENT_LENGTH;
+ import static io.netty.handler.codec.http.HttpHeaderNames.CONTENT_TYPE;
++import static io.netty.handler.codec.http.HttpHeaderNames.COOKIE;
+ import static io.netty.handler.codec.http.HttpHeaderNames.HOST;
+ import static io.netty.handler.codec.http.HttpHeaderNames.LOCATION;
+ import static io.netty.handler.codec.http.HttpHeaderNames.PROXY_AUTHORIZATION;
+@@ -214,6 +215,13 @@ public class Redirect30xInterceptor {
+             headers.remove(AUTHORIZATION)
+                     .remove(PROXY_AUTHORIZATION);
+         }
++
++        // When credentials are being stripped because the redirect crosses origins or downgrades
++        // the scheme, the Cookie header (which carries session credentials) must not be propagated
++        // to the new target either, otherwise it leaks to a different origin (CWE-200).
++        if (stripAuthorization) {
++            headers.remove(COOKIE);
++        }
+         return headers;
+     }
+ }

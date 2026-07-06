@@ -1,0 +1,203 @@
+diff --git a/router/artifact_router.go b/router/artifact_router.go
+index 7d48b2d..9b5ee19 100644
+--- a/router/artifact_router.go
++++ b/router/artifact_router.go
+@@ -30,8 +30,10 @@ func NewArtifactRouter(
+ 	assetVersionGroup AssetVersionRouter,
+ 	artifactController *controllers.ArtifactController,
+ 	artifactRepository shared.ArtifactRepository,
++	assetRepository shared.AssetRepository,
+ ) ArtifactRouter {
+ 	artifactRouter := assetVersionGroup.Group.Group("/artifacts/:artifactName", middlewares.ArtifactMiddleware(artifactRepository))
++	assetScopedRBAC := middlewares.AssetAccessControlFactory(assetRepository)
+ 
+ 	artifactRouter.GET("/sbom.json/", artifactController.SBOMJSON)
+ 	artifactRouter.GET("/sbom.xml/", artifactController.SBOMXML)
+@@ -41,8 +43,8 @@ func NewArtifactRouter(
+ 	artifactRouter.GET("/sbom.pdf/", artifactController.BuildPDFFromSBOM)
+ 	artifactRouter.GET("/vulnerability-report.pdf/", artifactController.BuildVulnerabilityReportPDF)
+ 
+-	artifactRouter.DELETE("/", artifactController.DeleteArtifact, middlewares.NeededScope([]string{"manage"}))
+-	artifactRouter.PUT("/", artifactController.UpdateArtifact, middlewares.NeededScope([]string{"manage"}))
++	artifactRouter.DELETE("/", artifactController.DeleteArtifact, middlewares.NeededScope([]string{"manage"}), assetScopedRBAC(shared.ObjectAsset, shared.ActionUpdate))
++	artifactRouter.PUT("/", artifactController.UpdateArtifact, middlewares.NeededScope([]string{"manage"}), assetScopedRBAC(shared.ObjectAsset, shared.ActionUpdate))
+ 
+ 	return ArtifactRouter{Group: artifactRouter}
+ }
+diff --git a/router/asset_version_router.go b/router/asset_version_router.go
+index 06a6f1d..1ded325 100644
+--- a/router/asset_version_router.go
++++ b/router/asset_version_router.go
+@@ -67,9 +67,9 @@ func NewAssetVersionRouter(
+ 	assetVersionRouter.GET("/artifacts/", assetVersionController.ListArtifacts)
+ 	assetVersionRouter.GET("/artifact-root-nodes/", assetVersionController.ReadRootNodes)
+ 
+-	assetVersionRouter.POST("/artifacts/", artifactController.Create, middlewares.NeededScope([]string{"manage"}))
++	assetVersionRouter.POST("/artifacts/", artifactController.Create, middlewares.NeededScope([]string{"manage"}), assetScopedRBAC(shared.ObjectAsset, shared.ActionUpdate))
+ 
+-	assetVersionRouter.POST("/components/licenses/refresh/", assetVersionController.RefetchLicenses, middlewares.NeededScope([]string{"manage"}))
++	assetVersionRouter.POST("/components/licenses/refresh/", assetVersionController.RefetchLicenses, middlewares.NeededScope([]string{"manage"}), assetScopedRBAC(shared.ObjectAsset, shared.ActionUpdate))
+ 	assetVersionRouter.DELETE("/", assetVersionController.Delete, middlewares.NeededScope([]string{"manage"}), assetScopedRBAC(shared.ObjectAsset, shared.ActionUpdate))
+ 	assetVersionRouter.POST("/make-default/", assetVersionController.MakeDefault, middlewares.NeededScope([]string{"manage"}), assetScopedRBAC(shared.ObjectAsset, shared.ActionUpdate))
+ 	assetVersionRouter.DELETE("/events/:eventID/", vulnEventController.DeleteEventByID, middlewares.EventMiddleware(vulnEventRepository), middlewares.NeededScope([]string{"manage"}), assetScopedRBAC(shared.ObjectAsset, shared.ActionUpdate))
+diff --git a/router/dependency_vuln_router.go b/router/dependency_vuln_router.go
+index 5ee89cf..8c42f0b 100644
+--- a/router/dependency_vuln_router.go
++++ b/router/dependency_vuln_router.go
+@@ -18,6 +18,7 @@ package router
+ import (
+ 	"github.com/l3montree-dev/devguard/controllers"
+ 	"github.com/l3montree-dev/devguard/middlewares"
++	"github.com/l3montree-dev/devguard/shared"
+ 	"github.com/labstack/echo/v4"
+ )
+ 
+@@ -29,17 +30,19 @@ func NewDependencyVulnRouter(
+ 	assetVersionGroup AssetVersionRouter,
+ 	dependencyVulnController *controllers.DependencyVulnController,
+ 	vulnEventController *controllers.VulnEventController,
++	assetRepository shared.AssetRepository,
+ ) DependencyVulnRouter {
+ 	dependencyVulnRouter := assetVersionGroup.Group.Group("/dependency-vulns")
++	assetScopedRBAC := middlewares.AssetAccessControlFactory(assetRepository)
+ 	dependencyVulnRouter.GET("/", dependencyVulnController.ListPaged)
+ 	dependencyVulnRouter.GET("/:dependencyVulnID/", dependencyVulnController.Read)
+ 	dependencyVulnRouter.GET("/:dependencyVulnID/events/", vulnEventController.ReadAssetEventsByVulnID)
+ 	dependencyVulnRouter.GET("/:dependencyVulnID/hints/", dependencyVulnController.Hints)
+ 
+-	dependencyVulnRouter.POST("/sync/", dependencyVulnController.SyncDependencyVulns, middlewares.NeededScope([]string{"manage"}))
+-	dependencyVulnRouter.POST("/batch/", dependencyVulnController.BatchCreateEvent, middlewares.NeededScope([]string{"manage"}))
+-	dependencyVulnRouter.POST("/:dependencyVulnID/", dependencyVulnController.CreateEvent, middlewares.NeededScope([]string{"manage"}))
+-	dependencyVulnRouter.POST("/:dependencyVulnID/mitigate/", dependencyVulnController.Mitigate, middlewares.NeededScope([]string{"manage"}))
++	dependencyVulnRouter.POST("/sync/", dependencyVulnController.SyncDependencyVulns, middlewares.NeededScope([]string{"manage"}), assetScopedRBAC(shared.ObjectAsset, shared.ActionUpdate))
++	dependencyVulnRouter.POST("/batch/", dependencyVulnController.BatchCreateEvent, middlewares.NeededScope([]string{"manage"}), assetScopedRBAC(shared.ObjectAsset, shared.ActionUpdate))
++	dependencyVulnRouter.POST("/:dependencyVulnID/", dependencyVulnController.CreateEvent, middlewares.NeededScope([]string{"manage"}), assetScopedRBAC(shared.ObjectAsset, shared.ActionUpdate))
++	dependencyVulnRouter.POST("/:dependencyVulnID/mitigate/", dependencyVulnController.Mitigate, middlewares.NeededScope([]string{"manage"}), assetScopedRBAC(shared.ObjectAsset, shared.ActionUpdate))
+ 
+ 	return DependencyVulnRouter{Group: dependencyVulnRouter}
+ }
+diff --git a/router/external_reference_router.go b/router/external_reference_router.go
+index bc2e1bd..c0d9d3d 100644
+--- a/router/external_reference_router.go
++++ b/router/external_reference_router.go
+@@ -18,6 +18,7 @@ package router
+ import (
+ 	"github.com/l3montree-dev/devguard/controllers"
+ 	"github.com/l3montree-dev/devguard/middlewares"
++	"github.com/l3montree-dev/devguard/shared"
+ 	"github.com/labstack/echo/v4"
+ )
+ 
+@@ -28,14 +29,16 @@ type ExternalReferenceRouter struct {
+ func NewExternalReferenceRouter(
+ 	assetVersionRouter AssetVersionRouter,
+ 	externalReferenceController *controllers.ExternalReferenceController,
++	assetRepository shared.AssetRepository,
+ ) ExternalReferenceRouter {
++	assetScopedRBAC := middlewares.AssetAccessControlFactory(assetRepository)
+ 	// External references are scoped to asset versions
+ 	// Read access - anyone who can read the asset version can list references
+ 	refGroup := assetVersionRouter.Group.Group("/external-references")
+ 	refGroup.GET("/", externalReferenceController.List) // List all references for asset version
+ 
+ 	// Write access - requires asset update permission
+-	refWriteGroup := refGroup.Group("", middlewares.NeededScope([]string{"manage"}))
++	refWriteGroup := refGroup.Group("", middlewares.NeededScope([]string{"manage"}), assetScopedRBAC(shared.ObjectAsset, shared.ActionUpdate))
+ 	refWriteGroup.POST("/", externalReferenceController.Create)       // Create reference
+ 	refWriteGroup.POST("/sync/", externalReferenceController.Sync)    // Sync external sources
+ 	refWriteGroup.DELETE("/:id/", externalReferenceController.Delete) // Delete reference
+diff --git a/router/first_party_vuln_router.go b/router/first_party_vuln_router.go
+index 755cd86..88d83f6 100644
+--- a/router/first_party_vuln_router.go
++++ b/router/first_party_vuln_router.go
+@@ -18,6 +18,7 @@ package router
+ import (
+ 	"github.com/l3montree-dev/devguard/controllers"
+ 	"github.com/l3montree-dev/devguard/middlewares"
++	"github.com/l3montree-dev/devguard/shared"
+ 	"github.com/labstack/echo/v4"
+ )
+ 
+@@ -29,14 +30,16 @@ func NewFirstPartyVulnRouter(
+ 	assetVersionGroup AssetVersionRouter,
+ 	firstPartyVulnController *controllers.FirstPartyVulnController,
+ 	vulnEventController *controllers.VulnEventController,
++	assetRepository shared.AssetRepository,
+ ) FirstPartyVulnRouter {
+ 	firstPartyVulnRouter := assetVersionGroup.Group.Group("/first-party-vulns")
++	assetScopedRBAC := middlewares.AssetAccessControlFactory(assetRepository)
+ 	firstPartyVulnRouter.GET("/", firstPartyVulnController.ListPaged)
+ 	firstPartyVulnRouter.GET("/:firstPartyVulnID/", firstPartyVulnController.Read)
+ 	firstPartyVulnRouter.GET("/:firstPartyVulnID/events/", vulnEventController.ReadAssetEventsByVulnID)
+ 
+-	firstPartyVulnRouter.POST("/:firstPartyVulnID/", firstPartyVulnController.CreateEvent, middlewares.NeededScope([]string{"manage"}))
+-	firstPartyVulnRouter.POST("/:firstPartyVulnID/mitigate/", firstPartyVulnController.Mitigate, middlewares.NeededScope([]string{"manage"}))
++	firstPartyVulnRouter.POST("/:firstPartyVulnID/", firstPartyVulnController.CreateEvent, middlewares.NeededScope([]string{"manage"}), assetScopedRBAC(shared.ObjectAsset, shared.ActionUpdate))
++	firstPartyVulnRouter.POST("/:firstPartyVulnID/mitigate/", firstPartyVulnController.Mitigate, middlewares.NeededScope([]string{"manage"}), assetScopedRBAC(shared.ObjectAsset, shared.ActionUpdate))
+ 
+ 	return FirstPartyVulnRouter{Group: firstPartyVulnRouter}
+ }
+diff --git a/router/license_risk_router.go b/router/license_risk_router.go
+index f9ab91e..4230589 100644
+--- a/router/license_risk_router.go
++++ b/router/license_risk_router.go
+@@ -18,6 +18,7 @@ package router
+ import (
+ 	"github.com/l3montree-dev/devguard/controllers"
+ 	"github.com/l3montree-dev/devguard/middlewares"
++	"github.com/l3montree-dev/devguard/shared"
+ 	"github.com/labstack/echo/v4"
+ )
+ 
+@@ -28,14 +29,16 @@ type LicenseRiskRouter struct {
+ func NewLicenseRiskRouter(
+ 	assetVersionGroup AssetVersionRouter,
+ 	licenseRiskController *controllers.LicenseRiskController,
++	assetRepository shared.AssetRepository,
+ ) LicenseRiskRouter {
+ 	licenseRiskRouter := assetVersionGroup.Group.Group("/license-risks")
++	assetScopedRBAC := middlewares.AssetAccessControlFactory(assetRepository)
+ 	licenseRiskRouter.GET("/", licenseRiskController.ListPaged)
+ 	licenseRiskRouter.GET("/:licenseRiskID/", licenseRiskController.Read)
+-	licenseRiskRouter.POST("/", licenseRiskController.Create, middlewares.NeededScope([]string{"manage"}))
+-	licenseRiskRouter.POST("/:licenseRiskID/", licenseRiskController.CreateEvent, middlewares.NeededScope([]string{"manage"}))
+-	licenseRiskRouter.POST("/:licenseRiskID/mitigate/", licenseRiskController.Mitigate, middlewares.NeededScope([]string{"manage"}))
+-	licenseRiskRouter.POST("/:licenseRiskID/final-license-decision/", licenseRiskController.MakeFinalLicenseDecision, middlewares.NeededScope([]string{"manage"}))
++	licenseRiskRouter.POST("/", licenseRiskController.Create, middlewares.NeededScope([]string{"manage"}), assetScopedRBAC(shared.ObjectAsset, shared.ActionUpdate))
++	licenseRiskRouter.POST("/:licenseRiskID/", licenseRiskController.CreateEvent, middlewares.NeededScope([]string{"manage"}), assetScopedRBAC(shared.ObjectAsset, shared.ActionUpdate))
++	licenseRiskRouter.POST("/:licenseRiskID/mitigate/", licenseRiskController.Mitigate, middlewares.NeededScope([]string{"manage"}), assetScopedRBAC(shared.ObjectAsset, shared.ActionUpdate))
++	licenseRiskRouter.POST("/:licenseRiskID/final-license-decision/", licenseRiskController.MakeFinalLicenseDecision, middlewares.NeededScope([]string{"manage"}), assetScopedRBAC(shared.ObjectAsset, shared.ActionUpdate))
+ 
+ 	return LicenseRiskRouter{Group: licenseRiskRouter}
+ }
+diff --git a/router/vex_rule_router.go b/router/vex_rule_router.go
+index 067e1fb..d2f077b 100644
+--- a/router/vex_rule_router.go
++++ b/router/vex_rule_router.go
+@@ -18,6 +18,7 @@ package router
+ import (
+ 	"github.com/l3montree-dev/devguard/controllers"
+ 	"github.com/l3montree-dev/devguard/middlewares"
++	"github.com/l3montree-dev/devguard/shared"
+ 	"github.com/labstack/echo/v4"
+ )
+ 
+@@ -28,7 +29,9 @@ type VEXRuleRouter struct {
+ func NewVEXRuleRouter(
+ 	assetVersionRouter AssetVersionRouter,
+ 	vexRuleController *controllers.VEXRuleController,
++	assetRepository shared.AssetRepository,
+ ) VEXRuleRouter {
++	assetScopedRBAC := middlewares.AssetAccessControlFactory(assetRepository)
+ 	// VEX rules are scoped to asset versions
+ 	// Read access - anyone who can read the asset version can list and get rules
+ 	ruleGroup := assetVersionRouter.Group.Group("/vex-rules")
+@@ -36,7 +39,7 @@ func NewVEXRuleRouter(
+ 	ruleGroup.GET("/:ruleId/", vexRuleController.Get) // Get single rule by ID
+ 
+ 	// Write access - requires asset update permission
+-	ruleWriteGroup := ruleGroup.Group("", middlewares.NeededScope([]string{"manage"}))
++	ruleWriteGroup := ruleGroup.Group("", middlewares.NeededScope([]string{"manage"}), assetScopedRBAC(shared.ObjectAsset, shared.ActionUpdate))
+ 	ruleWriteGroup.POST("/", vexRuleController.Create)                  // Create rule
+ 	ruleWriteGroup.PUT("/:ruleId/", vexRuleController.Update)           // Update rule by ID
+ 	ruleWriteGroup.POST("/:ruleId/reapply/", vexRuleController.Reapply) // Reapply rule to existing vulns

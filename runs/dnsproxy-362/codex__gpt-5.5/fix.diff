@@ -1,0 +1,71 @@
+diff --git a/internal/cmd/proxy.go b/internal/cmd/proxy.go
+index d3ac625..9473fa8 100644
+--- a/internal/cmd/proxy.go
++++ b/internal/cmd/proxy.go
+@@ -524,6 +524,8 @@ func loadServersList(sources []string) []string {
+ 		if err != nil {
+ 			// Ignore errors, just consider it a server address and not a file.
+ 			servers = append(servers, source)
++
++			continue
+ 		}
+ 
+ 		lines := strings.Split(string(data), "\n")
+diff --git a/upstream/doh.go b/upstream/doh.go
+index 239aa47..3f9e54f 100644
+--- a/upstream/doh.go
++++ b/upstream/doh.go
+@@ -157,10 +157,11 @@ func (p *dnsOverHTTPS) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
+ 	//
+ 	// See https://www.rfc-editor.org/rfc/rfc8484.html.
+ 	id := req.Id
++	req = req.Copy()
+ 	req.Id = 0
+ 	defer func() {
+-		// Restore the original ID to not break compatibility with proxies.
+-		req.Id = id
++		// Restore the original ID in the response to not break compatibility
++		// with proxies.
+ 		if resp != nil {
+ 			resp.Id = id
+ 		}
+diff --git a/upstream/doq.go b/upstream/doq.go
+index f0ec7bb..baf6e94 100644
+--- a/upstream/doq.go
++++ b/upstream/doq.go
+@@ -174,10 +174,11 @@ func (p *dnsOverQUIC) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
+ 	//
+ 	// See https://www.rfc-editor.org/rfc/rfc9250#section-4.2.1.
+ 	id := req.Id
++	req = req.Copy()
+ 	req.Id = 0
+ 	defer func() {
+-		// Restore the original ID to not break compatibility with proxies.
+-		req.Id = id
++		// Restore the original ID in the response to not break compatibility
++		// with proxies.
+ 		if resp != nil {
+ 			resp.Id = id
+ 		}
+@@ -285,7 +286,7 @@ func (p *dnsOverQUIC) getBytesPool() (pool *sync.Pool) {
+ 
+ 	if p.bytesPool == nil {
+ 		p.bytesPool = &sync.Pool{
+-			New: func() interface{} {
++			New: func() (res any) {
+ 				b := make([]byte, dns.MaxMsgSize)
+ 
+ 				return &b
+diff --git a/upstream/plain.go b/upstream/plain.go
+index eb932a6..1d78e75 100644
+--- a/upstream/plain.go
++++ b/upstream/plain.go
+@@ -91,6 +91,8 @@ func (p *plainDNS) dialExchange(
+ 	dial bootstrap.DialHandler,
+ 	req *dns.Msg,
+ ) (resp *dns.Msg, err error) {
++	req = req.Copy()
++
+ 	addr := p.Address()
+ 	client := &dns.Client{Timeout: p.timeout}
+ 

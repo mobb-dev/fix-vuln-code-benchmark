@@ -1,0 +1,57 @@
+Project: googleapis/mcp-toolbox
+Vulnerability type: Improper Authentication (CWE-287)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  internal/auth/auth.go
+    - lines 32-34   in: type AuthService interface {
+
+  internal/auth/generic/generic.go
+    - lines 57-62   in: func (cfg Config) AuthServiceConfigType() string {
+    - lines 157-163   in: func discoverOIDCConfig(client *http.Client, AuthorizationServer string) (jwksUR
+    - lines 182-187   in: func (a AuthService) GetName() string {
+    - lines 230-242   in: func (a AuthService) GetClaimsFromHeader(ctx context.Context, h http.Header) (ma
+    - lines 386-392   in: func (a AuthService) validateOpaqueToken(ctx context.Context, tokenStr string) (
+    - lines 476-482   in: func (a AuthService) validateClaims(ctx context.Context, iss string, aud []strin
+
+  internal/auth/google/google.go
+    - lines 16-23   in: package google
+    - lines 30-38   in: var _ auth.AuthServiceConfig = Config{}
+    - lines 42-58   in: func (cfg Config) AuthServiceConfigType() string {
+    - lines 69-82   in: func (a AuthService) GetName() string {
+
+  internal/server/config.go
+    - lines 279-290   in: func UnmarshalYAMLAuthServiceConfig(ctx context.Context, name string, r map[stri
+
+  internal/server/mcp.go
+    - lines 32-38   in: import (
+    - lines 606-612   in: func httpHandler(s *Server, w http.ResponseWriter, r *http.Request) {
+    - lines 860-874   in: func prmHandler(s *Server, w http.ResponseWriter, r *http.Request) {
+
+  internal/server/mcp/util/auth.go
+    - lines 21-27   in: import (
+    - lines 30-37   in: func ValidateScopes(ctx context.Context, toolScopes []string, authServices map[s
+    - lines 40-46   in: func ValidateScopes(ctx context.Context, toolScopes []string, authServices map[s
+    - lines 53-59   in: func ValidateScopes(ctx context.Context, toolScopes []string, authServices map[s
+
+  internal/server/mcp/v20241105/method.go
+    - lines 23-29   in: import (
+    - lines 230-237   in: func toolsCallHandler(ctx context.Context, id jsonrpc.RequestId, toolset tools.T
+
+  internal/server/mcp/v20250326/method.go
+    - lines 23-29   in: import (
+    - lines 230-237   in: func toolsCallHandler(ctx context.Context, id jsonrpc.RequestId, toolset tools.T
+
+  internal/server/mcp/v20250618/method.go
+    - lines 23-29   in: import (
+    - lines 229-236   in: func toolsCallHandler(ctx context.Context, id jsonrpc.RequestId, toolset tools.T
+
+  internal/server/mcp/v20251125/method.go
+    - lines 23-29   in: import (
+    - lines 229-236   in: func toolsCallHandler(ctx context.Context, id jsonrpc.RequestId, toolset tools.T
+
+  internal/server/server.go
+    - lines 35-41   in: import (
+    - lines 423-429   in: func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
+    - lines 499-508   in: func mcpAuthMiddleware(s *Server) func(http.Handler) http.Handler {
+    - lines 515-521   in: func mcpAuthMiddleware(s *Server) func(http.Handler) http.Handler {

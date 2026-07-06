@@ -1,0 +1,75 @@
+Project: nhost/nhost
+Vulnerability type: Missing Authentication (CWE-306)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  cli/clienv/filesystem.go
+    - lines 71-76   in: func (p PathStructure) DockerCompose() string {
+
+  cli/cmd/configserver/configserver.go
+    - lines 3-17   in: package configserver
+    - lines 24-32   in: const (
+    - lines 75-85   in: func Command() *cli.Command {
+    - lines 144-150   in: func serve(_ context.Context, cmd *cli.Command) error {
+    - lines 165-173   in: func serve(_ context.Context, cmd *cli.Command) error {
+
+  cli/cmd/configserver/local.go
+    - lines 15-21   in: import (
+    - lines 27-39   in: type Local struct {
+    - lines 91-107   in: func (l *Local) GetApps(
+    - lines 131-137   in: func (l *Local) GetApps(
+    - lines 161-173   in: func (l *Local) UpdateSystemConfig(_ context.Context, _, _ *graph.App, _ logrus.
+    - lines 179-184   in: func (l *Local) UpdateSecrets(_ context.Context, _, newApp *graph.App, _ logrus.
+
+  cli/cmd/dev/cloud.go
+    - lines 204-209   in: func cloud( //nolint:funlen
+
+  cli/cmd/dev/up.go
+    - lines 440-445   in: func up( //nolint:funlen,cyclop
+    - lines 473-478   in: func up( //nolint:funlen,cyclop
+
+  cli/dockercompose/compose.go
+    - lines 332-337   in: func dashboard(
+    - lines 341-346   in: func dashboard(
+    - lines 583-588   in: func getServices( //nolint: funlen,cyclop
+    - lines 627-632   in: func getServices( //nolint: funlen,cyclop
+    - lines 636-642   in: func getServices( //nolint: funlen,cyclop
+    - lines 711-717   in: func mountCACertificates(
+    - lines 726-731   in: func ComposeFileFromConfig(
+    - lines 745-750   in: func ComposeFileFromConfig(
+
+  cli/dockercompose/compose_cloud.go
+    - lines 20-27   in: func dashboardCloud(
+    - lines 85-91   in: func consoleCloud(
+    - lines 101-106   in: func getServicesCloud(
+    - lines 128-133   in: func getServicesCloud(
+    - lines 145-150   in: func getServicesCloud(
+    - lines 169-174   in: func CloudComposeFileFromConfig(
+    - lines 187-192   in: func CloudComposeFileFromConfig(
+
+  cli/dockercompose/configserver.go
+    - lines 10-16   in: func configserver( //nolint: funlen
+    - lines 85-90   in: func configserver( //nolint: funlen
+
+  internal/lib/oapi/middleware/cors.go
+    - lines 10-22   in: import (
+    - lines 84-93   in: func CORS(opts CORSOptions) gin.HandlerFunc { //nolint:cyclop,funlen
+    - lines 138-140   in: func CORS(opts CORSOptions) gin.HandlerFunc { //nolint:cyclop,funlen
+
+  services/auth/go/cmd/serve.go
+    - lines 1371-1376   in: func getDependencies( //nolint:ireturn
+
+  services/storage/cmd/serve.go
+    - lines 61-68   in: const (
+
+  vendor/github.com/rs/cors/cors.go
+    - lines 1-502
+
+  vendor/github.com/rs/cors/internal/sortedset.go
+    - lines 1-113
+
+  vendor/github.com/rs/cors/utils.go
+    - lines 1-34
+
+  vendor/github.com/rs/cors/wrapper/gin/gin.go
+    - lines 1-60

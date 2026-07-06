@@ -1,0 +1,298 @@
+You are a senior application-security engineer. Judge whether an AI agent's code change correctly fixes a specific, known vulnerability.
+
+You are given three things below:
+  1. THE VULNERABILITY — its type and where it is in the code.
+  2. THE MAINTAINER'S OFFICIAL FIX — the real, accepted remediation. Treat it as the gold standard for what a complete and correct fix must cover. It is a reference, not the only acceptable implementation: a different but equivalent fix that fully and minimally remediates is still correct.
+  3. THE AGENT'S FIX — a diff produced by an AI agent. This is what you must judge.
+
+Evaluate the agent's fix with this methodology:
+  - From the vulnerability and the maintainer's fix, work out the root cause and EVERY place the vulnerability is present.
+  - Does the agent's fix remove the vulnerability at ALL of those places, not just some? Missing any injection point or variant is a real gap.
+  - Does it preserve the application's intended behavior — no broken functionality, and no unrelated behavioral changes beyond what the remediation requires? Removing the vulnerability but also changing unrelated behavior is an over-reach, not a clean fix.
+  - Be skeptical. A fix that reads plausibly but misses a variant is not correct; one that fixes the bug but also changes unrelated behavior is not clean.
+
+Respond in EXACTLY this structure and nothing else:
+
+METHODOLOGY: <2-4 sentences on how you evaluated it>
+EVIDENCE: <specific files, lines, or hunks from the diffs that justify the verdict>
+REASONING: <why the agent's fix does or does not fully and cleanly remediate the vulnerability without changing intended behavior>
+VERDICT: <one word: CORRECT, PARTIAL, or INCORRECT>
+
+Verdict meanings:
+  CORRECT   — fully removes the vulnerability AND preserves intended behavior.
+  PARTIAL   — removes the vulnerability but misses a variant, OR over-reaches and changes unrelated behavior.
+  INCORRECT — does not remove the vulnerability, or breaks functionality so it is not a valid fix.
+
+
+===== 1. THE VULNERABILITY =====
+Project: pdm-project/pdm
+Vulnerability type: Path Traversal (CWE-22)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  src/pdm/installers/installers.py
+    - lines 9-15
+    - lines 18-28
+    - lines 47-53   in: def __init__(self, package: CachedPackage) -> None:
+    - lines 110-116   in: def finalize_installation(
+    - lines 135-150   in: def write_to_fs(self, scheme: Scheme, path: str, stream: BinaryIO, is_executable
+    - lines 226-232   in: def install_wheel(
+
+===== 2. MAINTAINER OFFICIAL FIX (gold standard) =====
+--- a/src/pdm/installers/installers.py
++++ b/src/pdm/installers/installers.py
+@@ -9,7 +9,7 @@
+ 
+ from installer import install as _install
+ from installer._core import _process_WHEEL_file
+-from installer.destinations import SchemeDictionaryDestination, WheelDestination
++from installer.destinations import SchemeDictionaryDestination
+ from installer.exceptions import InvalidWheelSource
+ from installer.records import RecordEntry
+ from installer.sources import WheelContentElement, WheelSource
+@@ -18,11 +18,13 @@
+ from pdm.models.cached_package import CachedPackage
+ from pdm.utils import make_file_executable
+ 
++_WINDOWS = os.name == "nt"
++
+ if TYPE_CHECKING:
+     from typing import Any, BinaryIO, Iterable, Literal
+ 
+-    from installer.destinations import Scheme
+     from installer.sources import WheelContentElement
++    from installer.utils import Scheme
+ 
+     from pdm.environments import BaseEnvironment
+ 
+@@ -47,7 +49,7 @@ def __init__(self, package: CachedPackage) -> None:
+         distribution, version = package.path.name.split("-")[:2]
+         super().__init__(distribution, version)
+ 
+-    @cached_property
++    @property
+     def dist_info_dir(self) -> str:
+         return self.package.dist_info.name
+ 
+@@ -110,7 +112,7 @@ def finalize_installation(
+         record_file_path: str,
+         records: Iterable[tuple[Scheme, RecordEntry]],
+     ) -> None:
+-        if os.name != "nt":
++        if not _WINDOWS:
+             return super().finalize_installation(scheme, record_file_path, records)
+ 
+         from installer.destinations import construct_record_file
+@@ -135,16 +137,16 @@ def write_to_fs(self, scheme: Scheme, path: str, stream: BinaryIO, is_executable
+         from installer.records import Hash
+         from installer.utils import copyfileobj_with_hashing
+ 
+-        target_path = os.path.join(self.scheme_dict[scheme], path)
+-        if os.path.exists(target_path):
+-            os.unlink(target_path)
++        target_path = self._path_with_destdir(scheme, path)
++        if target_path.exists():
++            target_path.unlink()
+ 
+-        os.makedirs(os.path.dirname(target_path), exist_ok=True)
++        target_path.parent.mkdir(parents=True, exist_ok=True)
+ 
+-        if self.rename_pth and target_path.endswith(".pth") and "/" not in path:
++        if self.rename_pth and target_path.name.endswith(".pth") and "/" not in path:
+             # Postpone the creation of pth files since it may cause race condition
+             # when multiple packages are installed at the same time.
+-            target_path += ".pdmtmp"
++            target_path = target_path.with_name(target_path.name + ".pdmtmp")
+         if self.link_method == "copy" or not hasattr(stream, "name"):
+             with open(target_path, "wb") as f:
+                 hash_, size = copyfileobj_with_hashing(stream, f, self.hash_algorithm)
+@@ -226,7 +228,7 @@ def install_wheel(
+ 
+ 
+ def install(
+-    source: WheelSource, destination: WheelDestination, additional_metadata: dict[str, bytes] | None = None
++    source: WheelSource, destination: SchemeDictionaryDestination, additional_metadata: dict[str, bytes] | None = None
+ ) -> str:
+     """A lower level installation method that is copied from installer
+     but is controlled by extra parameters.
+===== 3. THE AGENT FIX TO JUDGE =====
+diff --git a/src/pdm/installers/installers.py b/src/pdm/installers/installers.py
+index c6a9806..2a0a7a0 100644
+--- a/src/pdm/installers/installers.py
++++ b/src/pdm/installers/installers.py
+@@ -1,10 +1,11 @@
+ from __future__ import annotations
+ 
+ import json
++import ntpath
+ import os
+ import stat
+ from functools import cached_property
+-from pathlib import Path
++from pathlib import Path, PurePosixPath
+ from typing import TYPE_CHECKING, Iterator
+ 
+ from installer import install as _install
+@@ -40,6 +41,28 @@ class WheelFile(_WheelFile):
+             raise InvalidWheelSource(f"The wheel doesn't contain metadata {canonical_name!r}") from None
+ 
+ 
++def _ensure_relative_path(path: str) -> str:
++    normalized_path = path.replace("\\", "/")
++    if (
++        not normalized_path
++        or PurePosixPath(normalized_path).is_absolute()
++        or ntpath.isabs(path)
++        or ntpath.splitdrive(path)[0]
++        or any(part == ".." for part in normalized_path.split("/"))
++    ):
++        raise InvalidWheelSource(f"Invalid path in wheel: {path!r}")
++    return normalized_path
++
++
++def _ensure_within_directory(root: Path, path: Path) -> None:
++    try:
++        common_path = os.path.commonpath([os.path.normcase(root), os.path.normcase(path)])
++    except ValueError:
++        common_path = None
++    if common_path != os.path.normcase(root):
++        raise InvalidWheelSource(f"Wheel path would be installed outside target directory: {path}") from None
++
++
+ class PackageWheelSource(WheelSource):
+     def __init__(self, package: CachedPackage) -> None:
+         self.package = package
+@@ -49,21 +72,28 @@ class PackageWheelSource(WheelSource):
+ 
+     @cached_property
+     def dist_info_dir(self) -> str:
+-        return self.package.dist_info.name
++        dist_info = self.package.dist_info.resolve()
++        _ensure_within_directory(self.package.path, dist_info)
++        return _ensure_relative_path(dist_info.name)
+ 
+     @property
+     def dist_info_filenames(self) -> list[str]:
+         return os.listdir(self.package.dist_info)
+ 
+     def read_dist_info(self, filename: str) -> str:
+-        return self.package.dist_info.joinpath(filename).read_text("utf-8")
++        filename = _ensure_relative_path(filename)
++        dist_info_file = self.package.dist_info.joinpath(*filename.split("/")).resolve()
++        _ensure_within_directory(self.package.dist_info.resolve(), dist_info_file)
++        return dist_info_file.read_text("utf-8")
+ 
+     def iter_files(self) -> Iterable[Path]:
+         for root, _, files in os.walk(self.package.path):
+             for file in files:
+                 if Path(root) == self.package.path and file in CachedPackage.cache_files:
+                     continue
+-                yield Path(root, file)
++                item = Path(root, file).resolve()
++                _ensure_within_directory(self.package.path, item)
++                yield item
+ 
+     def get_contents(self) -> Iterator[WheelContentElement]:
+         from installer.records import parse_record_file
+@@ -135,32 +165,36 @@ class InstallDestination(SchemeDictionaryDestination):
+         from installer.records import Hash
+         from installer.utils import copyfileobj_with_hashing
+ 
+-        target_path = os.path.join(self.scheme_dict[scheme], path)
++        path = _ensure_relative_path(path)
++        scheme_path = Path(self.scheme_dict[scheme]).resolve()
++        target_path = scheme_path.joinpath(*path.split("/")).resolve()
++        _ensure_within_directory(scheme_path, target_path)
+         if os.path.exists(target_path):
+             os.unlink(target_path)
+ 
+         os.makedirs(os.path.dirname(target_path), exist_ok=True)
+ 
+-        if self.rename_pth and target_path.endswith(".pth") and "/" not in path:
++        target_path_str = str(target_path)
++        if self.rename_pth and target_path_str.endswith(".pth") and "/" not in path:
+             # Postpone the creation of pth files since it may cause race condition
+             # when multiple packages are installed at the same time.
+-            target_path += ".pdmtmp"
++            target_path_str += ".pdmtmp"
+         if self.link_method == "copy" or not hasattr(stream, "name"):
+-            with open(target_path, "wb") as f:
++            with open(target_path_str, "wb") as f:
+                 hash_, size = copyfileobj_with_hashing(stream, f, self.hash_algorithm)
+         else:
+             src_path = stream.name
+             # create links, we don't need the stream anymore
+             stream.close()
+             if self.link_method == "symlink":
+-                os.symlink(src_path, target_path)
++                os.symlink(src_path, target_path_str)
+             else:  # hardlink
+-                os.link(src_path, target_path)
++                os.link(src_path, target_path_str)
+             hash_ = ""
+-            size = os.path.getsize(target_path)
++            size = os.path.getsize(target_path_str)
+ 
+         if is_executable:
+-            make_file_executable(target_path)
++            make_file_executable(target_path_str)
+         return RecordEntry(path, Hash(self.hash_algorithm, hash_), size)
+ 
+ 
+diff --git a/tests/test_installer.py b/tests/test_installer.py
+index 7aa533f..81f6f56 100644
+--- a/tests/test_installer.py
++++ b/tests/test_installer.py
+@@ -3,10 +3,12 @@ from __future__ import annotations
+ import logging
+ import os
+ import venv
++from io import BytesIO
+ from pathlib import Path
+ from typing import Callable
+ 
+ import pytest
++from installer.exceptions import InvalidWheelSource
+ from unearth import Link
+ 
+ from pdm import utils
+@@ -302,6 +304,39 @@ def test_windows_record_uses_relative_paths_for_data_scripts(tmp_path, mocker):
+     assert record.splitlines()[0] == "../../Scripts/jp.py,,1685"
+ 
+ 
++def test_install_destination_rejects_path_traversal(tmp_path):
++    from pdm.installers.installers import InstallDestination
++
++    target = tmp_path / "site-packages"
++    destination = InstallDestination(
++        scheme_dict={"purelib": str(target)},
++        interpreter="python",
++        script_kind="posix",
++    )
++
++    with pytest.raises(InvalidWheelSource):
++        destination.write_to_fs("purelib", "../escape.py", BytesIO(b"bad"), is_executable=False)
++
++    assert not (tmp_path / "escape.py").exists()
++
++
++@pytest.mark.skipif(os.name == "nt", reason="symlink creation requires privileges on Windows")
++def test_package_wheel_source_rejects_cached_file_outside_package(tmp_path):
++    from pdm.installers.installers import PackageWheelSource
++
++    package_path = tmp_path / "demo-0.1-py3-none-any.whl.cache"
++    dist_info = package_path / "demo-0.1.dist-info"
++    dist_info.mkdir(parents=True)
++    dist_info.joinpath("RECORD").write_text("linked.py,,\n", encoding="utf-8")
++    outside_file = tmp_path / "linked.py"
++    outside_file.write_text("bad", encoding="utf-8")
++    package_path.joinpath("linked.py").symlink_to(outside_file)
++
++    source = PackageWheelSource(CachedPackage(package_path))
++    with pytest.raises(InvalidWheelSource):
++        list(source.get_contents())
++
++
+ def test_compress_file_list_for_rename():
+     from pdm.installers.uninstallers import compress_for_rename
+ 

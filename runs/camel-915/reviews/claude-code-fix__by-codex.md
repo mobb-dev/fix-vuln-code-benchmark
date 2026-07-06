@@ -1,0 +1,7 @@
+METHODOLOGY: I compared the agent diff against the official remediation to identify the actual data flow: CoAP URI query parameters are copied into Camel message headers without applying Camel’s header filtering. I then checked whether the agent fixed all affected surfaces, including the endpoint/component-level header filter strategy support that the official fix uses to apply both default and user-configured filtering.
+
+EVIDENCE: In `CamelCoapResource.java`, the agent adds a static `DefaultHeaderFilterStrategy` and filters query-derived headers before `setHeader`, which addresses the direct injection point in `handleRequest`. However, the agent does not modify `CoAPComponent.java` or `CoAPEndpoint.java` to implement `HeaderFilterStrategyAware`, add `headerFilterStrategy` fields/getters/setters, propagate the component strategy to endpoints, or add the generated configurer/DSL/URI factory entries present in the official fix.
+
+REASONING: The agent blocks default Camel-prefixed internal header injection from CoAP query parameters, so it mitigates the main vulnerable assignment. But the official fix makes the filter endpoint/component-configurable and applies the endpoint’s `HeaderFilterStrategy`, preserving Camel’s intended extension point and allowing deployments to filter additional sensitive headers. By hard-coding a static local strategy in `CamelCoapResource`, the agent misses that variant/configuration surface and does not fully remediate all locations identified by the official fix.
+
+VERDICT: PARTIAL

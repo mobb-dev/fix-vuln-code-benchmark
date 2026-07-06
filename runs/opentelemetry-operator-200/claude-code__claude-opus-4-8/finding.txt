@@ -1,0 +1,22 @@
+Project: open-telemetry/opentelemetry-operator
+Vulnerability type: Information Exposure (CWE-200)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  apis/v1alpha1/opentelemetrycollector_types.go
+    - lines 411-416   in: type OpenTelemetryTargetAllocatorPrometheusCR struct {
+
+  apis/v1beta1/targetallocator_types.go
+    - lines 22-27   in: type TargetAllocatorPrometheusCR struct {
+
+  cmd/otel-allocator/internal/config/config.go
+    - lines 92-97   in: type PrometheusCRConfig struct {
+
+  cmd/otel-allocator/internal/watcher/promOperator.go
+    - lines 150-155   in: func NewPrometheusCRWatcher(
+    - lines 170-175   in: type PrometheusCRWatcher struct {
+    - lines 649-654   in: func (w *PrometheusCRWatcher) LoadConfig(ctx context.Context) (*promconfig.Confi
+    - lines 665-670   in: func (w *PrometheusCRWatcher) LoadConfig(ctx context.Context) (*promconfig.Confi
+
+  internal/manifests/targetallocator/configmap.go
+    - lines 117-122   in: func ConfigMap(params Params) (*corev1.ConfigMap, error) {

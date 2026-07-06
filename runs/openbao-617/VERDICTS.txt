@@ -1,0 +1,3 @@
+case: openbao-617
+Claude fix, reviewed by Codex:  VERDICT: INCORRECT
+Codex fix,  reviewed by Claude: VERDICT: INCORRECT

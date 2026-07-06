@@ -1,0 +1,47 @@
+# Secrets. The subscription token lives in .env and is passed to the containers
+# with `docker run --env-file .env`. Never commit it.
+.env
+.env.*
+!.env.example
+
+# Run output. Regenerate by running the benchmark.
+results/
+review/
+
+# Build artifacts and dependencies.
+**/node_modules/
+**/.venv/
+**/target/
+**/__pycache__/
+*.pyc
+
+# Editor and OS files.
+.idea/
+.DS_Store
+checkouts/
+_poc/
+
+# runs/ is ignored so local re-runs and experiments stay out of git by default.
+# The published benchmark data under runs/ was committed explicitly (git add -f)
+# and stays tracked; to contribute a new case's runs, force-add them the same way.
+runs/
+
+# Archived third-party checkouts (superseded cases). Regenerable from the
+# upstream repos; full of upstream test fixtures that trip secret scanners.
+_superseded/checkouts__*/
+
+# Internal working files: session/debug logs and pre-draft notes with
+# superseded numbers. Preserved locally and in the private checkpoint,
+# excluded from the published tree.
+/*.log
+docs/blog-post/00-IDEAS-and-narrative.md
+docs/blog-post/01-era1-first-methodology.md
+docs/blog-post/02-era2-sandboxed-benchmark.md
+docs/blog-post/03-data-tables.md
+docs/blog-post/04-sources-and-assets.md
+docs/blog-post/05-prior-work-and-the-gap.md
+docs/blog-post/DRAFT-v1.md
+docs/blog-post/env-test/
+
+# Generated standalone page (build artifact of post.html via make_standalone.py).
+docs/blog-post/plausible-not-fixed.html

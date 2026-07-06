@@ -1,0 +1,475 @@
+--- a/builtin/logical/transit/backend.go
++++ b/builtin/logical/transit/backend.go
+@@ -142,6 +142,14 @@ func GetCacheSizeFromStorage(ctx context.Context, s logical.Storage) (int, error
+ 
+ // Update cache size and get policy
+ func (b *backend) GetPolicy(ctx context.Context, polReq keysutil.PolicyRequest, rand io.Reader) (retP *keysutil.Policy, retUpserted bool, retErr error) {
++	return b.getPolicy(ctx, polReq, rand, false /* not exclusive */)
++}
++
++func (b *backend) GetPolicyExclusive(ctx context.Context, polReq keysutil.PolicyRequest, rand io.Reader) (retP *keysutil.Policy, retUpserted bool, retErr error) {
++	return b.getPolicy(ctx, polReq, rand, true /* exclusive */)
++}
++
++func (b *backend) getPolicy(ctx context.Context, polReq keysutil.PolicyRequest, rand io.Reader, exclusive bool) (retP *keysutil.Policy, retUpserted bool, retErr error) {
+ 	// Acquire read lock to read cacheSizeChanged
+ 	b.configMutex.RLock()
+ 	if b.lm.GetUseCache() && b.cacheSizeChanged {
+@@ -167,7 +175,7 @@ func (b *backend) GetPolicy(ctx context.Context, polReq keysutil.PolicyRequest,
+ 	} else {
+ 		b.configMutex.RUnlock()
+ 	}
+-	p, _, err := b.lm.GetPolicy(ctx, polReq, rand)
++	p, _, err := b.lm.GetPolicyWithLockType(ctx, polReq, rand, exclusive)
+ 	if err != nil {
+ 		return p, false, err
+ 	}
+@@ -235,7 +243,7 @@ func (b *backend) autoRotateKeys(ctx context.Context, req *logical.Request) erro
+ 	var errs *multierror.Error
+ 
+ 	for _, key := range keys {
+-		p, _, err := b.GetPolicy(ctx, keysutil.PolicyRequest{
++		p, _, err := b.GetPolicyExclusive(ctx, keysutil.PolicyRequest{
+ 			Storage: req.Storage,
+ 			Name:    key,
+ 		}, b.GetRandomReader())
+@@ -260,9 +268,6 @@ func (b *backend) autoRotateKeys(ctx context.Context, req *logical.Request) erro
+ 
+ // rotateIfRequired rotates a key if it is due for autorotation.
+ func (b *backend) rotateIfRequired(ctx context.Context, req *logical.Request, key string, p *keysutil.Policy) error {
+-	if !b.System().CachingDisabled() {
+-		p.Lock(true)
+-	}
+ 	defer p.Unlock()
+ 
+ 	// If the key is imported, it can only be rotated from within Vault if allowed.
+--- a/builtin/logical/transit/path_byok.go
++++ b/builtin/logical/transit/path_byok.go
+@@ -81,9 +81,6 @@ func (b *backend) pathPolicyBYOKExportRead(ctx context.Context, req *logical.Req
+ 	if dstP == nil {
+ 		return nil, errors.New("no such destination key to export to")
+ 	}
+-	if !b.System().CachingDisabled() {
+-		dstP.Lock(false)
+-	}
+ 	defer dstP.Unlock()
+ 
+ 	if dstP.SoftDeleted {
+@@ -100,9 +97,6 @@ func (b *backend) pathPolicyBYOKExportRead(ctx context.Context, req *logical.Req
+ 	if srcP == nil {
+ 		return nil, errors.New("no such source key for export")
+ 	}
+-	if !b.System().CachingDisabled() {
+-		srcP.Lock(false)
+-	}
+ 	defer srcP.Unlock()
+ 
+ 	if !srcP.Exportable {
+--- a/builtin/logical/transit/path_certificates.go
++++ b/builtin/logical/transit/path_certificates.go
+@@ -94,9 +94,6 @@ func (b *backend) pathCreateCSRWrite(ctx context.Context, req *logical.Request,
+ 		return logical.ErrorResponse("key with provided name '%s' not found", name), logical.ErrInvalidRequest
+ 	}
+ 
+-	if !b.System().CachingDisabled() {
+-		policy.Lock(false)
+-	}
+ 	defer policy.Unlock()
+ 
+ 	// check if key supports signing
+@@ -163,7 +160,7 @@ func (b *backend) pathImportCertChainWrite(ctx context.Context, req *logical.Req
+ 
+ 	name := data.Get("name").(string)
+ 
+-	policy, _, err := b.GetPolicy(ctx, keysutil.PolicyRequest{
++	policy, _, err := b.GetPolicyExclusive(ctx, keysutil.PolicyRequest{
+ 		Storage: req.Storage,
+ 		Name:    name,
+ 	}, b.GetRandomReader())
+@@ -174,9 +171,6 @@ func (b *backend) pathImportCertChainWrite(ctx context.Context, req *logical.Req
+ 		return logical.ErrorResponse("key with provided name '%s' not found", name), logical.ErrInvalidRequest
+ 	}
+ 
+-	if !b.System().CachingDisabled() {
+-		policy.Lock(true)
+-	}
+ 	defer policy.Unlock()
+ 
+ 	// check if transit key supports signing
+--- a/builtin/logical/transit/path_datakey.go
++++ b/builtin/logical/transit/path_datakey.go
+@@ -117,9 +117,6 @@ func (b *backend) pathDatakeyWrite(ctx context.Context, req *logical.Request, d
+ 	if p == nil {
+ 		return logical.ErrorResponse("encryption key not found"), logical.ErrInvalidRequest
+ 	}
+-	if !b.System().CachingDisabled() {
+-		p.Lock(false)
+-	}
+ 	defer p.Unlock()
+ 
+ 	newKey := make([]byte, 32)
+--- a/builtin/logical/transit/path_decrypt.go
++++ b/builtin/logical/transit/path_decrypt.go
+@@ -163,9 +163,6 @@ func (b *backend) pathDecryptWrite(ctx context.Context, req *logical.Request, d
+ 	if p == nil {
+ 		return logical.ErrorResponse("encryption key not found"), logical.ErrInvalidRequest
+ 	}
+-	if !b.System().CachingDisabled() {
+-		p.Lock(false)
+-	}
+ 	defer p.Unlock()
+ 
+ 	successesInBatch := false
+--- a/builtin/logical/transit/path_derive_key.go
++++ b/builtin/logical/transit/path_derive_key.go
+@@ -137,9 +137,6 @@ func (b *backend) pathPolicyDeriveKeyWrite(ctx context.Context, req *logical.Req
+ 	if p == nil {
+ 		return logical.ErrorResponse("specified base key not found"), logical.ErrInvalidRequest
+ 	}
+-	if !b.System().CachingDisabled() {
+-		p.Lock(false)
+-	}
+ 	defer p.Unlock()
+ 
+ 	if !p.Type.KeyAgreementSupported() {
+--- a/builtin/logical/transit/path_encrypt.go
++++ b/builtin/logical/transit/path_encrypt.go
+@@ -288,7 +288,7 @@ func (b *backend) pathEncryptExistenceCheck(ctx context.Context, req *logical.Re
+ 	if err != nil {
+ 		return false, err
+ 	}
+-	if p != nil && b.System().CachingDisabled() {
++	if p != nil {
+ 		p.Unlock()
+ 	}
+ 
+@@ -418,9 +418,6 @@ func (b *backend) pathEncryptWrite(ctx context.Context, req *logical.Request, d
+ 	if p == nil {
+ 		return logical.ErrorResponse("encryption key not found"), logical.ErrInvalidRequest
+ 	}
+-	if !b.System().CachingDisabled() {
+-		p.Lock(false)
+-	}
+ 	defer p.Unlock()
+ 
+ 	// Process batch request items. If encryption of any request
+--- a/builtin/logical/transit/path_export.go
++++ b/builtin/logical/transit/path_export.go
+@@ -112,9 +112,6 @@ func (b *backend) pathPolicyExportRead(ctx context.Context, req *logical.Request
+ 	if p == nil {
+ 		return nil, nil
+ 	}
+-	if !b.System().CachingDisabled() {
+-		p.Lock(false)
+-	}
+ 	defer p.Unlock()
+ 
+ 	if !p.Exportable && exportType != exportTypePublicKey && exportType != exportTypeCertificateChain {
+--- a/builtin/logical/transit/path_hmac.go
++++ b/builtin/logical/transit/path_hmac.go
+@@ -135,9 +135,6 @@ func (b *backend) pathHMACWrite(ctx context.Context, req *logical.Request, d *fr
+ 	if p == nil {
+ 		return logical.ErrorResponse("encryption key not found"), logical.ErrInvalidRequest
+ 	}
+-	if !b.System().CachingDisabled() {
+-		p.Lock(false)
+-	}
+ 	defer p.Unlock()
+ 
+ 	switch {
+@@ -256,9 +253,6 @@ func (b *backend) pathHMACVerify(ctx context.Context, req *logical.Request, d *f
+ 	if p == nil {
+ 		return logical.ErrorResponse("encryption key not found"), logical.ErrInvalidRequest
+ 	}
+-	if !b.System().CachingDisabled() {
+-		p.Lock(false)
+-	}
+ 	defer p.Unlock()
+ 
+ 	hashAlgorithm, ok := keysutil.HashTypeMap[algorithm]
+--- a/builtin/logical/transit/path_import.go
++++ b/builtin/logical/transit/path_import.go
+@@ -230,9 +230,7 @@ func (b *backend) pathImportWrite(ctx context.Context, req *logical.Request, d *
+ 	}
+ 
+ 	if p != nil {
+-		if b.System().CachingDisabled() {
+-			p.Unlock()
+-		}
++		p.Unlock()
+ 		return nil, errors.New("the import path cannot be used with an existing key; use import-version to rotate an existing imported key")
+ 	}
+ 
+@@ -271,25 +269,23 @@ func (b *backend) pathImportVersionWrite(ctx context.Context, req *logical.Reque
+ 		Upsert:       false,
+ 		IsPrivateKey: isCiphertextSet,
+ 	}
+-	p, _, err := b.GetPolicy(ctx, polReq, b.GetRandomReader())
++	p, _, err := b.GetPolicyExclusive(ctx, polReq, b.GetRandomReader())
+ 	if err != nil {
+ 		return nil, err
+ 	}
+ 	if p == nil {
+ 		return nil, fmt.Errorf("no key found with name %s; to import a new key, use the import/ endpoint", name)
+ 	}
++
++	defer p.Unlock()
++
+ 	if !p.Imported {
+ 		return nil, errors.New("the import_version endpoint can only be used with an imported key")
+ 	}
+ 	if p.ConvergentEncryption {
+ 		return nil, errors.New("import_version cannot be used on keys with convergent encryption enabled")
+ 	}
+ 
+-	if !b.System().CachingDisabled() {
+-		p.Lock(true)
+-	}
+-	defer p.Unlock()
+-
+ 	key, resp, err := b.extractKeyFromFields(ctx, req, d, p.Type, isCiphertextSet)
+ 	if err != nil {
+ 		return resp, err
+--- a/builtin/logical/transit/path_keys.go
++++ b/builtin/logical/transit/path_keys.go
+@@ -313,9 +313,6 @@ func (b *backend) pathPolicyWrite(ctx context.Context, req *logical.Request, d *
+ 	if p == nil {
+ 		return nil, errors.New("error generating key: returned policy was nil")
+ 	}
+-	if !b.System().CachingDisabled() {
+-		p.Lock(false)
+-	}
+ 	defer p.Unlock()
+ 
+ 	resp, err := b.formatKeyPolicy(p, nil)
+@@ -349,9 +346,6 @@ func (b *backend) pathPolicyRead(ctx context.Context, req *logical.Request, d *f
+ 	if p == nil {
+ 		return nil, nil
+ 	}
+-	if !b.System().CachingDisabled() {
+-		p.Lock(false)
+-	}
+ 	defer p.Unlock()
+ 
+ 	contextRaw := d.Get("context").(string)
+@@ -528,7 +522,7 @@ func (b *backend) pathPolicySoftDelete(ctx context.Context, req *logical.Request
+ 
+ 	name := d.Get("name").(string)
+ 
+-	p, _, err := b.GetPolicy(ctx, keysutil.PolicyRequest{
++	p, _, err := b.GetPolicyExclusive(ctx, keysutil.PolicyRequest{
+ 		Storage: req.Storage,
+ 		Name:    name,
+ 	}, b.GetRandomReader())
+@@ -538,9 +532,6 @@ func (b *backend) pathPolicySoftDelete(ctx context.Context, req *logical.Request
+ 	if p == nil {
+ 		return nil, nil
+ 	}
+-	if !b.System().CachingDisabled() {
+-		p.Lock(true)
+-	}
+ 	defer p.Unlock()
+ 
+ 	wasDeleted := !p.SoftDeleted
+@@ -575,7 +566,7 @@ func (b *backend) pathPolicySoftDeleteRestore(ctx context.Context, req *logical.
+ 
+ 	name := d.Get("name").(string)
+ 
+-	p, _, err := b.GetPolicy(ctx, keysutil.PolicyRequest{
++	p, _, err := b.GetPolicyExclusive(ctx, keysutil.PolicyRequest{
+ 		Storage: req.Storage,
+ 		Name:    name,
+ 	}, b.GetRandomReader())
+@@ -585,9 +576,6 @@ func (b *backend) pathPolicySoftDeleteRestore(ctx context.Context, req *logical.
+ 	if p == nil {
+ 		return nil, nil
+ 	}
+-	if !b.System().CachingDisabled() {
+-		p.Lock(true)
+-	}
+ 	defer p.Unlock()
+ 
+ 	wasRestored := p.SoftDeleted
+--- a/builtin/logical/transit/path_keys_config.go
++++ b/builtin/logical/transit/path_keys_config.go
+@@ -88,7 +88,7 @@ func (b *backend) pathKeysConfigWrite(ctx context.Context, req *logical.Request,
+ 	name := d.Get("name").(string)
+ 
+ 	// Check if the policy already exists before we lock everything
+-	p, _, err := b.GetPolicy(ctx, keysutil.PolicyRequest{
++	p, _, err := b.GetPolicyExclusive(ctx, keysutil.PolicyRequest{
+ 		Storage: req.Storage,
+ 		Name:    name,
+ 	}, b.GetRandomReader())
+@@ -101,9 +101,6 @@ func (b *backend) pathKeysConfigWrite(ctx context.Context, req *logical.Request,
+ 			),
+ 			logical.ErrInvalidRequest
+ 	}
+-	if !b.System().CachingDisabled() {
+-		p.Lock(true)
+-	}
+ 	defer p.Unlock()
+ 
+ 	var warning string
+--- a/builtin/logical/transit/path_rewrap.go
++++ b/builtin/logical/transit/path_rewrap.go
+@@ -128,9 +128,6 @@ func (b *backend) pathRewrapWrite(ctx context.Context, req *logical.Request, d *
+ 	if p == nil {
+ 		return logical.ErrorResponse("encryption key not found"), logical.ErrInvalidRequest
+ 	}
+-	if !b.System().CachingDisabled() {
+-		p.Lock(false)
+-	}
+ 	defer p.Unlock()
+ 
+ 	for i, item := range batchInputItems {
+--- a/builtin/logical/transit/path_rotate.go
++++ b/builtin/logical/transit/path_rotate.go
+@@ -49,7 +49,7 @@ func (b *backend) pathRotateWrite(ctx context.Context, req *logical.Request, d *
+ 	name := d.Get("name").(string)
+ 
+ 	// Get the policy
+-	p, _, err := b.GetPolicy(ctx, keysutil.PolicyRequest{
++	p, _, err := b.GetPolicyExclusive(ctx, keysutil.PolicyRequest{
+ 		Storage: req.Storage,
+ 		Name:    name,
+ 	}, b.GetRandomReader())
+@@ -59,9 +59,6 @@ func (b *backend) pathRotateWrite(ctx context.Context, req *logical.Request, d *
+ 	if p == nil {
+ 		return logical.ErrorResponse("key not found"), logical.ErrInvalidRequest
+ 	}
+-	if !b.System().CachingDisabled() {
+-		p.Lock(true)
+-	}
+ 	defer p.Unlock()
+ 
+ 	// Rotate the policy
+--- a/builtin/logical/transit/path_sign_verify.go
++++ b/builtin/logical/transit/path_sign_verify.go
+@@ -368,9 +368,6 @@ func (b *backend) pathSignWrite(ctx context.Context, req *logical.Request, d *fr
+ 	if p == nil {
+ 		return logical.ErrorResponse("signing key not found"), logical.ErrInvalidRequest
+ 	}
+-	if !b.System().CachingDisabled() {
+-		p.Lock(false)
+-	}
+ 	defer p.Unlock()
+ 
+ 	if !p.Type.SigningSupported() {
+@@ -604,9 +601,6 @@ func (b *backend) pathVerifyWrite(ctx context.Context, req *logical.Request, d *
+ 	if p == nil {
+ 		return logical.ErrorResponse("signature verification key not found"), logical.ErrInvalidRequest
+ 	}
+-	if !b.System().CachingDisabled() {
+-		p.Lock(false)
+-	}
+ 	defer p.Unlock()
+ 
+ 	if !p.Type.SigningSupported() {
+--- a/builtin/logical/transit/path_trim.go
++++ b/builtin/logical/transit/path_trim.go
+@@ -58,7 +58,7 @@ func (b *backend) pathTrimUpdate() framework.OperationFunc {
+ 
+ 		name := d.Get("name").(string)
+ 
+-		p, _, err := b.GetPolicy(ctx, keysutil.PolicyRequest{
++		p, _, err := b.GetPolicyExclusive(ctx, keysutil.PolicyRequest{
+ 			Storage: req.Storage,
+ 			Name:    name,
+ 		}, b.GetRandomReader())
+@@ -68,9 +68,6 @@ func (b *backend) pathTrimUpdate() framework.OperationFunc {
+ 		if p == nil {
+ 			return logical.ErrorResponse("invalid key name"), logical.ErrInvalidRequest
+ 		}
+-		if !b.System().CachingDisabled() {
+-			p.Lock(true)
+-		}
+ 		defer p.Unlock()
+ 
+ 		minAvailableVersionRaw, ok, err := d.GetOkErr("min_available_version")
+--- a/builtin/logical/transit/path_wrapping_key.go
++++ b/builtin/logical/transit/path_wrapping_key.go
+@@ -85,9 +85,7 @@ func (b *backend) getWrappingKey(ctx context.Context, storage logical.Storage) (
+ 	if p == nil {
+ 		return nil, errors.New("error retrieving wrapping key: returned policy was nil")
+ 	}
+-	if b.System().CachingDisabled() {
+-		p.Unlock()
+-	}
++	defer p.Unlock()
+ 
+ 	return p, nil
+ }
+--- a/sdk/helper/keysutil/lock_manager.go
++++ b/sdk/helper/keysutil/lock_manager.go
+@@ -276,9 +276,22 @@ func (lm *LockManager) BackupPolicy(ctx context.Context, storage logical.Storage
+ 	return backup, nil
+ }
+ 
+-// When the function returns, if caching was disabled, the Policy's lock must
+-// be unlocked when the caller is done (and it should not be re-locked).
++// The Policy's lock must be unlocked when the caller is done (and it should
++// not be re-locked). This will usually be a read lock but may be exclusive
++// in certain circumstances, such as when upserted.
+ func (lm *LockManager) GetPolicy(ctx context.Context, req PolicyRequest, rand io.Reader) (retP *Policy, retUpserted bool, retErr error) {
++	return lm.GetPolicyWithLockType(ctx, req, rand, false /* not exclusive */)
++}
++
++// The Policy's lock must be unlocked when the caller is done (and it should
++// not be re-locked). This will definitely be an exclusive lock.
++func (lm *LockManager) GetPolicyExclusive(ctx context.Context, req PolicyRequest, rand io.Reader) (retP *Policy, retUpserted bool, retErr error) {
++	return lm.GetPolicyWithLockType(ctx, req, rand, true /* exclusive */)
++}
++
++// The Policy must be unlocked when done. See note about GetPolicy for when
++// exclusive=false.
++func (lm *LockManager) GetPolicyWithLockType(ctx context.Context, req PolicyRequest, rand io.Reader, exclusive bool) (retP *Policy, retUpserted bool, retErr error) {
+ 	var p *Policy
+ 	var err error
+ 	var ok bool
+@@ -293,6 +306,7 @@ func (lm *LockManager) GetPolicy(ctx context.Context, req PolicyRequest, rand io
+ 		if p.deleted.Load() {
+ 			return nil, false, nil
+ 		}
++		p.Lock(exclusive)
+ 		return p, false, nil
+ 	}
+ 
+@@ -304,20 +318,19 @@ func (lm *LockManager) GetPolicy(ctx context.Context, req PolicyRequest, rand io
+ 
+ 	// If we are using the cache, defer the lock unlock; otherwise we will
+ 	// return from here with the lock still held.
+-	cleanup := func() {
++	defer func() {
+ 		switch {
+-		// If using the cache we always unlock, the caller locks the policy
+-		// themselves
+-		case lm.useCache:
+-			lock.Unlock()
+-
+-		// If not using the cache, if we aren't returning a policy the caller
+-		// doesn't have a lock, so we must unlock
+ 		case retP == nil:
++			// If not using the cache and if we aren't returning a policy, the
++			// caller doesn't have a lock reference, so we must unlock.
++			lock.Unlock()
++		case lm.useCache:
++			// If using the cache, we always unlock the global lock, but before
++			// doing so, we acquire a lock on the policy itself.
++			retP.Lock(exclusive)
+ 			lock.Unlock()
+ 		}
+-	}
+-	defer cleanup()
++	}()
+ 
+ 	// Check the cache again
+ 	if lm.useCache {
+@@ -370,7 +383,6 @@ func (lm *LockManager) GetPolicy(ctx context.Context, req PolicyRequest, rand io
+ 
+ 		case KeyType_RSA2048, KeyType_RSA3072, KeyType_RSA4096:
+ 			if req.Derived || req.Convergent {
+-				cleanup()
+ 				return nil, false, fmt.Errorf("key derivation and convergent encryption not supported for keys of type %v", req.KeyType)
+ 			}
+ 		case KeyType_HMAC:

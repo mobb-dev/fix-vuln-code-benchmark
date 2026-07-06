@@ -1,0 +1,12 @@
+Project: pdm-project/pdm
+Vulnerability type: Path Traversal (CWE-22)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  src/pdm/installers/installers.py
+    - lines 9-15
+    - lines 18-28
+    - lines 47-53   in: def __init__(self, package: CachedPackage) -> None:
+    - lines 110-116   in: def finalize_installation(
+    - lines 135-150   in: def write_to_fs(self, scheme: Scheme, path: str, stream: BinaryIO, is_executable
+    - lines 226-232   in: def install_wheel(

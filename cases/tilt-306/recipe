@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/tilt-dev/tilt.git
+FIX_COMMIT=47393fba7f6ef5e305d5e814551feef8e4acbc0a
+VULN_FILE=internal/cli/flags.go
+CWE_ID=CWE-306
+CWE_NAME="Missing Authentication"
+LANGUAGE=go
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="internal/hud/server/apiserver_test.go internal/hud/server/server_test.go"
+PREP_CMD="go mod download"
+TEST_CMD="go test ./internal/hud/server/..."

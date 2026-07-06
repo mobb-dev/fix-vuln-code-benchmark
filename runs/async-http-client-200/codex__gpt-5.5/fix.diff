@@ -1,0 +1,66 @@
+diff --git a/client/src/main/java/org/asynchttpclient/netty/handler/intercept/Redirect30xInterceptor.java b/client/src/main/java/org/asynchttpclient/netty/handler/intercept/Redirect30xInterceptor.java
+index 70cf6c1..308ab52 100644
+--- a/client/src/main/java/org/asynchttpclient/netty/handler/intercept/Redirect30xInterceptor.java
++++ b/client/src/main/java/org/asynchttpclient/netty/handler/intercept/Redirect30xInterceptor.java
+@@ -209,10 +209,11 @@ public class Redirect30xInterceptor {
+             headers.remove(CONTENT_TYPE);
+         }
+ 
++        headers.remove(PROXY_AUTHORIZATION);
++
+         if (stripAuthorization || (realm != null && (realm.getScheme() == AuthScheme.NTLM
+                 || realm.getScheme() == AuthScheme.SCRAM_SHA_256))) {
+-            headers.remove(AUTHORIZATION)
+-                    .remove(PROXY_AUTHORIZATION);
++            headers.remove(AUTHORIZATION);
+         }
+         return headers;
+     }
+diff --git a/client/src/test/java/org/asynchttpclient/StripAuthorizationOnRedirectHttpTest.java b/client/src/test/java/org/asynchttpclient/StripAuthorizationOnRedirectHttpTest.java
+index 08c150c..9a58b4a 100644
+--- a/client/src/test/java/org/asynchttpclient/StripAuthorizationOnRedirectHttpTest.java
++++ b/client/src/test/java/org/asynchttpclient/StripAuthorizationOnRedirectHttpTest.java
+@@ -17,6 +17,7 @@ public class StripAuthorizationOnRedirectHttpTest {
+     private static HttpServer server;
+     private static int port;
+     private static volatile String lastAuthHeader;
++    private static volatile String lastProxyAuthHeader;
+ 
+     @BeforeAll
+     public static void startServer() throws Exception {
+@@ -37,6 +38,7 @@ public class StripAuthorizationOnRedirectHttpTest {
+         public void handle(HttpExchange exchange) {
+             String auth = exchange.getRequestHeaders().getFirst("Authorization");
+             lastAuthHeader = auth;
++            lastProxyAuthHeader = exchange.getRequestHeaders().getFirst("Proxy-Authorization");
+             exchange.getResponseHeaders().add("Location", "http://localhost:" + port + "/final");
+             try {
+                 exchange.sendResponseHeaders(302, -1);
+@@ -51,6 +53,7 @@ public class StripAuthorizationOnRedirectHttpTest {
+         public void handle(HttpExchange exchange) {
+             String auth = exchange.getRequestHeaders().getFirst("Authorization");
+             lastAuthHeader = auth;
++            lastProxyAuthHeader = exchange.getRequestHeaders().getFirst("Proxy-Authorization");
+             try {
+                 exchange.sendResponseHeaders(200, 0);
+                 exchange.getResponseBody().close();
+@@ -92,4 +95,19 @@ public class StripAuthorizationOnRedirectHttpTest {
+             assertNull(lastAuthHeader, "Authorization header should be stripped on redirect when enabled");
+         }
+     }
++
++    @Test
++    void testProxyAuthHeaderStrippedByDefault() throws Exception {
++        DefaultAsyncHttpClientConfig config = new DefaultAsyncHttpClientConfig.Builder()
++                .setFollowRedirect(true)
++                .build();
++        try (DefaultAsyncHttpClient client = new DefaultAsyncHttpClient(config)) {
++            lastProxyAuthHeader = null;
++            client.prepareGet("http://localhost:" + port + "/redirect")
++                    .setHeader("Proxy-Authorization", "Basic cHJveHk6cGFzcw==")
++                    .execute()
++                    .get(5, TimeUnit.SECONDS);
++            assertNull(lastProxyAuthHeader, "Proxy-Authorization header must not be propagated on redirect");
++        }
++    }
+ }

@@ -1,0 +1,3074 @@
+[
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "googleapis/mcp-toolbox",
+    "fix_sha": "dfd66ee7de6fe9750d932d30bf3b67a2f4d2a176",
+    "pr": "3341",
+    "cve": "CVE-2026-11717",
+    "ghsa": "GHSA-8fcc-w5hv-4gxv",
+    "severity": "critical",
+    "cwes": [
+      "CWE-287"
+    ],
+    "cwe": "CWE-287",
+    "n_files": 19,
+    "n_src": 11,
+    "n_test": 6,
+    "src_changed_lines": 314,
+    "src_files": [
+      "internal/auth/auth.go",
+      "internal/auth/generic/generic.go",
+      "internal/auth/google/google.go",
+      "internal/server/config.go",
+      "internal/server/mcp.go",
+      "internal/server/mcp/util/auth.go"
+    ],
+    "test_files": [
+      "internal/auth/generic/generic_test.go",
+      "internal/auth/google/google_test.go",
+      "internal/server/mcp/util/auth_test.go",
+      "internal/server/server_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-8fcc-w5hv-4gxv",
+    "summary": "googleapis/mcp-toolbox: authentication bypass vulnerability in the generic opaque token validation path (validateOpaqueToken)",
+    "complexity": 123.4
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "tilt-dev/tilt",
+    "fix_sha": "47393fba7f6ef5e305d5e814551feef8e4acbc0a",
+    "pr": "6776",
+    "cve": "CVE-2026-55884",
+    "ghsa": "GHSA-c73q-8xxr-rgqm",
+    "severity": "critical",
+    "cwes": [
+      "CWE-306"
+    ],
+    "cwe": "CWE-306",
+    "n_files": 9,
+    "n_src": 6,
+    "n_test": 2,
+    "src_changed_lines": 216,
+    "src_files": [
+      "internal/cli/flags.go",
+      "internal/cli/utils.go",
+      "internal/hud/server/controller.go",
+      "internal/hud/server/gorilla/origin.go",
+      "internal/hud/server/server.go",
+      "internal/hud/server/websocket.go"
+    ],
+    "test_files": [
+      "internal/hud/server/apiserver_test.go",
+      "internal/hud/server/server_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-c73q-8xxr-rgqm",
+    "summary": "Tilt: Missing authentication on the network-exposed Tilt HUD server",
+    "complexity": 73.6
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "forgekeep/nebula-mesh",
+    "fix_sha": "9d8bcd7667ecd0c2975cc71fb35a02fe131f76f2",
+    "pr": null,
+    "cve": "CVE-2026-47724",
+    "ghsa": "GHSA-598g-h2vc-h5vg",
+    "severity": "critical",
+    "cwes": [
+      "CWE-862"
+    ],
+    "cwe": "CWE-862",
+    "n_files": 10,
+    "n_src": 7,
+    "n_test": 3,
+    "src_changed_lines": 53,
+    "src_files": [
+      "internal/api/audit.go",
+      "internal/api/authz.go",
+      "internal/api/cas.go",
+      "internal/api/hosts.go",
+      "internal/api/networks.go",
+      "internal/api/operators.go"
+    ],
+    "test_files": [
+      "internal/api/authz_test.go",
+      "internal/api/inflight_authz_test.go",
+      "internal/web/oidc_disable_cascade_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-598g-h2vc-h5vg",
+    "summary": "nebula-mesh: API endpoints lack ownership checks, enabling cross-operator privilege escalation",
+    "complexity": 65.3
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "apache/polaris",
+    "fix_sha": "f86ce44053e52f77331d212106a9ab6b83c5cace",
+    "pr": null,
+    "cve": "CVE-2026-42811",
+    "ghsa": "GHSA-fc3h-c6h7-r83j",
+    "severity": "critical",
+    "cwes": [
+      "CWE-20"
+    ],
+    "cwe": "CWE-20",
+    "n_files": 8,
+    "n_src": 4,
+    "n_test": 4,
+    "src_changed_lines": 180,
+    "src_files": [
+      "polaris-core/src/main/java/org/apache/polaris/core/storage/StorageUri.java",
+      "polaris-core/src/main/java/org/apache/polaris/core/storage/StorageUtil.java",
+      "polaris-core/src/main/java/org/apache/polaris/core/storage/aws/AwsCredentialsStorageIntegration.java",
+      "polaris-core/src/main/java/org/apache/polaris/core/storage/gcp/GcpCredentialsStorageIntegration.java"
+    ],
+    "test_files": [
+      "polaris-core/src/test/java/org/apache/polaris/core/storage/StorageUriTest.java",
+      "polaris-core/src/test/java/org/apache/polaris/service/storage/aws/AwsCredentialsStorageIntegrationTest.java",
+      "polaris-core/src/test/java/org/apache/polaris/service/storage/gcp/GcpCredentialsStorageIntegrationTest.java",
+      "runtime/service/src/intTest/java/org/apache/polaris/service/it/RestCatalogMinIOSpecialIT.java"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-fc3h-c6h7-r83j",
+    "summary": "Apache Polaris has an Improper Input Validation issue",
+    "complexity": 54.0
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "openmrs/openmrs-core",
+    "fix_sha": "8d1c193",
+    "pr": null,
+    "cve": "CVE-2026-41258",
+    "ghsa": "GHSA-xj4f-8jjg-vx4q",
+    "severity": "critical",
+    "cwes": [
+      "CWE-94"
+    ],
+    "cwe": "CWE-94",
+    "n_files": 2,
+    "n_src": 1,
+    "n_test": 1,
+    "src_changed_lines": 692,
+    "src_files": [
+      "api/src/main/java/org/openmrs/util/ConceptReferenceRangeUtility.java"
+    ],
+    "test_files": [
+      "api/src/test/java/org/openmrs/util/ConceptReferenceRangeUtilityTest.java"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-xj4f-8jjg-vx4q",
+    "summary": "OpenMRS has Stored Velocity SSTI to RCE via ConceptReferenceRange",
+    "complexity": 48.0
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "apache/camel",
+    "fix_sha": "05cffa5ec05ff2ec3c50a77825625da6e426e7a8",
+    "pr": null,
+    "cve": "CVE-2026-33453",
+    "ghsa": "GHSA-695c-x5gc-94gj",
+    "severity": "critical",
+    "cwes": [
+      "CWE-915"
+    ],
+    "cwe": "CWE-915",
+    "n_files": 21,
+    "n_src": 4,
+    "n_test": 1,
+    "src_changed_lines": 93,
+    "src_files": [
+      "components/camel-coap/src/main/java/org/apache/camel/coap/CamelCoapResource.java",
+      "components/camel-coap/src/main/java/org/apache/camel/coap/CoAPComponent.java",
+      "components/camel-coap/src/main/java/org/apache/camel/coap/CoAPEndpoint.java",
+      "components/camel-coap/src/main/java/org/apache/camel/coap/CoAPHeaderFilterStrategy.java"
+    ],
+    "test_files": [
+      "components/camel-coap/src/test/java/org/apache/camel/coap/CoAPHeaderFilterStrategyTest.java"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-695c-x5gc-94gj",
+    "summary": "Apache camel-coap allows header injection that can lead to remote code execution",
+    "complexity": 45.3
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "ArcadeData/arcadedb",
+    "fix_sha": "04110c06315da55604ac107f71fe7182f3a3deb8",
+    "pr": null,
+    "cve": "CVE-2026-44221",
+    "ghsa": "GHSA-fxc7-fm93-6q77",
+    "severity": "critical",
+    "cwes": [
+      "CWE-863"
+    ],
+    "cwe": "CWE-863",
+    "n_files": 4,
+    "n_src": 3,
+    "n_test": 1,
+    "src_changed_lines": 51,
+    "src_files": [
+      "engine/src/main/java/com/arcadedb/schema/LocalDocumentType.java",
+      "server/src/main/java/com/arcadedb/server/ArcadeDBServer.java",
+      "server/src/main/java/com/arcadedb/server/security/ServerSecurity.java"
+    ],
+    "test_files": [
+      "server/src/test/java/com/arcadedb/server/security/CrossDatabaseAccessIT.java"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-fxc7-fm93-6q77",
+    "summary": "ArcadeDB vulnerable to cross-database authorization bypass and unsecured newly-created databases",
+    "complexity": 33.1
+  },
+  {
+    "lang": "Python",
+    "ecosystem": "pip",
+    "repo": "langflow-ai/langflow",
+    "fix_sha": "2c9f498d664a3c32698b57d7c5e752625291060e",
+    "pr": "12832",
+    "cve": "CVE-2026-55255",
+    "ghsa": "GHSA-qrpv-q767-xqq2",
+    "severity": "critical",
+    "cwes": [
+      "CWE-639"
+    ],
+    "cwe": "CWE-639",
+    "n_files": 4,
+    "n_src": 2,
+    "n_test": 2,
+    "src_changed_lines": 62,
+    "src_files": [
+      "src/backend/base/langflow/api/v1/endpoints.py",
+      "src/backend/base/langflow/helpers/flow.py"
+    ],
+    "test_files": [
+      "src/backend/tests/unit/helpers/test_flow_helpers.py",
+      "src/backend/tests/unit/test_endpoints.py"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-qrpv-q767-xqq2",
+    "summary": "Langflow: IDOR Vulnerability in `/api/v1/responses` Endpoint Allows Authenticated Attackers to Access Another User's Flow",
+    "complexity": 26.2
+  },
+  {
+    "lang": "Python",
+    "ecosystem": "pip",
+    "repo": "langflow-ai/langflow",
+    "fix_sha": "99da6d05879758b7757521e88d5aee0aff55d41f",
+    "pr": "12831",
+    "cve": "CVE-2026-55450",
+    "ghsa": "GHSA-x223-p2gf-v735",
+    "severity": "critical",
+    "cwes": [
+      "CWE-200",
+      "CWE-306",
+      "CWE-400"
+    ],
+    "cwe": "CWE-200",
+    "n_files": 4,
+    "n_src": 2,
+    "n_test": 2,
+    "src_changed_lines": 51,
+    "src_files": [
+      "src/backend/base/langflow/api/v1/endpoints.py",
+      "src/lfx/src/lfx/load/utils.py"
+    ],
+    "test_files": [
+      "src/backend/tests/unit/api/v1/test_endpoints.py",
+      "src/lfx/tests/unit/load/test_upload.py"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-x223-p2gf-v735",
+    "summary": "Langflow: Unauthenticated file upload leads to DoS (space exhaustion) and information leak",
+    "complexity": 25.1
+  },
+  {
+    "lang": "Python",
+    "ecosystem": "pip",
+    "repo": "jupyter-server/jupyter_server",
+    "fix_sha": "6cbee8d65e71abac851c4492fea987ad080580bd",
+    "pr": null,
+    "cve": "CVE-2026-44727",
+    "ghsa": "GHSA-fcw5-x6j4-ccmp",
+    "severity": "critical",
+    "cwes": [
+      "CWE-79",
+      "CWE-1021"
+    ],
+    "cwe": "CWE-79",
+    "n_files": 4,
+    "n_src": 2,
+    "n_test": 1,
+    "src_changed_lines": 26,
+    "src_files": [
+      "jupyter_server/nbconvert/handlers.py",
+      "jupyter_server/serverapp.py"
+    ],
+    "test_files": [
+      "tests/nbconvert/test_handlers.py"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-fcw5-x6j4-ccmp",
+    "summary": "Jupyter Server: Stored XSS in `NbconvertFileHandler` / `NbconvertPostHandler` via missing `sandbox` CSP ",
+    "complexity": 22.6
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "apache/polaris",
+    "fix_sha": "c98d610bc8f7ee237b272e01814391838dd6abf9",
+    "pr": null,
+    "cve": "CVE-2026-42809",
+    "ghsa": "GHSA-8ggj-j522-h5qf",
+    "severity": "critical",
+    "cwes": [
+      "CWE-20"
+    ],
+    "cwe": "CWE-20",
+    "n_files": 4,
+    "n_src": 2,
+    "n_test": 2,
+    "src_changed_lines": 22,
+    "src_files": [
+      "runtime/service/src/main/java/org/apache/polaris/service/catalog/iceberg/IcebergCatalog.java",
+      "runtime/service/src/main/java/org/apache/polaris/service/catalog/iceberg/IcebergCatalogHandler.java"
+    ],
+    "test_files": [
+      "runtime/service/src/test/java/org/apache/polaris/service/catalog/iceberg/IcebergAllowedLocationTest.java",
+      "runtime/service/src/test/java/org/apache/polaris/service/catalog/iceberg/IcebergOverlappingTableTest.java"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-8ggj-j522-h5qf",
+    "summary": "Apache Polaris has an Improper Input Validation Issue",
+    "complexity": 22.2
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "xwiki/xwiki-platform",
+    "fix_sha": "4b7b95b79256374d487e9ece1dc48f527966990f",
+    "pr": null,
+    "cve": "CVE-2026-33137",
+    "ghsa": "GHSA-qrvh-r3f2-9h4r",
+    "severity": "critical",
+    "cwes": [
+      "CWE-862"
+    ],
+    "cwe": "CWE-862",
+    "n_files": 4,
+    "n_src": 1,
+    "n_test": 3,
+    "src_changed_lines": 13,
+    "src_files": [
+      "xwiki-platform-core/xwiki-platform-rest/xwiki-platform-rest-server/src/main/java/org/xwiki/rest/internal/resources/wikis/WikiResourceImpl.java"
+    ],
+    "test_files": [
+      "xwiki-platform-core/xwiki-platform-rest/xwiki-platform-rest-test/xwiki-platform-rest-test-docker/src/test/it/org/xwiki/attachment/test/ui/docker/WikisIT.java",
+      "xwiki-platform-core/xwiki-platform-rest/xwiki-platform-rest-test/xwiki-platform-rest-test-docker/src/test/resources/Main.Foo.xar",
+      "xwiki-platform-core/xwiki-platform-rest/xwiki-platform-rest-test/xwiki-platform-rest-test-tests/src/test/it/org/xwiki/rest/test/WikisResourceIT.java"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-qrvh-r3f2-9h4r",
+    "summary": "XWiki Platform has an Unauthenticated XAR Import via REST /wikis/{wikiName}",
+    "complexity": 13.3
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "apache/kafka",
+    "fix_sha": "01d8e7db8d08dbd538892b409457ea6bfcc2a422",
+    "pr": null,
+    "cve": "CVE-2026-33557",
+    "ghsa": "GHSA-28jg-cgg7-j4wc",
+    "severity": "critical",
+    "cwes": [
+      "CWE-1285"
+    ],
+    "cwe": "CWE-1285",
+    "n_files": 3,
+    "n_src": 1,
+    "n_test": 2,
+    "src_changed_lines": 10,
+    "src_files": [
+      "clients/src/main/java/org/apache/kafka/common/security/oauthbearer/DefaultJwtValidator.java"
+    ],
+    "test_files": [
+      "clients/src/test/java/org/apache/kafka/common/security/oauthbearer/DefaultJwtValidatorTest.java",
+      "core/src/test/scala/integration/kafka/api/ClientOAuthIntegrationTest.scala"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-28jg-cgg7-j4wc",
+    "summary": "Apache Kafka does not validate JWT tokens in its OAUTHBEARER authentication implementation",
+    "complexity": 13.0
+  },
+  {
+    "lang": "Python",
+    "ecosystem": "pip",
+    "repo": "apache/airflow",
+    "fix_sha": "16547dfef2e09c3f56fa5af978d075ce1ca65fb6",
+    "pr": "67985",
+    "cve": "CVE-2026-50203",
+    "ghsa": "GHSA-qf38-jq28-3ccq",
+    "severity": "critical",
+    "cwes": [
+      "CWE-22"
+    ],
+    "cwe": "CWE-22",
+    "n_files": 2,
+    "n_src": 1,
+    "n_test": 1,
+    "src_changed_lines": 37,
+    "src_files": [
+      "providers/sftp/src/airflow/providers/sftp/hooks/sftp.py"
+    ],
+    "test_files": [
+      "providers/sftp/tests/unit/sftp/hooks/test_sftp.py"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-qf38-jq28-3ccq",
+    "summary": "Apache Airflow SFTP provider: Path traversal in SFTPHook.retrieve_directory",
+    "complexity": 11.7
+  },
+  {
+    "lang": "Python",
+    "ecosystem": "pip",
+    "repo": "aws/amazon-redshift-python-driver",
+    "fix_sha": "69a69dfdead75918e20384da52bcd760ded8dbca",
+    "pr": null,
+    "cve": "CVE-2026-8838",
+    "ghsa": "GHSA-29h4-r29x-hchv",
+    "severity": "critical",
+    "cwes": [
+      "CWE-94"
+    ],
+    "cwe": "CWE-94",
+    "n_files": 2,
+    "n_src": 1,
+    "n_test": 1,
+    "src_changed_lines": 25,
+    "src_files": [
+      "redshift_connector/utils/type_utils.py"
+    ],
+    "test_files": [
+      "test/unit/test_type_utils.py"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-29h4-r29x-hchv",
+    "summary": "amazon-redshift-python-driver vulnerable to Remote Code Execution via eval() Injection",
+    "complexity": 10.5
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "googleapis/mcp-toolbox",
+    "fix_sha": "1d8df0df590383ba56091b6e4d7c37ab7d7d9749",
+    "pr": "3360",
+    "cve": "CVE-2026-11718",
+    "ghsa": "GHSA-wcpr-6g7x-p44r",
+    "severity": "critical",
+    "cwes": [
+      "CWE-287"
+    ],
+    "cwe": "CWE-287",
+    "n_files": 2,
+    "n_src": 1,
+    "n_test": 1,
+    "src_changed_lines": 16,
+    "src_files": [
+      "internal/auth/generic/generic.go"
+    ],
+    "test_files": [
+      "internal/auth/generic/generic_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-wcpr-6g7x-p44r",
+    "summary": "googleapis/mcp-toolbox: authentication bypass vulnerability in the generic opaque token validation path (validateOpaqueToken)",
+    "complexity": 9.6
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "iBotPeaches/Apktool",
+    "fix_sha": "e10a0450c7afcd9462c0b76bcbff0e7428b92bdd",
+    "pr": null,
+    "cve": "CVE-2026-39973",
+    "ghsa": "GHSA-m8mh-x359-vm8m",
+    "severity": "high",
+    "cwes": [
+      "CWE-22"
+    ],
+    "cwe": "CWE-22",
+    "n_files": 24,
+    "n_src": 20,
+    "n_test": 4,
+    "src_changed_lines": 816,
+    "src_files": [
+      "brut.apktool/apktool-cli/src/main/java/brut/apktool/Main.java",
+      "brut.apktool/apktool-lib/src/main/java/brut/androlib/Config.java",
+      "brut.apktool/apktool-lib/src/main/java/brut/androlib/res/ResourcesDecoder.java",
+      "brut.apktool/apktool-lib/src/main/java/brut/androlib/res/decoder/BinaryResourceParser.java",
+      "brut.apktool/apktool-lib/src/main/java/brut/androlib/res/decoder/BinaryXmlResourceParser.java",
+      "brut.apktool/apktool-lib/src/main/java/brut/androlib/res/decoder/ResFileDecoder.java"
+    ],
+    "test_files": [
+      "brut.apktool/apktool-lib/src/test/java/brut/androlib/BuildAndDecodeApkTest.java",
+      "brut.apktool/apktool-lib/src/test/java/brut/androlib/DecodeResolveTest.java",
+      "brut.apktool/apktool-lib/src/test/java/brut/androlib/ResourceDirectoryTraversalTest.java",
+      "brut.apktool/apktool-lib/src/test/resources/testapp/res/drawable-xhdpi/ninepatch.9.png"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-m8mh-x359-vm8m",
+    "summary": "Apktool: Path Traversal to Arbitrary File Write",
+    "complexity": 204.0
+  },
+  {
+    "lang": "JS/TS",
+    "ecosystem": "npm",
+    "repo": "eclipse-theia/theia",
+    "fix_sha": "e3fdfe6992389bc5fa611058d00c39d7408508ed",
+    "pr": null,
+    "cve": "CVE-2026-46580",
+    "ghsa": "GHSA-m973-pr9r-hp2w",
+    "severity": "high",
+    "cwes": [
+      "CWE-829"
+    ],
+    "cwe": "CWE-829",
+    "n_files": 22,
+    "n_src": 20,
+    "n_test": 2,
+    "src_changed_lines": 439,
+    "src_files": [
+      "packages/ai-chat-ui/src/browser/ai-chat-ui-contribution.ts",
+      "packages/ai-chat-ui/src/browser/chat-input-widget.tsx",
+      "packages/ai-chat-ui/src/browser/chat-tree-view/chat-view-tree-widget.tsx",
+      "packages/ai-chat-ui/src/browser/chat-view-widget-toolbar-contribution.tsx",
+      "packages/ai-chat-ui/src/browser/chat-view-widget.tsx",
+      "packages/ai-chat/src/browser/chat-tool-preference-bindings.ts"
+    ],
+    "test_files": [
+      "packages/ai-chat/src/browser/chat-tool-preference-bindings.spec.ts",
+      "packages/ai-core/src/browser/trust-aware-preference-reader.spec.ts"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-m973-pr9r-hp2w",
+    "summary": "[Eclipse Theia] Indirect Prompt Injection via Auto-Loaded Workspace Prompt Template Files in AI Chat",
+    "complexity": 204.0
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "oviva-ag/epa4all-client",
+    "fix_sha": "9111d6fbb939007036a7f74b2a93bb278cb5af32",
+    "pr": null,
+    "cve": "CVE-2026-45575",
+    "ghsa": "GHSA-gqx7-6552-67hf",
+    "severity": "high",
+    "cwes": [
+      "CWE-347"
+    ],
+    "cwe": "CWE-347",
+    "n_files": 22,
+    "n_src": 12,
+    "n_test": 10,
+    "src_changed_lines": 401,
+    "src_files": [
+      "epa4all-client/src/main/java/com/oviva/telematik/epa4all/client/Epa4AllClientFactoryBuilder.java",
+      "epa4all-client/src/main/java/com/oviva/telematik/epa4all/client/internal/Epa4AllClientFactory.java",
+      "epa4all-client/src/main/java/com/oviva/telematik/epa4all/client/internal/TelematikTrustRoots.java",
+      "epa4all-rest-service/src/main/java/com/oviva/telematik/epa4all/restservice/KeyStores.java",
+      "epa4all-rest-service/src/main/java/com/oviva/telematik/epa4all/restservice/Main.java",
+      "epa4all-vau-client/src/main/java/com/oviva/telematik/vau/epa4all/client/authz/internal/OidcClient.java"
+    ],
+    "test_files": [
+      "epa4all-client/src/test/java/com/oviva/telematik/epa4all/client/Epa4AllClientFactoryBuilderTest.java",
+      "epa4all-client/src/test/java/com/oviva/telematik/epa4all/client/internal/Epa4AllClientFactoryTest.java",
+      "epa4all-client/src/test/java/com/oviva/telematik/epa4all/client/internal/TelematikTrustRootsTest.java",
+      "epa4all-client/src/test/java/com/oviva/telematik/epa4all/client/internal/TestKonnektors.java"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-gqx7-6552-67hf",
+    "summary": "Improper Verification of Cryptographic Signature in com.oviva.telematik:epa4all-client",
+    "complexity": 140.0
+  },
+  {
+    "lang": "JS/TS",
+    "ecosystem": "npm",
+    "repo": "ruvnet/agentic-flow",
+    "fix_sha": "0c2ec967736a8b6b85832c6bae2a3e74989705ec",
+    "pr": "170",
+    "cve": null,
+    "ghsa": "GHSA-vcv2-r9jh-99m5",
+    "severity": "high",
+    "cwes": [
+      "CWE-78"
+    ],
+    "cwe": "CWE-78",
+    "n_files": 14,
+    "n_src": 11,
+    "n_test": 1,
+    "src_changed_lines": 453,
+    "src_files": [
+      "agentic-flow/src/mcp/fastmcp/servers/claude-flow-sdk.ts",
+      "agentic-flow/src/mcp/fastmcp/servers/http-sse.ts",
+      "agentic-flow/src/mcp/fastmcp/servers/http-streaming-updated.ts",
+      "agentic-flow/src/mcp/fastmcp/servers/poc-stdio.ts",
+      "agentic-flow/src/mcp/fastmcp/servers/stdio-full.ts",
+      "agentic-flow/src/mcp/fastmcp/tools/agent/execute.ts"
+    ],
+    "test_files": [
+      "agentic-flow/tests/security/cwe-78-mcp-execsync.test.ts"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-vcv2-r9jh-99m5",
+    "summary": "Agentic-Flow: OS Command Injection in agentic-flow MCP server tools via unsanitized tool-parameter interpolation into execSync",
+    "complexity": 132.0
+  },
+  {
+    "lang": "JS/TS",
+    "ecosystem": "npm",
+    "repo": "tinacms/tinacms",
+    "fix_sha": "c491fc55e612725f5d775eeb1fdf3f8ba82314fa",
+    "pr": "7056",
+    "cve": "CVE-2026-55660",
+    "ghsa": "GHSA-g5qx-h5f3-mp2f",
+    "severity": "high",
+    "cwes": [
+      "CWE-79",
+      "CWE-346",
+      "CWE-601",
+      "CWE-940"
+    ],
+    "cwe": "CWE-79",
+    "n_files": 20,
+    "n_src": 11,
+    "n_test": 6,
+    "src_changed_lines": 291,
+    "src_files": [
+      "packages/@tinacms/app/src/lib/graphql-reducer.ts",
+      "packages/@tinacms/app/src/lib/preview-origin.ts",
+      "packages/@tinacms/app/vitest.config.ts",
+      "packages/@tinacms/mdx/src/index.ts",
+      "packages/@tinacms/mdx/src/parse/index.ts",
+      "packages/@tinacms/mdx/src/parse/remarkToPlate.ts"
+    ],
+    "test_files": [
+      "packages/@tinacms/app/src/lib/preview-origin.test.ts",
+      "packages/@tinacms/mdx/src/parse/index.test.ts",
+      "packages/@tinacms/mdx/src/parse/remarkToPlate.test.ts",
+      "packages/tinacms/src/auth/authenticate.test.ts"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-g5qx-h5f3-mp2f",
+    "summary": "TinaCMS: Cross-origin postMessage handlers and rich-text URL-sanitization bypass enable stored XSS and session takeover",
+    "complexity": 121.1
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "forgekeep/nebula-mesh",
+    "fix_sha": "8baaace54c2a23e7c351b3efab5a31ab07b125dc",
+    "pr": null,
+    "cve": "CVE-2026-47726",
+    "ghsa": "GHSA-qm33-p5p9-f8vg",
+    "severity": "high",
+    "cwes": [
+      "CWE-285"
+    ],
+    "cwe": "CWE-285",
+    "n_files": 14,
+    "n_src": 7,
+    "n_test": 7,
+    "src_changed_lines": 338,
+    "src_files": [
+      "internal/api/audit.go",
+      "internal/api/authz.go",
+      "internal/api/firewall.go",
+      "internal/api/hosts.go",
+      "internal/api/mobile_bundle.go",
+      "internal/api/networks.go"
+    ],
+    "test_files": [
+      "internal/api/audit_authz_test.go",
+      "internal/api/authz_test.go",
+      "internal/api/firewall_authz_test.go",
+      "internal/api/hosts_authz_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-qm33-p5p9-f8vg",
+    "summary": "nebula-mesh: GET /api/v1/audit-log discloses all entries to any operator",
+    "complexity": 93.8
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "klever-io/klever-go",
+    "fix_sha": "333f6ec910906e227705fc5767dc897d8fbfc862",
+    "pr": null,
+    "cve": null,
+    "ghsa": "GHSA-74m6-4hjp-7226",
+    "severity": "high",
+    "cwes": [
+      "CWE-400"
+    ],
+    "cwe": "CWE-400",
+    "n_files": 13,
+    "n_src": 8,
+    "n_test": 5,
+    "src_changed_lines": 257,
+    "src_files": [
+      "common/errors.go",
+      "core/process/errors.go",
+      "core/process/interceptors/baseDataInterceptor.go",
+      "core/process/interceptors/multiDataInterceptor.go",
+      "core/process/interceptors/processor/hdrInterceptorProcessor.go",
+      "core/process/interceptors/processor/txInterceptorProcessor.go"
+    ],
+    "test_files": [
+      "core/process/interceptors/baseDataInterceptor_test.go",
+      "core/process/interceptors/multiDataInterceptor_test.go",
+      "core/process/interceptors/processor/hdrInterceptorProcessor_test.go",
+      "core/process/interceptors/singleDataInterceptor_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-74m6-4hjp-7226",
+    "summary": "Klever-Go P2P MultiDataInterceptor leaks global throttler slots on malformed compressed batches (DoS)",
+    "complexity": 93.7
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "Basekick-Labs/arc",
+    "fix_sha": "91bdc29d1a02178ccf8c66375eccf85203108dfb",
+    "pr": null,
+    "cve": "CVE-2026-47735",
+    "ghsa": "GHSA-p2j4-c4g6-rpf5",
+    "severity": "high",
+    "cwes": [
+      "CWE-22",
+      "CWE-200",
+      "CWE-918"
+    ],
+    "cwe": "CWE-22",
+    "n_files": 10,
+    "n_src": 6,
+    "n_test": 3,
+    "src_changed_lines": 932,
+    "src_files": [
+      "cmd/arc/main.go",
+      "internal/api/delete.go",
+      "internal/api/import.go",
+      "internal/database/duckdb.go",
+      "internal/database/duckdb_arrow.go",
+      "internal/database/sandbox.go"
+    ],
+    "test_files": [
+      "internal/api/retention_test.go",
+      "internal/database/duckdb_arcx_test.go",
+      "internal/database/duckdb_sandbox_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-p2j4-c4g6-rpf5",
+    "summary": "Arc has an authenticated arbitrary local-file read via DuckDB I/O functions that bypasses RBAC table-level checks",
+    "complexity": 92.0
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "l3montree-dev/devguard",
+    "fix_sha": "1be88ec1309a5dc0566e35a23bdc4ea3ecd11417",
+    "pr": null,
+    "cve": "CVE-2026-48089",
+    "ghsa": "GHSA-6p54-fw2f-q7gf",
+    "severity": "high",
+    "cwes": [
+      "CWE-285",
+      "CWE-863"
+    ],
+    "cwe": "CWE-285",
+    "n_files": 10,
+    "n_src": 9,
+    "n_test": 1,
+    "src_changed_lines": 59,
+    "src_files": [
+      "middlewares/access_control_middlewares.go",
+      "router/artifact_router.go",
+      "router/asset_router.go",
+      "router/asset_version_router.go",
+      "router/dependency_vuln_router.go",
+      "router/external_reference_router.go"
+    ],
+    "test_files": [
+      "router/router_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-6p54-fw2f-q7gf",
+    "summary": "DevGuard has improper authorization on public assets",
+    "complexity": 81.9
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "Basekick-Labs/arc",
+    "fix_sha": "32a4091fb949f9cf060cdd804a07f6450dc426a8",
+    "pr": null,
+    "cve": "CVE-2026-48050",
+    "ghsa": "GHSA-j93g-rp6m-j32m",
+    "severity": "high",
+    "cwes": [
+      "CWE-200",
+      "CWE-306",
+      "CWE-400"
+    ],
+    "cwe": "CWE-200",
+    "n_files": 8,
+    "n_src": 4,
+    "n_test": 3,
+    "src_changed_lines": 301,
+    "src_files": [
+      "cmd/arc/debug_pprof.go",
+      "cmd/arc/main.go",
+      "internal/api/server.go",
+      "internal/auth/middleware.go"
+    ],
+    "test_files": [
+      "cmd/arc/debug_pprof_test.go",
+      "internal/api/server_pprof_test.go",
+      "internal/auth/middleware_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-j93g-rp6m-j32m",
+    "summary": "Arc: Unauthenticated access to Go debug pprof endpoints leaks runtime state and enables CPU-burn DoS",
+    "complexity": 66.1
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "spring-projects/spring-ai",
+    "fix_sha": "59ab7521f0a8f67c89359e910a20472d572b4dd9",
+    "pr": null,
+    "cve": "CVE-2026-41712",
+    "ghsa": "GHSA-q62f-h9x2-gcqc",
+    "severity": "high",
+    "cwes": [
+      "CWE-276"
+    ],
+    "cwe": "CWE-276",
+    "n_files": 16,
+    "n_src": 6,
+    "n_test": 7,
+    "src_changed_lines": 106,
+    "src_files": [
+      "advisors/spring-ai-advisors-vector-store/src/main/java/org/springframework/ai/chat/client/advisor/vectorstore/VectorStoreChatMemoryAdvisor.java",
+      "memory/repository/spring-ai-model-chat-memory-repository-jdbc/src/main/java/org/springframework/ai/chat/memory/repository/jdbc/JdbcChatMemoryRepository.java",
+      "spring-ai-client-chat/src/main/java/org/springframework/ai/chat/client/advisor/MessageChatMemoryAdvisor.java",
+      "spring-ai-client-chat/src/main/java/org/springframework/ai/chat/client/advisor/PromptChatMemoryAdvisor.java",
+      "spring-ai-client-chat/src/main/java/org/springframework/ai/chat/client/advisor/api/BaseChatMemoryAdvisor.java",
+      "spring-ai-model/src/main/java/org/springframework/ai/chat/memory/ChatMemory.java"
+    ],
+    "test_files": [
+      "advisors/spring-ai-advisors-vector-store/src/test/java/org/springframework/ai/chat/client/advisor/vectorstore/VectorStoreChatMemoryAdvisorTests.java",
+      "auto-configurations/vector-stores/spring-ai-autoconfigure-vector-store-chroma/src/test/java/org/springframework/ai/vectorstore/chroma/autoconfigure/ChromaVectorStoreAutoConfigurationIT.java",
+      "models/spring-ai-openai/src/test/java/org/springframework/ai/openai/chat/client/OpenAiChatClientMemoryAdvisorReproIT.java",
+      "spring-ai-client-chat/src/test/java/org/springframework/ai/chat/client/ChatClientAdvisorTests.java"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-q62f-h9x2-gcqc",
+    "summary": "Spring AI: ChatMemory DEFAULT_CONVERSATION_ID causes unintended cross-user data leakage",
+    "complexity": 62.6
+  },
+  {
+    "lang": "JS/TS",
+    "ecosystem": "npm",
+    "repo": "aws/aws-cdk",
+    "fix_sha": "9bf4263ea631cae7c0cfff8872ec4fb3a3164cc1",
+    "pr": "37292",
+    "cve": "CVE-2026-11417",
+    "ghsa": "GHSA-999r-qq7v-r334",
+    "severity": "high",
+    "cwes": [
+      "CWE-78"
+    ],
+    "cwe": "CWE-78",
+    "n_files": 6,
+    "n_src": 3,
+    "n_test": 3,
+    "src_changed_lines": 341,
+    "src_files": [
+      "packages/aws-cdk-lib/aws-lambda-nodejs/lib/bundling.ts",
+      "packages/aws-cdk-lib/aws-lambda-nodejs/lib/package-manager.ts",
+      "packages/aws-cdk-lib/aws-lambda-nodejs/lib/util.ts"
+    ],
+    "test_files": [
+      "packages/aws-cdk-lib/aws-lambda-nodejs/test/bundling.test.ts",
+      "packages/aws-cdk-lib/aws-lambda-nodejs/test/package-manager.test.ts",
+      "packages/aws-cdk-lib/aws-lambda-nodejs/test/util.test.ts"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-999r-qq7v-r334",
+    "summary": "aws-cdk-lib: OS Command Injection in NodejsFunction Bundling",
+    "complexity": 62.1
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "bcgit/bc-java",
+    "fix_sha": "dc7530939ffb6cdb57636f3609d98e23b94e71c1",
+    "pr": null,
+    "cve": "CVE-2026-3505",
+    "ghsa": "GHSA-cj8j-37rh-8475",
+    "severity": "high",
+    "cwes": [
+      "CWE-400"
+    ],
+    "cwe": "CWE-400",
+    "n_files": 6,
+    "n_src": 5,
+    "n_test": 1,
+    "src_changed_lines": 179,
+    "src_files": [
+      "pg/src/main/java/org/bouncycastle/bcpg/AEADEncDataPacket.java",
+      "pg/src/main/java/org/bouncycastle/openpgp/operator/PGPAEADUtil.java",
+      "pg/src/main/java/org/bouncycastle/openpgp/operator/bc/BcAEADUtil.java",
+      "pg/src/main/java/org/bouncycastle/openpgp/operator/jcajce/JceAEADUtil.java",
+      "pg/src/main/jdk1.4/org/bouncycastle/openpgp/operator/jcajce/OperatorHelper.java"
+    ],
+    "test_files": [
+      "pg/src/test/java/org/bouncycastle/bcpg/test/OCBEncryptedDataPacketTest.java"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-cj8j-37rh-8475",
+    "summary": "Bouncy Castle Uncontrolled Resource Consumption vulnerability",
+    "complexity": 61.9
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "openbao/openbao",
+    "fix_sha": "c0495646b41cea0e3f5a1030132e9cf5c2375b5c",
+    "pr": null,
+    "cve": "CVE-2026-45808",
+    "ghsa": "GHSA-v8v8-cm84-m686",
+    "severity": "high",
+    "cwes": [
+      "CWE-863"
+    ],
+    "cwe": "CWE-863",
+    "n_files": 14,
+    "n_src": 6,
+    "n_test": 5,
+    "src_changed_lines": 24,
+    "src_files": [
+      "api/plugin_helpers.go",
+      "helper/testhelpers/logical/testing.go",
+      "vault/logical_system_paths.go",
+      "vault/policy/policy_store.go",
+      "vault/request_handling.go",
+      "vault/token_store.go"
+    ],
+    "test_files": [
+      "http/sys_lease_test.go",
+      "vault/core_test.go",
+      "vault/expiration_test.go",
+      "vault/logical_system_integ_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-v8v8-cm84-m686",
+    "summary": "OpenBao's cross-namespace lease revocation via legacy sys/revoke path bypasses ACL",
+    "complexity": 54.4
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "open-telemetry/opentelemetry-operator",
+    "fix_sha": "95a8c2a3dc64a762d3ab8eba8c903b5702a03a9c",
+    "pr": "5104",
+    "cve": "CVE-2026-47701",
+    "ghsa": "GHSA-cxh2-4639-vmc5",
+    "severity": "high",
+    "cwes": [
+      "CWE-200"
+    ],
+    "cwe": "CWE-200",
+    "n_files": 23,
+    "n_src": 5,
+    "n_test": 2,
+    "src_changed_lines": 81,
+    "src_files": [
+      "apis/v1alpha1/opentelemetrycollector_types.go",
+      "apis/v1beta1/targetallocator_types.go",
+      "cmd/otel-allocator/internal/config/config.go",
+      "cmd/otel-allocator/internal/watcher/promOperator.go",
+      "internal/manifests/targetallocator/configmap.go"
+    ],
+    "test_files": [
+      "cmd/otel-allocator/internal/watcher/promOperator_denyfs_test.go",
+      "internal/manifests/targetallocator/configmap_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-cxh2-4639-vmc5",
+    "summary": "OpenTelemetry Operator for Kubernetes's ServiceMonitor bearerTokenFile reads arbitrary local file and sends contents as bearer auth",
+    "complexity": 52.1
+  },
+  {
+    "lang": "JS/TS",
+    "ecosystem": "npm",
+    "repo": "angular/angular",
+    "fix_sha": "5f36274da3f961430ae72865159afa02a1dd9133",
+    "pr": null,
+    "cve": "CVE-2026-54266",
+    "ghsa": "GHSA-39pv-4j6c-2g6v",
+    "severity": "high",
+    "cwes": [
+      "CWE-328",
+      "CWE-345"
+    ],
+    "cwe": "CWE-328",
+    "n_files": 3,
+    "n_src": 1,
+    "n_test": 1,
+    "src_changed_lines": 376,
+    "src_files": [
+      "packages/common/http/src/transfer_cache.ts"
+    ],
+    "test_files": [
+      "packages/common/http/test/transfer_cache_spec.ts"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-39pv-4j6c-2g6v",
+    "summary": "@angular/common: Weak 32-Bit Cache Key Hashing in `HttpTransferCache` Leading to Cross-Request Data Leakage and State Poisoning",
+    "complexity": 49.6
+  },
+  {
+    "lang": "Python",
+    "ecosystem": "pip",
+    "repo": "yt-dlp/yt-dlp",
+    "fix_sha": "5faffa999fd33b373d47773e8ee639d072accec2",
+    "pr": null,
+    "cve": null,
+    "ghsa": "GHSA-69qj-pvh9-c5wg",
+    "severity": "high",
+    "cwes": [
+      "CWE-78"
+    ],
+    "cwe": "CWE-78",
+    "n_files": 7,
+    "n_src": 5,
+    "n_test": 1,
+    "src_changed_lines": 53,
+    "src_files": [
+      "yt_dlp/YoutubeDL.py",
+      "yt_dlp/__init__.py",
+      "yt_dlp/options.py",
+      "yt_dlp/postprocessor/exec.py",
+      "yt_dlp/utils/_utils.py"
+    ],
+    "test_files": [
+      "test/test_postprocessors.py"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-69qj-pvh9-c5wg",
+    "summary": "yt-dlp: Arbitrary command injection possible if --exec option used with yt-dlp",
+    "complexity": 49.3
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "cometd/cometd",
+    "fix_sha": "1df70a2563fc53f2d8a280735c302bfae674c392",
+    "pr": "2118",
+    "cve": "CVE-2025-53114",
+    "ghsa": "GHSA-cqgj-h8vf-4w59",
+    "severity": "high",
+    "cwes": [
+      "CWE-400"
+    ],
+    "cwe": "CWE-400",
+    "n_files": 8,
+    "n_src": 4,
+    "n_test": 3,
+    "src_changed_lines": 128,
+    "src_files": [
+      "cometd-documentation/src/main/java/org/cometd/documentation/SecurityDocs.java",
+      "cometd-java/cometd-java-server/cometd-java-server-common/src/main/java/org/cometd/server/ext/AcknowledgedMessagesExtension.java",
+      "cometd-java/cometd-java-server/cometd-java-server-common/src/main/java/org/cometd/server/ext/AcknowledgedMessagesSessionExtension.java",
+      "cometd-java/cometd-java-server/cometd-java-server-common/src/main/java/org/cometd/server/ext/BatchArrayQueue.java"
+    ],
+    "test_files": [
+      "cometd-java/cometd-java-server/cometd-java-server-common/src/test/java/org/cometd/server/ext/BatchArrayQueueTest.java",
+      "cometd-java/cometd-java-server/cometd-java-server-http/cometd-java-server-http-tests/src/test/java/org/cometd/server/http/MaxQueuedTest.java",
+      "cometd-java/cometd-java-tests/cometd-java-tests-common/src/test/java/org/cometd/tests/AckExtensionTest.java"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-cqgj-h8vf-4w59",
+    "summary": "Acknowledgement extension out of memory",
+    "complexity": 48.8
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "zitadel/zitadel",
+    "fix_sha": "0973b074b48816757c47fe732b06d2488d3d284c",
+    "pr": null,
+    "cve": "CVE-2026-55672",
+    "ghsa": "GHSA-xqxv-4jc2-x56x",
+    "severity": "high",
+    "cwes": [
+      "CWE-287",
+      "CWE-863"
+    ],
+    "cwe": "CWE-287",
+    "n_files": 8,
+    "n_src": 5,
+    "n_test": 3,
+    "src_changed_lines": 32,
+    "src_files": [
+      "internal/api/oidc/token_code.go",
+      "internal/api/oidc/token_device.go",
+      "internal/api/oidc/token_refresh.go",
+      "internal/command/device_auth.go",
+      "internal/command/oidc_session.go"
+    ],
+    "test_files": [
+      "internal/api/oidc/integration_test/auth_request_test.go",
+      "internal/api/oidc/integration_test/token_device_test.go",
+      "internal/command/oidc_session_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-xqxv-4jc2-x56x",
+    "summary": " ZITADEL: Missing client_id binding in OIDC authorization code exchange and refresh token flows (RFC 6749 Section 4.1.3 violation)",
+    "complexity": 47.2
+  },
+  {
+    "lang": "JS/TS",
+    "ecosystem": "npm",
+    "repo": "Budibase/budibase",
+    "fix_sha": "cf66fb45d27402bace312d85616ddd4257f3a5aa",
+    "pr": null,
+    "cve": "CVE-2026-50132",
+    "ghsa": "GHSA-v7j5-vc4m-723w",
+    "severity": "high",
+    "cwes": [
+      "CWE-284",
+      "CWE-352"
+    ],
+    "cwe": "CWE-284",
+    "n_files": 5,
+    "n_src": 4,
+    "n_test": 1,
+    "src_changed_lines": 91,
+    "src_files": [
+      "packages/server/src/api/controllers/ai/chatIdentityLinks.ts",
+      "packages/server/src/api/routes/chat.ts",
+      "packages/server/src/sdk/workspace/ai/chatIdentityLinks.ts",
+      "packages/types/src/sdk/chatIdentityLinks.ts"
+    ],
+    "test_files": [
+      "packages/server/src/api/routes/tests/ai/agentSlack.spec.ts"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-v7j5-vc4m-723w",
+    "summary": "Budibase has an Account Impersonation Issue \u2014 Chat Identity Link Hijacking via Missing Consent & CSRF",
+    "complexity": 45.1
+  },
+  {
+    "lang": "JS/TS",
+    "ecosystem": "npm",
+    "repo": "tinacms/tinacms",
+    "fix_sha": "77665ae73dd4f9563d339535e76fa811a8abdfbb",
+    "pr": null,
+    "cve": "CVE-2026-54074",
+    "ghsa": "GHSA-4936-9hrh-qqpw",
+    "severity": "high",
+    "cwes": [
+      "CWE-94"
+    ],
+    "cwe": "CWE-94",
+    "n_files": 6,
+    "n_src": 4,
+    "n_test": 1,
+    "src_changed_lines": 87,
+    "src_files": [
+      "packages/@tinacms/cli/src/cmds/forestry-migrate/index.ts",
+      "packages/@tinacms/cli/src/cmds/forestry-migrate/util/codeTransformer.ts",
+      "packages/@tinacms/cli/src/cmds/forestry-migrate/util/index.ts",
+      "packages/@tinacms/cli/src/cmds/forestry-migrate/util/naming.ts"
+    ],
+    "test_files": [
+      "packages/@tinacms/cli/src/cmds/forestry-migrate/util/codeTransformer.test.ts"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-4936-9hrh-qqpw",
+    "summary": "@tinacms/cli: Remote Code Execution in @tinacms/cli via Forestry migration \u2014 unsanitised __TINA_INTERNAL__ marker in user-controlled YAML la",
+    "complexity": 44.7
+  },
+  {
+    "lang": "JS/TS",
+    "ecosystem": "npm",
+    "repo": "angular/angular",
+    "fix_sha": "1307ff355c99befd35642f0f1ac22009320ca1db",
+    "pr": "68928",
+    "cve": "CVE-2026-50168",
+    "ghsa": "GHSA-xrxm-cp7j-8xf6",
+    "severity": "high",
+    "cwes": [
+      "CWE-346",
+      "CWE-918"
+    ],
+    "cwe": "CWE-346",
+    "n_files": 7,
+    "n_src": 4,
+    "n_test": 3,
+    "src_changed_lines": 81,
+    "src_files": [
+      "packages/platform-server/src/location.ts",
+      "packages/platform-server/src/server.ts",
+      "packages/platform-server/src/url.ts",
+      "packages/platform-server/src/utils.ts"
+    ],
+    "test_files": [
+      "packages/platform-server/test/platform_location_spec.ts",
+      "packages/platform-server/test/url_spec.ts",
+      "packages/platform-server/test/utils_spec.ts"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-xrxm-cp7j-8xf6",
+    "summary": "@angular/platform-server: URL Parser Differential leading to SSRF Allowlist Bypass",
+    "complexity": 44.1
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "apache/httpcomponents-client",
+    "fix_sha": "726eac2323d370435d8afca1e0540aa099927f18",
+    "pr": null,
+    "cve": "CVE-2026-40542",
+    "ghsa": "GHSA-v468-qcjx-r72w",
+    "severity": "high",
+    "cwes": [
+      "CWE-304"
+    ],
+    "cwe": "CWE-304",
+    "n_files": 6,
+    "n_src": 3,
+    "n_test": 3,
+    "src_changed_lines": 129,
+    "src_files": [
+      "httpclient5/src/main/java/org/apache/hc/client5/http/impl/DefaultAuthenticationStrategy.java",
+      "httpclient5/src/main/java/org/apache/hc/client5/http/impl/auth/AuthenticationHandler.java",
+      "httpclient5/src/main/java/org/apache/hc/client5/http/impl/auth/ScramScheme.java"
+    ],
+    "test_files": [
+      "httpclient5/src/test/java/org/apache/hc/client5/http/examples/ClientScramAuthentication.java",
+      "httpclient5/src/test/java/org/apache/hc/client5/http/impl/auth/TestAuthenticationHandler.java",
+      "httpclient5/src/test/java/org/apache/hc/client5/http/impl/auth/TestScramScheme.java"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-v468-qcjx-r72w",
+    "summary": "Apache HttpClient accepts SCRAM-SHA-256 authentication without proper mutual authentication verification",
+    "complexity": 40.9
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "getarcaneapp/arcane",
+    "fix_sha": "b6cbffabf61dbc3f12a28d3b5830e3c6b7e67daf",
+    "pr": null,
+    "cve": "CVE-2026-47179",
+    "ghsa": "GHSA-c3px-h233-h6fq",
+    "severity": "high",
+    "cwes": [
+      "CWE-22"
+    ],
+    "cwe": "CWE-22",
+    "n_files": 4,
+    "n_src": 2,
+    "n_test": 2,
+    "src_changed_lines": 201,
+    "src_files": [
+      "backend/internal/services/project_service.go",
+      "backend/pkg/projects/includes.go"
+    ],
+    "test_files": [
+      "backend/internal/services/project_service_test.go",
+      "backend/pkg/projects/includes_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-c3px-h233-h6fq",
+    "summary": "Arcane Has an Authenticated Arbitrary Host File Read via Docker Compose Include Directives",
+    "complexity": 40.1
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "nezhahq/nezha",
+    "fix_sha": "02129f16fb1572ef57c7e8dd7d03f84d39b8b586",
+    "pr": null,
+    "cve": "CVE-2026-48119",
+    "ghsa": "GHSA-4g6j-g789-rghm",
+    "severity": "high",
+    "cwes": [
+      "CWE-862"
+    ],
+    "cwe": "CWE-862",
+    "n_files": 4,
+    "n_src": 2,
+    "n_test": 2,
+    "src_changed_lines": 157,
+    "src_files": [
+      "service/singleton/crontask.go",
+      "service/singleton/servicesentinel.go"
+    ],
+    "test_files": [
+      "service/rpc/request_task_security_test.go",
+      "service/singleton/security_regression_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-4g6j-g789-rghm",
+    "summary": "Nezha's authenticated agents can forge service-monitor results for other users' services",
+    "complexity": 35.7
+  },
+  {
+    "lang": "Python",
+    "ecosystem": "pip",
+    "repo": "vllm-project/vllm",
+    "fix_sha": "b3c7ffcab82c2439726f8cb213800f6f38c023d3",
+    "pr": null,
+    "cve": "CVE-2026-41523",
+    "ghsa": "GHSA-q8gq-377p-jq3r",
+    "severity": "high",
+    "cwes": [
+      "CWE-94",
+      "CWE-617"
+    ],
+    "cwe": "CWE-94",
+    "n_files": 4,
+    "n_src": 3,
+    "n_test": 1,
+    "src_changed_lines": 52,
+    "src_files": [
+      "vllm/model_executor/layers/pooler/activations.py",
+      "vllm/pooling_params.py",
+      "vllm/v1/pool/metadata.py"
+    ],
+    "test_files": [
+      "tests/model_executor/layers/test_pooler_activations.py"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-q8gq-377p-jq3r",
+    "summary": "vLLM: Security Check Bypass via assert Statement in Activation Function Loading Allows Arbitrary Code Execution",
+    "complexity": 33.2
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "apache/camel",
+    "fix_sha": "6ec12cbebfc1b6360cdaac1c1f8c681864911695",
+    "pr": null,
+    "cve": "CVE-2026-40022",
+    "ghsa": "GHSA-27vm-5vpj-rp5g",
+    "severity": "high",
+    "cwes": [
+      "CWE-288"
+    ],
+    "cwe": "CWE-288",
+    "n_files": 8,
+    "n_src": 3,
+    "n_test": 4,
+    "src_changed_lines": 43,
+    "src_files": [
+      "components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/BasicAuthenticationConfigurer.java",
+      "components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/JWTAuthenticationConfigurer.java",
+      "components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/MainAuthenticationConfigurer.java"
+    ],
+    "test_files": [
+      "components/camel-platform-http-main/src/test/java/org/apache/camel/component/platform/http/main/authentication/BasicAuthenticationNonRootPathTest.java",
+      "components/camel-platform-http-main/src/test/java/org/apache/camel/component/platform/http/main/authentication/BasicAuthenticationSelectivePathTest.java",
+      "components/camel-platform-http-main/src/test/resources/basic-auth-nonroot-path-selective.properties",
+      "components/camel-platform-http-main/src/test/resources/basic-auth-nonroot-path.properties"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-27vm-5vpj-rp5g",
+    "summary": "Apache Camel Vulnerable to Authentication Bypass Using an Alternate Path or Channel",
+    "complexity": 32.3
+  },
+  {
+    "lang": "JS/TS",
+    "ecosystem": "npm",
+    "repo": "OpenZeppelin/contracts-wizard",
+    "fix_sha": "ec12c44f8d9e0491eba31037f95b36e98ec58b5f",
+    "pr": null,
+    "cve": "CVE-2026-48054",
+    "ghsa": "GHSA-4x76-22x2-rx8v",
+    "severity": "high",
+    "cwes": [
+      "CWE-94"
+    ],
+    "cwe": "CWE-94",
+    "n_files": 11,
+    "n_src": 3,
+    "n_test": 3,
+    "src_changed_lines": 41,
+    "src_files": [
+      "packages/core/solidity/src/utils/sanitize.ts",
+      "packages/core/solidity/src/zip-foundry.ts",
+      "packages/core/solidity/src/zip-hardhat.ts"
+    ],
+    "test_files": [
+      "packages/core/solidity/src/utils/sanitize.test.ts",
+      "packages/core/solidity/src/zip-foundry.test.ts",
+      "packages/core/solidity/src/zip-hardhat.test.ts"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-4x76-22x2-rx8v",
+    "summary": "OpenZeppelin Contracts Wizard has Code Injection in Generated Hardhat and Foundry Tests via Unsanitized opts.name / opts.uri",
+    "complexity": 32.1
+  },
+  {
+    "lang": "JS/TS",
+    "ecosystem": "npm",
+    "repo": "earendil-works/pi",
+    "fix_sha": "a98e087e5d08ea2a536bf73dbb0aebb87c3ef72e",
+    "pr": null,
+    "cve": "CVE-2026-54328",
+    "ghsa": "GHSA-jfgx-wxx8-mp94",
+    "severity": "high",
+    "cwes": [
+      "CWE-379"
+    ],
+    "cwe": "CWE-379",
+    "n_files": 5,
+    "n_src": 2,
+    "n_test": 2,
+    "src_changed_lines": 99,
+    "src_files": [
+      "packages/coding-agent/src/core/package-manager.ts",
+      "packages/coding-agent/src/utils/git.ts"
+    ],
+    "test_files": [
+      "packages/coding-agent/test/git-ssh-url.test.ts",
+      "packages/coding-agent/test/package-manager.test.ts"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-jfgx-wxx8-mp94",
+    "summary": "Pi Agent: Predictable temporary extension install paths allow local privilege escalation on shared Linux hosts",
+    "complexity": 29.9
+  },
+  {
+    "lang": "Python",
+    "ecosystem": "pip",
+    "repo": "pipecat-ai/pipecat",
+    "fix_sha": "3032da53434c5ef01d368654b3551cf21c50dec9",
+    "pr": "4660",
+    "cve": "CVE-2026-54695",
+    "ghsa": "GHSA-j8cv-x86q-rj85",
+    "severity": "high",
+    "cwes": [
+      "CWE-862"
+    ],
+    "cwe": "CWE-862",
+    "n_files": 4,
+    "n_src": 1,
+    "n_test": 1,
+    "src_changed_lines": 174,
+    "src_files": [
+      "src/pipecat/runner/run.py"
+    ],
+    "test_files": [
+      "tests/test_runner_run.py"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-j8cv-x86q-rj85",
+    "summary": "Pipecat: Telephony WebSocket `/ws` Unauthenticated Call-Control Abuse via Attacker-Supplied Call SID",
+    "complexity": 29.4
+  },
+  {
+    "lang": "Python",
+    "ecosystem": "pip",
+    "repo": "Q00/ouroboros",
+    "fix_sha": "4e70b760b4eb157469b58645339ba831f6513d37",
+    "pr": null,
+    "cve": "CVE-2026-47211",
+    "ghsa": "GHSA-c4m7-2gwp-vw76",
+    "severity": "high",
+    "cwes": [
+      "CWE-426"
+    ],
+    "cwe": "CWE-426",
+    "n_files": 4,
+    "n_src": 2,
+    "n_test": 2,
+    "src_changed_lines": 68,
+    "src_files": [
+      "src/ouroboros/config/loader.py",
+      "src/ouroboros/providers/claude_code_adapter.py"
+    ],
+    "test_files": [
+      "tests/unit/config/test_loader_env.py",
+      "tests/unit/providers/test_claude_code_adapter.py"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-c4m7-2gwp-vw76",
+    "summary": "ouroboros-ai Vulnerable to Remote Code Execution via Untrusted Project-Directory .env",
+    "complexity": 26.8
+  },
+  {
+    "lang": "JS/TS",
+    "ecosystem": "npm",
+    "repo": "parse-community/parse-server",
+    "fix_sha": "1103c7a890e0455ba3dccd4bc5db17efe1789c9a",
+    "pr": "10511",
+    "cve": null,
+    "ghsa": "GHSA-cgxm-vr2f-6fj8",
+    "severity": "high",
+    "cwes": [
+      "CWE-407"
+    ],
+    "cwe": "CWE-407",
+    "n_files": 4,
+    "n_src": 2,
+    "n_test": 2,
+    "src_changed_lines": 50,
+    "src_files": [
+      "src/LiveQuery/ParseLiveQueryServer.ts",
+      "src/RestQuery.js"
+    ],
+    "test_files": [
+      "spec/ParseLiveQueryServer.spec.js",
+      "spec/RequestComplexity.spec.js"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-cgxm-vr2f-6fj8",
+    "summary": "parse-server: Denial of service via exponential-time processing of deeply nested query operators",
+    "complexity": 25.0
+  },
+  {
+    "lang": "JS/TS",
+    "ecosystem": "npm",
+    "repo": "CycloneDX/cyclonedx-node-npm",
+    "fix_sha": "9f646253f4263d8644dadb86e5597fad996f688f",
+    "pr": "1476",
+    "cve": "CVE-2026-55849",
+    "ghsa": "GHSA-v75r-vx73-82pj",
+    "severity": "high",
+    "cwes": [
+      "CWE-78"
+    ],
+    "cwe": "CWE-78",
+    "n_files": 5,
+    "n_src": 2,
+    "n_test": 1,
+    "src_changed_lines": 35,
+    "src_files": [
+      "src/npmRunner.ts",
+      "tests/integration/index.js"
+    ],
+    "test_files": [
+      "tests/integration/cli.args-pass-through.test.js"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-v75r-vx73-82pj",
+    "summary": "@cyclonedx/cyclonedx-npm: Shell Injection via Unsanitized --workspace Argument",
+    "complexity": 23.5
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "nuclio/nuclio",
+    "fix_sha": "1915cd26d514dcdd487517d4be56673fc02298e0",
+    "pr": null,
+    "cve": "CVE-2026-45730",
+    "ghsa": "GHSA-m8xg-8xg9-mxhm",
+    "severity": "high",
+    "cwes": [
+      "CWE-862"
+    ],
+    "cwe": "CWE-862",
+    "n_files": 4,
+    "n_src": 2,
+    "n_test": 2,
+    "src_changed_lines": 31,
+    "src_files": [
+      "pkg/dashboard/resource/project.go",
+      "pkg/platform/kube/platform.go"
+    ],
+    "test_files": [
+      "pkg/dashboard/test/server_test.go",
+      "pkg/platform/kube/platform_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-m8xg-8xg9-mxhm",
+    "summary": "Nuclio: Missing authorization on project write paths allows any authenticated user to modify or delete any project",
+    "complexity": 23.1
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "dexidp/dex",
+    "fix_sha": "204dbb2e3ff7692af3b7ca4362b1ee46fb43c227",
+    "pr": null,
+    "cve": null,
+    "ghsa": "GHSA-7qjx-gp9h-65qj",
+    "severity": "high",
+    "cwes": [
+      "CWE-285"
+    ],
+    "cwe": "CWE-285",
+    "n_files": 4,
+    "n_src": 2,
+    "n_test": 2,
+    "src_changed_lines": 16,
+    "src_files": [
+      "connector/authproxy/authproxy.go",
+      "connector/oauth/oauth.go"
+    ],
+    "test_files": [
+      "connector/authproxy/authproxy_test.go",
+      "connector/oauth/oauth_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-7qjx-gp9h-65qj",
+    "summary": "Dex: Token-exchange endpoint is missing AllowedConnectors enforcement",
+    "complexity": 21.6
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "oviva-ag/epa4all-client",
+    "fix_sha": "e13fa838c7b2c7e66f9abfffbe108a85f2f4d0c6",
+    "pr": "34",
+    "cve": "CVE-2026-44900",
+    "ghsa": "GHSA-g8r3-5hwf-qp96",
+    "severity": "high",
+    "cwes": [
+      "CWE-295"
+    ],
+    "cwe": "CWE-295",
+    "n_files": 4,
+    "n_src": 2,
+    "n_test": 2,
+    "src_changed_lines": 14,
+    "src_files": [
+      "vau/vau-httpclient/src/main/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorFactory.java",
+      "vau/vau-httpclient/src/main/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorImpl.java"
+    ],
+    "test_files": [
+      "vau/vau-httpclient/src/test/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorFactoryTest.java",
+      "vau/vau-httpclient/src/test/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorImplTest.java"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-g8r3-5hwf-qp96",
+    "summary": "epa4all-client has a VAU Signature bypass",
+    "complexity": 21.4
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "keycloak/keycloak",
+    "fix_sha": "be84d28ce4c69c038d542f11405d5ede1d61f4a9",
+    "pr": null,
+    "cve": "CVE-2026-7307",
+    "ghsa": "GHSA-p5mv-gj8j-xqgf",
+    "severity": "high",
+    "cwes": [
+      "CWE-1286"
+    ],
+    "cwe": "CWE-1286",
+    "n_files": 8,
+    "n_src": 2,
+    "n_test": 6,
+    "src_changed_lines": 12,
+    "src_files": [
+      "saml-core/src/main/java/org/keycloak/saml/processing/core/parsers/saml/SAMLParser.java",
+      "saml-core/src/main/java/org/keycloak/saml/processing/core/parsers/util/SAML11ParserUtil.java"
+    ],
+    "test_files": [
+      "saml-core/src/test/java/org/keycloak/saml/processing/core/parsers/saml/SAMLAttributeQueryParserTest.java",
+      "saml-core/src/test/java/org/keycloak/saml/processing/core/parsers/saml/SAMLParserTest.java",
+      "saml-core/src/test/resources/org/keycloak/saml/processing/core/parsers/saml/saml11-assertion-not-wellformed.xml",
+      "saml-core/src/test/resources/org/keycloak/saml/processing/core/parsers/saml/saml11-attributequery-not-wellformed.xml"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-p5mv-gj8j-xqgf",
+    "summary": "Keycloak: Denial of Service via specially crafted SAML input",
+    "complexity": 21.2
+  },
+  {
+    "lang": "JS/TS",
+    "ecosystem": "npm",
+    "repo": "remix-run/react-router",
+    "fix_sha": "59811921d3c7d599077b8cadccdcd65a233165e0",
+    "pr": null,
+    "cve": "CVE-2026-34077",
+    "ghsa": "GHSA-rxv8-25v2-qmq8",
+    "severity": "high",
+    "cwes": [
+      "CWE-770"
+    ],
+    "cwe": "CWE-770",
+    "n_files": 4,
+    "n_src": 2,
+    "n_test": 1,
+    "src_changed_lines": 10,
+    "src_files": [
+      "packages/react-router/vendor/turbo-stream-v2/flatten.ts",
+      "packages/react-router/vendor/turbo-stream-v2/unflatten.ts"
+    ],
+    "test_files": [
+      "packages/react-router/__tests__/vendor/turbo-stream-test.ts"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-rxv8-25v2-qmq8",
+    "summary": "React Router vulnerable to Denial of Service via reflected user input in single-fetch",
+    "complexity": 21.0
+  },
+  {
+    "lang": "JS/TS",
+    "ecosystem": "npm",
+    "repo": "kerberosmansour/hulumi",
+    "fix_sha": "9f1059ff37d38e5506dc71bb00909542ab118d57",
+    "pr": "175",
+    "cve": "CVE-2026-48034",
+    "ghsa": "GHSA-9vc9-4jv3-rf86",
+    "severity": "high",
+    "cwes": [
+      "CWE-284"
+    ],
+    "cwe": "CWE-284",
+    "n_files": 2,
+    "n_src": 1,
+    "n_test": 1,
+    "src_changed_lines": 91,
+    "src_files": [
+      "packages/policies/src/aws/hulumi-hardening-pack.ts"
+    ],
+    "test_files": [
+      "packages/policies/tests/hulumi-hardening-pack.test.ts"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-9vc9-4jv3-rf86",
+    "summary": "@hulumi/policies has a HULUMI-H5 bypass via decoy sibling resources targeting a different bucket",
+    "complexity": 17.1
+  },
+  {
+    "lang": "Python",
+    "ecosystem": "pip",
+    "repo": "jelmer/dulwich",
+    "fix_sha": "e3331b3b3a122fc313460182f928f59723580b7b",
+    "pr": null,
+    "cve": "CVE-2026-42563",
+    "ghsa": "GHSA-9277-mp7x-85jf",
+    "severity": "high",
+    "cwes": [
+      "CWE-78"
+    ],
+    "cwe": "CWE-78",
+    "n_files": 3,
+    "n_src": 1,
+    "n_test": 1,
+    "src_changed_lines": 27,
+    "src_files": [
+      "dulwich/merge_drivers.py"
+    ],
+    "test_files": [
+      "tests/test_merge_drivers.py"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-9277-mp7x-85jf",
+    "summary": "Dulwich Vulnerable to Command Injection via Merge Driver Path",
+    "complexity": 14.7
+  },
+  {
+    "lang": "Python",
+    "ecosystem": "pip",
+    "repo": "pdm-project/pdm",
+    "fix_sha": "41aa5f94a30e51b1a460af27312dd9dc532aad5a",
+    "pr": "3787",
+    "cve": "CVE-2026-47764",
+    "ghsa": "GHSA-78v8-vpjp-cjqh",
+    "severity": "high",
+    "cwes": [
+      "CWE-22"
+    ],
+    "cwe": "CWE-22",
+    "n_files": 12,
+    "n_src": 1,
+    "n_test": 1,
+    "src_changed_lines": 24,
+    "src_files": [
+      "src/pdm/installers/installers.py"
+    ],
+    "test_files": [
+      "tests/test_installer.py"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-78v8-vpjp-cjqh",
+    "summary": "PDM  wheel installation leads to Path Traversal via overridden write_to_fs",
+    "complexity": 14.4
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "AsyncHttpClient/async-http-client",
+    "fix_sha": "3b0e3e9e",
+    "pr": null,
+    "cve": "CVE-2026-45300",
+    "ghsa": "GHSA-fmxf-pm6p-7xgm",
+    "severity": "high",
+    "cwes": [
+      "CWE-200"
+    ],
+    "cwe": "CWE-200",
+    "n_files": 5,
+    "n_src": 1,
+    "n_test": 1,
+    "src_changed_lines": 15,
+    "src_files": [
+      "client/src/main/java/org/asynchttpclient/netty/handler/intercept/Redirect30xInterceptor.java"
+    ],
+    "test_files": [
+      "client/src/test/java/org/asynchttpclient/RedirectCredentialSecurityTest.java"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-fmxf-pm6p-7xgm",
+    "summary": "async-http-client: Cookie header not stripped on cross-origin redirect",
+    "complexity": 13.5
+  },
+  {
+    "lang": "JS/TS",
+    "ecosystem": "npm",
+    "repo": "appium/appium-mcp",
+    "fix_sha": "e222bbbd6fe2b656a320efcd143563f08061a83d",
+    "pr": null,
+    "cve": null,
+    "ghsa": "GHSA-x975-rgx4-5fh4",
+    "severity": "high",
+    "cwes": [
+      "CWE-79"
+    ],
+    "cwe": "CWE-79",
+    "n_files": 2,
+    "n_src": 1,
+    "n_test": 1,
+    "src_changed_lines": 33,
+    "src_files": [
+      "src/ui/mcp-ui-utils.ts"
+    ],
+    "test_files": [
+      "src/tests/mcp-ui-utils.test.ts"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-x975-rgx4-5fh4",
+    "summary": "appium-mcp: Unescaped Locator Data XSS in MCP-UI Resource (createLocatorGeneratorUI)",
+    "complexity": 11.3
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "appsmithorg/appsmith",
+    "fix_sha": "c8023ba4b3b54204ff3309c9e5c33664ad15ba32",
+    "pr": null,
+    "cve": null,
+    "ghsa": "GHSA-h8cj-hpmg-636v",
+    "severity": "high",
+    "cwes": [
+      "CWE-89"
+    ],
+    "cwe": "CWE-89",
+    "n_files": 2,
+    "n_src": 1,
+    "n_test": 1,
+    "src_changed_lines": 16,
+    "src_files": [
+      "app/server/appsmith-interfaces/src/main/java/com/appsmith/external/services/ce/FilterDataServiceCE.java"
+    ],
+    "test_files": [
+      "app/server/appsmith-interfaces/src/test/java/com/appsmith/external/services/FilterDataServiceTest.java"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-h8cj-hpmg-636v",
+    "summary": "appsmith has SQL Injection in FilterDataService via Unsafe DROP TABLE Execution",
+    "complexity": 9.6
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "keycloak/keycloak",
+    "fix_sha": "56bbfa3d8abccf39df787ae73e044a75aba1da13",
+    "pr": null,
+    "cve": "CVE-2026-7571",
+    "ghsa": "GHSA-hq3p-w4xv-x7vp",
+    "severity": "high",
+    "cwes": [
+      "CWE-472"
+    ],
+    "cwe": "CWE-472",
+    "n_files": 2,
+    "n_src": 1,
+    "n_test": 1,
+    "src_changed_lines": 6,
+    "src_files": [
+      "services/src/main/java/org/keycloak/services/resources/SessionCodeChecks.java"
+    ],
+    "test_files": [
+      "testsuite/integration-arquillian/tests/base/src/test/java/org/keycloak/testsuite/forms/MultipleTabsLoginTest.java"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-hq3p-w4xv-x7vp",
+    "summary": "Keycloak: Access token disclosure and implicit flow bypass via forged client data",
+    "complexity": 8.6
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "datasharingframework/dsf",
+    "fix_sha": "7d25feafb83d66cb59985ac88568b67d937b1937",
+    "pr": null,
+    "cve": "CVE-2026-40939",
+    "ghsa": "GHSA-gj7p-595x-qwf5",
+    "severity": "medium",
+    "cwes": [
+      "CWE-613"
+    ],
+    "cwe": "CWE-613",
+    "n_files": 21,
+    "n_src": 17,
+    "n_test": 4,
+    "src_changed_lines": 337,
+    "src_files": [
+      "dsf-bpe/dsf-bpe-server/src/main/java/dev/dsf/bpe/authentication/IdentityProviderImpl.java",
+      "dsf-common/dsf-common-auth/src/main/java/dev/dsf/common/auth/DsfOpenIdCredentials.java",
+      "dsf-common/dsf-common-auth/src/main/java/dev/dsf/common/auth/conf/AbstractIdentity.java",
+      "dsf-common/dsf-common-auth/src/main/java/dev/dsf/common/auth/conf/AbstractIdentityProvider.java",
+      "dsf-common/dsf-common-auth/src/main/java/dev/dsf/common/auth/conf/Identity.java",
+      "dsf-common/dsf-common-auth/src/main/java/dev/dsf/common/auth/conf/PractitionerIdentityImpl.java"
+    ],
+    "test_files": [
+      "dsf-fhir/dsf-fhir-server/src/test/java/dev/dsf/fhir/authentication/IdentityProviderTest.java",
+      "dsf-fhir/dsf-fhir-server/src/test/java/dev/dsf/fhir/authorization/process/TestOrganizationIdentity.java",
+      "dsf-fhir/dsf-fhir-server/src/test/java/dev/dsf/fhir/authorization/process/TestPractitionerIdentity.java",
+      "dsf-fhir/dsf-fhir-server/src/test/java/dev/dsf/fhir/dao/TestOrganizationIdentity.java"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-gj7p-595x-qwf5",
+    "summary": "Data Sharing Framework is Missing Session Timeout for OIDC Sessions",
+    "complexity": 173.7
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "nhost/nhost",
+    "fix_sha": "e407511627d2c2c1137a70e9ca1ca31095d23479",
+    "pr": null,
+    "cve": "CVE-2026-47671",
+    "ghsa": "GHSA-64cj-qvx5-m4f3",
+    "severity": "medium",
+    "cwes": [
+      "CWE-306"
+    ],
+    "cwe": "CWE-306",
+    "n_files": 31,
+    "n_src": 16,
+    "n_test": 3,
+    "src_changed_lines": 1009,
+    "src_files": [
+      "cli/clienv/appid.go",
+      "cli/clienv/filesystem.go",
+      "cli/cmd/configserver/configserver.go",
+      "cli/cmd/configserver/local.go",
+      "cli/cmd/dev/cloud.go",
+      "cli/cmd/dev/up.go"
+    ],
+    "test_files": [
+      "cli/cmd/configserver/configserver_test.go",
+      "cli/cmd/configserver/local_test.go",
+      "internal/lib/oapi/middleware/cors_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-64cj-qvx5-m4f3",
+    "summary": "Nhost CLI local configserver allows cross-origin unauthenticated read/write access to local development configuration and secrets",
+    "complexity": 172.0
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "openbao/openbao",
+    "fix_sha": "db57c62602b25da12951f3f0edb888e7c4da61e5",
+    "pr": null,
+    "cve": "CVE-2026-55776",
+    "ghsa": "GHSA-8w8f-r2xv-4q4j",
+    "severity": "medium",
+    "cwes": [
+      "CWE-617"
+    ],
+    "cwe": "CWE-617",
+    "n_files": 25,
+    "n_src": 18,
+    "n_test": 6,
+    "src_changed_lines": 148,
+    "src_files": [
+      "builtin/logical/transit/backend.go",
+      "builtin/logical/transit/path_byok.go",
+      "builtin/logical/transit/path_certificates.go",
+      "builtin/logical/transit/path_datakey.go",
+      "builtin/logical/transit/path_decrypt.go",
+      "builtin/logical/transit/path_derive_key.go"
+    ],
+    "test_files": [
+      "builtin/logical/transit/backend_test.go",
+      "builtin/logical/transit/path_hmac_test.go",
+      "builtin/logical/transit/path_keys_test.go",
+      "builtin/logical/transit/path_sign_verify_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-8w8f-r2xv-4q4j",
+    "summary": "OpenBao: Transit secrets engine crashes on key creation with `derived: true` for asymmetric key types",
+    "complexity": 162.8
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "entireio/cli",
+    "fix_sha": "1cf0e84f92ca8e69b76f3a432ac5655959ec83e7",
+    "pr": "1365",
+    "cve": null,
+    "ghsa": "GHSA-2h46-9x5w-4wf7",
+    "severity": "medium",
+    "cwes": [
+      "CWE-22",
+      "CWE-73"
+    ],
+    "cwe": "CWE-22",
+    "n_files": 20,
+    "n_src": 12,
+    "n_test": 8,
+    "src_changed_lines": 319,
+    "src_files": [
+      "cmd/entire/cli/agent/agent.go",
+      "cmd/entire/cli/agent/claudecode/transcript.go",
+      "cmd/entire/cli/agent/factoryaidroid/transcript.go",
+      "cmd/entire/cli/agent/pi/lifecycle.go",
+      "cmd/entire/cli/lifecycle.go",
+      "cmd/entire/cli/osroot/osroot.go"
+    ],
+    "test_files": [
+      "cmd/entire/cli/agent/codex/security_contract_test.go",
+      "cmd/entire/cli/agent/copilotcli/security_contract_test.go",
+      "cmd/entire/cli/agent/pi/lifecycle_test.go",
+      "cmd/entire/cli/lifecycle_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-2h46-9x5w-4wf7",
+    "summary": "Entire CLI: Path traversal in checkpoint session metadata allows arbitrary file write during resume/rewind",
+    "complexity": 131.9
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "datasharingframework/dsf",
+    "fix_sha": "31c2e974dfd4351756104ee8c53dbcd666192fef",
+    "pr": null,
+    "cve": "CVE-2026-40942",
+    "ghsa": "GHSA-xmj9-7625-f634",
+    "severity": "medium",
+    "cwes": [
+      "CWE-670"
+    ],
+    "cwe": "CWE-670",
+    "n_files": 8,
+    "n_src": 7,
+    "n_test": 1,
+    "src_changed_lines": 259,
+    "src_files": [
+      "dsf-bpe/dsf-bpe-server/src/main/java/dev/dsf/bpe/client/oidc/OidcClientJersey.java",
+      "dsf-bpe/dsf-bpe-server/src/main/java/dev/dsf/bpe/client/oidc/OidcClientWithCache.java",
+      "dsf-common/dsf-common-jetty/src/main/java/dev/dsf/common/auth/DsfOpenIdLoginService.java",
+      "dsf-common/dsf-common-jetty/src/main/java/dev/dsf/common/config/AbstractJettyConfig.java",
+      "dsf-common/dsf-common-oidc/src/main/java/dev/dsf/common/oidc/BaseOidcClientWithCache.java",
+      "dsf-common/dsf-common-oidc/src/main/java/dev/dsf/common/oidc/Jwks.java"
+    ],
+    "test_files": [
+      "dsf-common/dsf-common-oidc/src/test/java/dev/dsf/common/oidc/JwksTest.java"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-xmj9-7625-f634",
+    "summary": "Data Sharing Framework has an Inverted Time Comparison in OIDC JWKS and Token Cache",
+    "complexity": 85.9
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "awspring/spring-cloud-aws",
+    "fix_sha": "6ab2efd97891a3d0ed0126ffa1ce223c9cfa9638",
+    "pr": null,
+    "cve": "CVE-2026-44308",
+    "ghsa": "GHSA-r4w4-wv68-qv85",
+    "severity": "medium",
+    "cwes": [
+      "CWE-345"
+    ],
+    "cwe": "CWE-345",
+    "n_files": 16,
+    "n_src": 7,
+    "n_test": 5,
+    "src_changed_lines": 157,
+    "src_files": [
+      "spring-cloud-aws-autoconfigure/src/main/java/io/awspring/cloud/autoconfigure/sns/SnsAutoConfiguration.java",
+      "spring-cloud-aws-autoconfigure/src/main/java/io/awspring/cloud/autoconfigure/sns/SnsProperties.java",
+      "spring-cloud-aws-sns/src/main/java/io/awspring/cloud/sns/configuration/NotificationHandlerMethodArgumentResolverConfigurationUtils.java",
+      "spring-cloud-aws-sns/src/main/java/io/awspring/cloud/sns/handlers/NotificationMessageHandlerMethodArgumentResolver.java",
+      "spring-cloud-aws-sns/src/main/java/io/awspring/cloud/sns/handlers/NotificationStatusHandlerMethodArgumentResolver.java",
+      "spring-cloud-aws-sns/src/main/java/io/awspring/cloud/sns/handlers/legacy/LegacyJackson2NotificationMessageHandlerMethodArgumentResolver.java"
+    ],
+    "test_files": [
+      "spring-cloud-aws-autoconfigure/src/test/java/io/awspring/cloud/autoconfigure/sns/SnsAutoConfigurationTest.java",
+      "spring-cloud-aws-sns/src/test/java/io/awspring/cloud/sns/endpoint/ComplexNotificationEndpointControllerTest.java",
+      "spring-cloud-aws-sns/src/test/java/io/awspring/cloud/sns/endpoint/MethodEndpointControllerTest.java",
+      "spring-cloud-aws-sns/src/test/java/io/awspring/cloud/sns/endpoint/NotificationEndpointControllerTest.java"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-r4w4-wv68-qv85",
+    "summary": "Spring Cloud AWS missing SNS message signature verification allows spoofing of HTTP/HTTPS endpoint notifications",
+    "complexity": 75.7
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "open-telemetry/opentelemetry-go",
+    "fix_sha": "aa1894e09e3fe66860c7885cb40f98901b35277f",
+    "pr": "7880",
+    "cve": "CVE-2026-41178",
+    "ghsa": "GHSA-5wrp-cwcj-q835",
+    "severity": "medium",
+    "cwes": [
+      "CWE-789"
+    ],
+    "cwe": "CWE-789",
+    "n_files": 12,
+    "n_src": 5,
+    "n_test": 6,
+    "src_changed_lines": 299,
+    "src_files": [
+      "baggage/baggage.go",
+      "internal/errorhandler/errorhandler.go",
+      "internal/global/handler.go",
+      "internal/global/state.go",
+      "propagation/baggage.go"
+    ],
+    "test_files": [
+      "baggage/baggage_test.go",
+      "internal/errorhandler/errorhandler_test.go",
+      "internal/global/handler_test.go",
+      "internal/global/state_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-5wrp-cwcj-q835",
+    "summary": "opentelemetry-go's baggage parsing no longer caps raw header length",
+    "complexity": 73.9
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "metal3-io/ironic-standalone-operator",
+    "fix_sha": "be8984c4ffec0087f0afa1baf7295cc1885ffec5",
+    "pr": "619",
+    "cve": null,
+    "ghsa": "GHSA-hfc8-w5f4-3x6m",
+    "severity": "medium",
+    "cwes": [
+      "CWE-862"
+    ],
+    "cwe": "CWE-862",
+    "n_files": 9,
+    "n_src": 7,
+    "n_test": 2,
+    "src_changed_lines": 111,
+    "src_files": [
+      "api/v1alpha1/common.go",
+      "internal/controller/ironic_controller.go",
+      "internal/controller/utils.go",
+      "pkg/ironic/secrets.go",
+      "pkg/secretutils/label.go",
+      "pkg/secretutils/secret_manager.go"
+    ],
+    "test_files": [
+      "pkg/secretutils/secret_manager_test.go",
+      "test/suite_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-hfc8-w5f4-3x6m",
+    "summary": "Ironic Standalone Operator's controller modifies user-owned resources without consent",
+    "complexity": 71.1
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "AdguardTeam/dnsproxy",
+    "fix_sha": "f00d992ce9567a50f596853978ad6500acfdcf1d",
+    "pr": null,
+    "cve": "CVE-2026-47703",
+    "ghsa": "GHSA-xgx4-4h9w-53pv",
+    "severity": "medium",
+    "cwes": [
+      "CWE-362",
+      "CWE-662"
+    ],
+    "cwe": "CWE-362",
+    "n_files": 15,
+    "n_src": 7,
+    "n_test": 4,
+    "src_changed_lines": 65,
+    "src_files": [
+      "internal/cmd/proxy.go",
+      "proxy/errors.go",
+      "proxy/errors_plan9.go",
+      "upstream/doh.go",
+      "upstream/doq.go",
+      "upstream/plain.go"
+    ],
+    "test_files": [
+      "proxy/errors_internal_test.go",
+      "proxy/proxy_internal_test.go",
+      "proxy/serverquic_internal_test.go",
+      "upstream/dot_internal_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-xgx4-4h9w-53pv",
+    "summary": "AdGuard Home: DoQ-to-UDP State Reduction and Source-Port Oracle",
+    "complexity": 66.5
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "canonical/microceph",
+    "fix_sha": "5c2760d8fb765d670e2673d3a537b67eae4b67c6",
+    "pr": null,
+    "cve": "CVE-2026-10720",
+    "ghsa": "GHSA-xg3j-c7q4-f9ph",
+    "severity": "medium",
+    "cwes": [
+      "CWE-23"
+    ],
+    "cwe": "CWE-23",
+    "n_files": 9,
+    "n_src": 6,
+    "n_test": 2,
+    "src_changed_lines": 112,
+    "src_files": [
+      "microceph/api/cluster.go",
+      "microceph/api/remote.go",
+      "microceph/ceph/configwriter.go",
+      "microceph/ceph/rbd_mirror.go",
+      "microceph/constants/constants.go",
+      "microceph/database/remote_extras.go"
+    ],
+    "test_files": [
+      "microceph/api/remote_test.go",
+      "microceph/ceph/configwriter_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-xg3j-c7q4-f9ph",
+    "summary": "Canonical MicroCeph: path traversal issue in the remote-import AP",
+    "complexity": 63.2
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "open-telemetry/opentelemetry-java",
+    "fix_sha": "03837d3c1763bc35464aea1078671e2ef2336a5f",
+    "pr": null,
+    "cve": "CVE-2026-45292",
+    "ghsa": "GHSA-rcgg-9c38-7xpx",
+    "severity": "medium",
+    "cwes": [
+      "CWE-770"
+    ],
+    "cwe": "CWE-770",
+    "n_files": 7,
+    "n_src": 4,
+    "n_test": 3,
+    "src_changed_lines": 174,
+    "src_files": [
+      "api/all/src/main/java/io/opentelemetry/api/baggage/propagation/Parser.java",
+      "api/all/src/main/java/io/opentelemetry/api/baggage/propagation/W3CBaggagePropagator.java",
+      "extensions/trace-propagators/src/main/java/io/opentelemetry/extension/trace/propagation/JaegerPropagator.java",
+      "extensions/trace-propagators/src/main/java/io/opentelemetry/extension/trace/propagation/OtTracePropagator.java"
+    ],
+    "test_files": [
+      "api/all/src/test/java/io/opentelemetry/api/baggage/propagation/W3CBaggagePropagatorTest.java",
+      "extensions/trace-propagators/src/test/java/io/opentelemetry/extension/trace/propagation/JaegerPropagatorTest.java",
+      "extensions/trace-propagators/src/test/java/io/opentelemetry/extension/trace/propagation/OtTracePropagatorTest.java"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-rcgg-9c38-7xpx",
+    "summary": "OpenTelemetry Java SDK has Unbounded Memory Allocation in W3C Baggage Propagation",
+    "complexity": 53.4
+  },
+  {
+    "lang": "Python",
+    "ecosystem": "pip",
+    "repo": "mvantellingen/python-zeep",
+    "fix_sha": "83eb07bc6c84d841329d4f88856fecdba86f753e",
+    "pr": null,
+    "cve": null,
+    "ghsa": "GHSA-4cc2-g9w2-fhf6",
+    "severity": "medium",
+    "cwes": [
+      "CWE-918"
+    ],
+    "cwe": "CWE-918",
+    "n_files": 8,
+    "n_src": 5,
+    "n_test": 2,
+    "src_changed_lines": 84,
+    "src_files": [
+      "src/zeep/exceptions.py",
+      "src/zeep/loader.py",
+      "src/zeep/settings.py",
+      "src/zeep/wsdl/wsdl.py",
+      "src/zeep/xsd/schema.py"
+    ],
+    "test_files": [
+      "tests/test_loader.py",
+      "tests/test_xsd_schemas.py"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-4cc2-g9w2-fhf6",
+    "summary": "Zeep: Server-Side Request Forgery (SSRF)",
+    "complexity": 52.4
+  },
+  {
+    "lang": "JS/TS",
+    "ecosystem": "npm",
+    "repo": "honojs/hono",
+    "fix_sha": "c831020fb1fa2e929d222f6c84e1abfe013e512b",
+    "pr": null,
+    "cve": "CVE-2026-47674",
+    "ghsa": "GHSA-xrhx-7g5j-rcj5",
+    "severity": "medium",
+    "cwes": [
+      "CWE-185",
+      "CWE-1289"
+    ],
+    "cwe": "CWE-185",
+    "n_files": 4,
+    "n_src": 2,
+    "n_test": 2,
+    "src_changed_lines": 313,
+    "src_files": [
+      "src/middleware/ip-restriction/index.ts",
+      "src/utils/ipaddr.ts"
+    ],
+    "test_files": [
+      "src/middleware/ip-restriction/index.test.ts",
+      "src/utils/ipaddr.test.ts"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-xrhx-7g5j-rcj5",
+    "summary": "Hono: IP Restriction bypasses static deny rules for non-canonical IPv6 ",
+    "complexity": 51.3
+  },
+  {
+    "lang": "JS/TS",
+    "ecosystem": "npm",
+    "repo": "typeorm/typeorm",
+    "fix_sha": "1b66c44d0410bdc56a0dcefb46be41867ec0fffc",
+    "pr": null,
+    "cve": null,
+    "ghsa": "GHSA-9ggv-8w38-r7pm",
+    "severity": "medium",
+    "cwes": [
+      "CWE-89"
+    ],
+    "cwe": "CWE-89",
+    "n_files": 5,
+    "n_src": 4,
+    "n_test": 1,
+    "src_changed_lines": 145,
+    "src_files": [
+      "src/query-builder/QueryBuilder.ts",
+      "src/query-builder/SelectQueryBuilder.ts",
+      "src/query-builder/SoftDeleteQueryBuilder.ts",
+      "src/query-builder/UpdateQueryBuilder.ts"
+    ],
+    "test_files": [
+      "test/other-issues/preventing-injection/preventing-injection.test.ts"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-9ggv-8w38-r7pm",
+    "summary": "TypeORM: SQL Injection in UpdateQueryBuilder/SoftDeleteQueryBuilder orderBy (MySQL/MariaDB)",
+    "complexity": 50.5
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "OliveTin/OliveTin",
+    "fix_sha": "ebffd9f040f791208aee1db2e5a8aecd1e3e603d",
+    "pr": null,
+    "cve": "CVE-2026-53541",
+    "ghsa": "GHSA-prj9-97mp-mwh2",
+    "severity": "medium",
+    "cwes": [
+      "CWE-20"
+    ],
+    "cwe": "CWE-20",
+    "n_files": 9,
+    "n_src": 4,
+    "n_test": 3,
+    "src_changed_lines": 134,
+    "src_files": [
+      "service/internal/config/config.go",
+      "service/internal/config/sanitize.go",
+      "service/internal/executor/arguments.go",
+      "service/internal/executor/executor.go"
+    ],
+    "test_files": [
+      "service/internal/config/sanitize_test.go",
+      "service/internal/executor/arguments_test.go",
+      "service/internal/executor/executor_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-prj9-97mp-mwh2",
+    "summary": "OliveTin has Unvalidated `ot_`-prefixed Arguments that Bypass Input Filtering",
+    "complexity": 49.4
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "baomidou/dynamic-datasource",
+    "fix_sha": "273fcedaee984c08197c0890f14190b86ab7e0b8",
+    "pr": null,
+    "cve": "CVE-2026-7045",
+    "ghsa": "GHSA-6rmm-pg23-5f8q",
+    "severity": "medium",
+    "cwes": [
+      "CWE-74"
+    ],
+    "cwe": "CWE-74",
+    "n_files": 6,
+    "n_src": 5,
+    "n_test": 1,
+    "src_changed_lines": 43,
+    "src_files": [
+      "dynamic-datasource-spring-boot-common/src/main/java/com/baomidou/dynamic/datasource/spring/boot/autoconfigure/DynamicDatasourceAopProperties.java",
+      "dynamic-datasource-spring-boot-starter/src/main/java/com/baomidou/dynamic/datasource/spring/boot/autoconfigure/DynamicDataSourceAopConfiguration.java",
+      "dynamic-datasource-spring-boot3-starter/src/main/java/com/baomidou/dynamic/datasource/spring/boot/autoconfigure/DynamicDataSourceAopConfiguration.java",
+      "dynamic-datasource-spring-boot4-starter/src/main/java/com/baomidou/dynamic/datasource/spring/boot/autoconfigure/DynamicDataSourceAopConfiguration.java",
+      "dynamic-datasource-spring/src/main/java/com/baomidou/dynamic/datasource/processor/DsSpelExpressionProcessor.java"
+    ],
+    "test_files": [
+      "dynamic-datasource-spring-boot3-starter/src/test/java/com/baomidou/dynamic/datasource/common/v3/DsSpelExpressionProcessorSecurityTest.java"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-6rmm-pg23-5f8q",
+    "summary": "Dynamic-Datasource has an Injection vulnerability",
+    "complexity": 48.3
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "spring-projects/spring-security",
+    "fix_sha": "163772775036c4146815a5266874278c6f45f047",
+    "pr": null,
+    "cve": "CVE-2026-22751",
+    "ghsa": "GHSA-x2wq-9x2f-fhj7",
+    "severity": "medium",
+    "cwes": [
+      "CWE-367"
+    ],
+    "cwe": "CWE-367",
+    "n_files": 8,
+    "n_src": 4,
+    "n_test": 4,
+    "src_changed_lines": 80,
+    "src_files": [
+      "core/src/main/java/org/springframework/security/authentication/dao/AbstractUserDetailsAuthenticationProvider.java",
+      "core/src/main/java/org/springframework/security/authentication/ott/JdbcOneTimeTokenService.java",
+      "oauth2/oauth2-jose/src/main/java/org/springframework/security/oauth2/jwt/NimbusJwtDecoder.java",
+      "oauth2/oauth2-jose/src/main/java/org/springframework/security/oauth2/jwt/NimbusReactiveJwtDecoder.java"
+    ],
+    "test_files": [
+      "core/src/test/java/org/springframework/security/authentication/dao/DaoAuthenticationProviderTests.java",
+      "core/src/test/java/org/springframework/security/authentication/ott/JdbcOneTimeTokenServiceTests.java",
+      "oauth2/oauth2-jose/src/test/java/org/springframework/security/oauth2/jwt/NimbusJwtDecoderTests.java",
+      "oauth2/oauth2-jose/src/test/java/org/springframework/security/oauth2/jwt/NimbusReactiveJwtDecoderTests.java"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-x2wq-9x2f-fhj7",
+    "summary": "Spring Security Core has a TOCTOU race condition when One-Time Token login with\u00a0JdbcOneTimeTokenService\u00a0is configured",
+    "complexity": 44.0
+  },
+  {
+    "lang": "JS/TS",
+    "ecosystem": "npm",
+    "repo": "parse-community/parse-server",
+    "fix_sha": "43658f1fd83689b24a4350094f1071ac555ac9b3",
+    "pr": "10493",
+    "cve": "CVE-2026-53726",
+    "ghsa": "GHSA-wmwx-jr2p-4j4r",
+    "severity": "medium",
+    "cwes": [
+      "CWE-639"
+    ],
+    "cwe": "CWE-639",
+    "n_files": 3,
+    "n_src": 2,
+    "n_test": 1,
+    "src_changed_lines": 202,
+    "src_files": [
+      "benchmark/performance.js",
+      "src/Controllers/DatabaseController.js"
+    ],
+    "test_files": [
+      "spec/vulnerabilities.spec.js"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-wmwx-jr2p-4j4r",
+    "summary": "parse-server: Relation `$relatedTo` query bypasses `protectedFields` and owning-object ACL",
+    "complexity": 40.2
+  },
+  {
+    "lang": "Python",
+    "ecosystem": "pip",
+    "repo": "aio-libs/aiohttp",
+    "fix_sha": "dfdfa9d5aad5d21f91c79fb2ceeba0f8046cb6cf",
+    "pr": null,
+    "cve": "CVE-2026-54273",
+    "ghsa": "GHSA-4fvr-rgm6-gqmc",
+    "severity": "medium",
+    "cwes": [
+      "CWE-770"
+    ],
+    "cwe": "CWE-770",
+    "n_files": 9,
+    "n_src": 3,
+    "n_test": 3,
+    "src_changed_lines": 113,
+    "src_files": [
+      "aiohttp/base_protocol.py",
+      "aiohttp/http_parser.py",
+      "aiohttp/web_protocol.py"
+    ],
+    "test_files": [
+      "tests/test_http_parser.py",
+      "tests/test_web_functional.py",
+      "tests/test_web_protocol.py"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-4fvr-rgm6-gqmc",
+    "summary": "aiohttp: HTTP/1 Pipelined Requests Queue Without Limit",
+    "complexity": 39.3
+  },
+  {
+    "lang": "Python",
+    "ecosystem": "pip",
+    "repo": "py-pdf/pypdf",
+    "fix_sha": "bbd083d1196d276d9c542418f77ac49e06de3ff1",
+    "pr": "3871",
+    "cve": null,
+    "ghsa": "GHSA-jm82-fx9c-mx94",
+    "severity": "medium",
+    "cwes": [
+      "CWE-400",
+      "CWE-770"
+    ],
+    "cwe": "CWE-400",
+    "n_files": 7,
+    "n_src": 3,
+    "n_test": 4,
+    "src_changed_lines": 88,
+    "src_files": [
+      "pypdf/_utils.py",
+      "pypdf/generic/_base.py",
+      "pypdf/generic/_data_structures.py"
+    ],
+    "test_files": [
+      "tests/generic/test_base.py",
+      "tests/generic/test_data_structures.py",
+      "tests/test_reader.py",
+      "tests/test_utils.py"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-jm82-fx9c-mx94",
+    "summary": "pypdf: Missing stream length values ignore defined limits",
+    "complexity": 36.8
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "eclipse-vertx/vert.x",
+    "fix_sha": "c64a707b6de83feeb0317e848345684860f0ab2f",
+    "pr": "6102",
+    "cve": "CVE-2026-6860",
+    "ghsa": "GHSA-3g76-f9xq-8vp6",
+    "severity": "medium",
+    "cwes": [
+      "CWE-295",
+      "CWE-770"
+    ],
+    "cwe": "CWE-295",
+    "n_files": 5,
+    "n_src": 3,
+    "n_test": 2,
+    "src_changed_lines": 82,
+    "src_files": [
+      "vertx-core/src/main/java/io/vertx/core/impl/utils/LruCache.java",
+      "vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextManager.java",
+      "vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextProvider.java"
+    ],
+    "test_files": [
+      "vertx-core/src/test/java/io/vertx/tests/net/NetTest.java",
+      "vertx-core/src/test/java/io/vertx/tests/utils/LruCacheTest.java"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-3g76-f9xq-8vp6",
+    "summary": "Vert.x has a DoS via unbounded server-side SNI SslContext cache growth",
+    "complexity": 36.2
+  },
+  {
+    "lang": "Python",
+    "ecosystem": "pip",
+    "repo": "vllm-project/vllm",
+    "fix_sha": "1b1359c33269446f13c05da9a90c25174cbea590",
+    "pr": null,
+    "cve": "CVE-2026-54233",
+    "ghsa": "GHSA-6pr9-rp53-2pmc",
+    "severity": "medium",
+    "cwes": [
+      "CWE-409"
+    ],
+    "cwe": "CWE-409",
+    "n_files": 4,
+    "n_src": 3,
+    "n_test": 1,
+    "src_changed_lines": 78,
+    "src_files": [
+      "vllm/entrypoints/speech_to_text/base/serving.py",
+      "vllm/envs.py",
+      "vllm/multimodal/media/audio.py"
+    ],
+    "test_files": [
+      "tests/multimodal/media/test_audio.py"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-6pr9-rp53-2pmc",
+    "summary": "vLLM: OOM Denial of Service via Audio Decompression Bomb",
+    "complexity": 35.8
+  },
+  {
+    "lang": "JS/TS",
+    "ecosystem": "npm",
+    "repo": "earendil-works/pi",
+    "fix_sha": "38f18be44727e669eb0a6e2eb8edb51b0232d83c",
+    "pr": null,
+    "cve": "CVE-2026-54325",
+    "ghsa": "GHSA-mqxh-6gq7-558m",
+    "severity": "medium",
+    "cwes": [
+      "CWE-829"
+    ],
+    "cwe": "CWE-829",
+    "n_files": 5,
+    "n_src": 3,
+    "n_test": 1,
+    "src_changed_lines": 51,
+    "src_files": [
+      "packages/coding-agent/src/core/trust-manager.ts",
+      "packages/coding-agent/src/main.ts",
+      "packages/coding-agent/src/modes/interactive/interactive-mode.ts"
+    ],
+    "test_files": [
+      "packages/coding-agent/test/trust-manager.test.ts"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-mqxh-6gq7-558m",
+    "summary": "Pi Agent: Pi loads project-local extensions without approval",
+    "complexity": 33.1
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "metal3-io/ironic-standalone-operator",
+    "fix_sha": "956924897d6fdc38c4cbaafd600f549a2c93308d",
+    "pr": "635",
+    "cve": null,
+    "ghsa": "GHSA-7cwm-fpfh-rrch",
+    "severity": "medium",
+    "cwes": [
+      "CWE-668"
+    ],
+    "cwe": "CWE-668",
+    "n_files": 8,
+    "n_src": 3,
+    "n_test": 3,
+    "src_changed_lines": 47,
+    "src_files": [
+      "api/v1alpha1/ironic_types.go",
+      "pkg/ironic/containers.go",
+      "pkg/ironic/validation.go"
+    ],
+    "test_files": [
+      "pkg/ironic/containers_test.go",
+      "pkg/ironic/validation_test.go",
+      "test/suite_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-7cwm-fpfh-rrch",
+    "summary": "Ironic Standalone Operator's prometheus metrics exporter bound to all interfaces",
+    "complexity": 32.7
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "gohugoio/hugo",
+    "fix_sha": "e41a06447daa3071a01f333fdcec0a5153c3c8d1",
+    "pr": null,
+    "cve": "CVE-2026-50133",
+    "ghsa": "GHSA-c54g-xjwj-8g82",
+    "severity": "medium",
+    "cwes": [
+      "CWE-79"
+    ],
+    "cwe": "CWE-79",
+    "n_files": 9,
+    "n_src": 3,
+    "n_test": 6,
+    "src_changed_lines": 36,
+    "src_files": [
+      "config/security/securityConfig.go",
+      "hugolib/page.go",
+      "hugolib/page__meta.go"
+    ],
+    "test_files": [
+      "config/security/securityConfig_test.go",
+      "hugolib/page_test.go",
+      "hugolib/pagebundler_test.go",
+      "hugolib/pagesfromdata/pagesfromgotmpl_integration_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-c54g-xjwj-8g82",
+    "summary": "Hugo: XSS via text/html content files",
+    "complexity": 31.6
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "metal3-io/cluster-api-provider-metal3",
+    "fix_sha": "0a56e6be90a35d8c08073c09bcb17723ff08e619",
+    "pr": "3288",
+    "cve": null,
+    "ghsa": "GHSA-rf84-wr5g-m3rp",
+    "severity": "medium",
+    "cwes": [
+      "CWE-863"
+    ],
+    "cwe": "CWE-863",
+    "n_files": 6,
+    "n_src": 3,
+    "n_test": 3,
+    "src_changed_lines": 36,
+    "src_files": [
+      "baremetal/metal3machine_manager.go",
+      "baremetal/metal3remediation_manager.go",
+      "controllers/metal3labelsync_controller.go"
+    ],
+    "test_files": [
+      "baremetal/metal3machine_manager_test.go",
+      "baremetal/metal3remediation_manager_test.go",
+      "controllers/metal3labelsync_controller_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-rf84-wr5g-m3rp",
+    "summary": "CAPM3 vulnerable to Cross-Namespace resource access",
+    "complexity": 31.6
+  },
+  {
+    "lang": "Go",
+    "ecosystem": "go",
+    "repo": "gohugoio/hugo",
+    "fix_sha": "f8b5fa09a64950c32b803821ede411ebfe772b7a",
+    "pr": null,
+    "cve": "CVE-2026-50135",
+    "ghsa": "GHSA-fw87-fv5r-9fpw",
+    "severity": "medium",
+    "cwes": [
+      "CWE-59"
+    ],
+    "cwe": "CWE-59",
+    "n_files": 5,
+    "n_src": 3,
+    "n_test": 1,
+    "src_changed_lines": 33,
+    "src_files": [
+      "hugofs/decorators.go",
+      "hugofs/fs.go",
+      "hugofs/rootmapping_fs.go"
+    ],
+    "test_files": [
+      "main_test.go"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-fw87-fv5r-9fpw",
+    "summary": "Hugo: Symlink confinement bypass in resources.Get",
+    "complexity": 31.3
+  },
+  {
+    "lang": "Python",
+    "ecosystem": "pip",
+    "repo": "python-zeroconf/python-zeroconf",
+    "fix_sha": "95561e28b24922358f1991e38e3a86d70d72dcec",
+    "pr": "1717",
+    "cve": "CVE-2026-47183",
+    "ghsa": "GHSA-phvx-9mgw-67r5",
+    "severity": "medium",
+    "cwes": [
+      "CWE-400"
+    ],
+    "cwe": "CWE-400",
+    "n_files": 5,
+    "n_src": 2,
+    "n_test": 3,
+    "src_changed_lines": 101,
+    "src_files": [
+      "src/zeroconf/_logger.py",
+      "src/zeroconf/_protocol/incoming.py"
+    ],
+    "test_files": [
+      "tests/benchmarks/test_mark_seen.py",
+      "tests/test_logger.py",
+      "tests/test_protocol.py"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-phvx-9mgw-67r5",
+    "summary": "zeroconf: Unbounded exception-dedup state retains packet buffers via traceback frame locals, enabling LAN-local memory exhaustion",
+    "complexity": 30.1
+  },
+  {
+    "lang": "Python",
+    "ecosystem": "pip",
+    "repo": "py-pdf/pypdf",
+    "fix_sha": "68822ded066f1bd21113b177e039f7930d57b6ff",
+    "pr": "3830",
+    "cve": "CVE-2026-54531",
+    "ghsa": "GHSA-m2v9-299j-rv96",
+    "severity": "medium",
+    "cwes": [
+      "CWE-835"
+    ],
+    "cwe": "CWE-835",
+    "n_files": 4,
+    "n_src": 2,
+    "n_test": 2,
+    "src_changed_lines": 85,
+    "src_files": [
+      "pypdf/_page.py",
+      "pypdf/_writer.py"
+    ],
+    "test_files": [
+      "tests/test_text_extraction.py",
+      "tests/test_writer.py"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-m2v9-299j-rv96",
+    "summary": "pypdf: Possible infinite loop when processing outlines/bookmarks in writer",
+    "complexity": 28.5
+  },
+  {
+    "lang": "Python",
+    "ecosystem": "pip",
+    "repo": "python-zeroconf/python-zeroconf",
+    "fix_sha": "0ad3f37b5b852b8f614d322283d148efb2cef6e4",
+    "pr": "1718",
+    "cve": "CVE-2026-47184",
+    "ghsa": "GHSA-rfg2-pjw2-56x2",
+    "severity": "medium",
+    "cwes": [
+      "CWE-400",
+      "CWE-770"
+    ],
+    "cwe": "CWE-400",
+    "n_files": 5,
+    "n_src": 2,
+    "n_test": 2,
+    "src_changed_lines": 85,
+    "src_files": [
+      "src/zeroconf/_cache.py",
+      "src/zeroconf/const.py"
+    ],
+    "test_files": [
+      "tests/benchmarks/test_cache_bound.py",
+      "tests/test_cache.py"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-rfg2-pjw2-56x2",
+    "summary": "zeroconf has unbounded DNS record cache that allows LAN-local memory exhaustion via multicast flood",
+    "complexity": 28.5
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "geoserver/geoserver",
+    "fix_sha": "b48d9fe4171fb547db79605a64d6fb4e0341f414",
+    "pr": "8622",
+    "cve": "CVE-2025-58175",
+    "ghsa": "GHSA-x4r9-gmw3-hxww",
+    "severity": "medium",
+    "cwes": [
+      "CWE-20",
+      "CWE-611",
+      "CWE-918"
+    ],
+    "cwe": "CWE-20",
+    "n_files": 4,
+    "n_src": 1,
+    "n_test": 1,
+    "src_changed_lines": 162,
+    "src_files": [
+      "src/main/src/main/java/org/geoserver/util/AllowListEntityResolver.java"
+    ],
+    "test_files": [
+      "src/main/src/test/java/org/geoserver/util/EntityResolverProviderTest.java"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-x4r9-gmw3-hxww",
+    "summary": "GeoServer has a Server-Side Request Forgery (SSRF) Vulnerability in its XML Entity Resolution",
+    "complexity": 28.2
+  },
+  {
+    "lang": "Python",
+    "ecosystem": "pip",
+    "repo": "NousResearch/hermes-agent",
+    "fix_sha": "3bace071bfadf2d2bec2ee048471a31ec920e3e8",
+    "pr": null,
+    "cve": "CVE-2026-53870",
+    "ghsa": "GHSA-99f9-j8r3-p853",
+    "severity": "medium",
+    "cwes": [
+      "CWE-276"
+    ],
+    "cwe": "CWE-276",
+    "n_files": 4,
+    "n_src": 2,
+    "n_test": 2,
+    "src_changed_lines": 62,
+    "src_files": [
+      "gateway/platforms/api_server.py",
+      "hermes_cli/webhook.py"
+    ],
+    "test_files": [
+      "tests/gateway/test_api_server.py",
+      "tests/hermes_cli/test_webhook_cli.py"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-99f9-j8r3-p853",
+    "summary": "Hermes Agent creates response_store.db and webhook_subscriptions.json with world-readable permissions (mode 0o644)",
+    "complexity": 26.2
+  },
+  {
+    "lang": "Python",
+    "ecosystem": "pip",
+    "repo": "yt-dlp/yt-dlp",
+    "fix_sha": "2726572520238356bcf64aba2040228648b44c82",
+    "pr": null,
+    "cve": "CVE-2026-50019",
+    "ghsa": "GHSA-f7j3-774f-rfhj",
+    "severity": "medium",
+    "cwes": [
+      "CWE-200"
+    ],
+    "cwe": "CWE-200",
+    "n_files": 3,
+    "n_src": 2,
+    "n_test": 1,
+    "src_changed_lines": 62,
+    "src_files": [
+      "yt_dlp/downloader/external.py",
+      "yt_dlp/utils/_utils.py"
+    ],
+    "test_files": [
+      "test/test_downloader_external.py"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-f7j3-774f-rfhj",
+    "summary": "yt-dlp: File Downloader cookie leak with curl ",
+    "complexity": 26.2
+  },
+  {
+    "lang": "JS/TS",
+    "ecosystem": "npm",
+    "repo": "nuxt/nuxt",
+    "fix_sha": "77187ee4015e9267fb464951542a3e09e8b5fa05",
+    "pr": null,
+    "cve": "CVE-2026-49993",
+    "ghsa": "GHSA-x6qj-4h56-5rj5",
+    "severity": "medium",
+    "cwes": [
+      "CWE-749"
+    ],
+    "cwe": "CWE-749",
+    "n_files": 3,
+    "n_src": 2,
+    "n_test": 1,
+    "src_changed_lines": 61,
+    "src_files": [
+      "packages/webpack/src/utils/same-origin.ts",
+      "packages/webpack/src/webpack.ts"
+    ],
+    "test_files": [
+      "packages/webpack/test/same-origin.test.ts"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-x6qj-4h56-5rj5",
+    "summary": "@nuxt/webpack-builder and @nuxt/rspack-builder dev server same-origin check bypassed when Sec-Fetch-Site, Origin, and Referer are all absent",
+    "complexity": 26.1
+  },
+  {
+    "lang": "JS/TS",
+    "ecosystem": "npm",
+    "repo": "langchain-ai/langgraphjs",
+    "fix_sha": "284226c7ca164b3c81fe2d9e32b10f1fc6b99a3c",
+    "pr": null,
+    "cve": "CVE-2026-48121",
+    "ghsa": "GHSA-98xf-r82g-9mhx",
+    "severity": "medium",
+    "cwes": [
+      "CWE-943"
+    ],
+    "cwe": "CWE-943",
+    "n_files": 3,
+    "n_src": 1,
+    "n_test": 1,
+    "src_changed_lines": 124,
+    "src_files": [
+      "libs/checkpoint-mongodb/src/checkpoint.ts"
+    ],
+    "test_files": [
+      "libs/checkpoint-mongodb/src/tests/checkpoints.test.ts"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-98xf-r82g-9mhx",
+    "summary": "LangGraph has NoSQL parameter injection in MongoDBSaver, allowing cross-tenant state access",
+    "complexity": 24.4
+  },
+  {
+    "lang": "Python",
+    "ecosystem": "pip",
+    "repo": "aio-libs/aiohttp",
+    "fix_sha": "dcf40f30637e8752c76781cf6703b5a236749a00",
+    "pr": null,
+    "cve": "CVE-2026-34993",
+    "ghsa": "GHSA-jg22-mg44-37j8",
+    "severity": "medium",
+    "cwes": [
+      "CWE-502"
+    ],
+    "cwe": "CWE-502",
+    "n_files": 6,
+    "n_src": 1,
+    "n_test": 2,
+    "src_changed_lines": 114,
+    "src_files": [
+      "aiohttp/cookiejar.py"
+    ],
+    "test_files": [
+      "tests/conftest.py",
+      "tests/test_cookiejar.py"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-jg22-mg44-37j8",
+    "summary": "AIOHTTP is Vulnerable to Deserialization of Untrusted Data",
+    "complexity": 23.4
+  },
+  {
+    "lang": "JS/TS",
+    "ecosystem": "npm",
+    "repo": "nuxt/nuxt",
+    "fix_sha": "1f9f4767a8725104da9bee872bb8d35246f25ae5",
+    "pr": null,
+    "cve": null,
+    "ghsa": "GHSA-534h-c3cw-v3h9",
+    "severity": "medium",
+    "cwes": [
+      "CWE-276"
+    ],
+    "cwe": "CWE-276",
+    "n_files": 2,
+    "n_src": 1,
+    "n_test": 1,
+    "src_changed_lines": 105,
+    "src_files": [
+      "packages/vite/src/plugins/vite-node.ts"
+    ],
+    "test_files": [
+      "packages/vite/test/vite-node.test.ts"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-534h-c3cw-v3h9",
+    "summary": "Nuxt dev server vite-node IPC socket is world-connectable on Linux",
+    "complexity": 18.5
+  },
+  {
+    "lang": "Java",
+    "ecosystem": "maven",
+    "repo": "spring-projects/spring-security",
+    "fix_sha": "88118afb8f9357ae7cc215500a441e89fee701c3",
+    "pr": null,
+    "cve": "CVE-2026-22747",
+    "ghsa": "GHSA-2jrg-rf5x-568g",
+    "severity": "medium",
+    "cwes": [
+      "CWE-297"
+    ],
+    "cwe": "CWE-297",
+    "n_files": 3,
+    "n_src": 1,
+    "n_test": 2,
+    "src_changed_lines": 44,
+    "src_files": [
+      "web/src/main/java/org/springframework/security/web/authentication/preauth/x509/SubjectX500PrincipalExtractor.java"
+    ],
+    "test_files": [
+      "web/src/test/java/org/springframework/security/web/authentication/preauth/x509/SubjectX500PrincipalExtractorTests.java",
+      "web/src/test/java/org/springframework/security/web/authentication/preauth/x509/X509TestUtils.java"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-2jrg-rf5x-568g",
+    "summary": "Spring Security Vulnerable to Unauthorized User Impersonation when Using X.509 Client Certificates",
+    "complexity": 16.4
+  },
+  {
+    "lang": "Python",
+    "ecosystem": "pip",
+    "repo": "authlib/authlib",
+    "fix_sha": "3be08468201a7766a93012ce149ea12822cab096",
+    "pr": null,
+    "cve": "CVE-2026-41479",
+    "ghsa": "GHSA-w8p2-r796-3vmq",
+    "severity": "medium",
+    "cwes": [
+      "CWE-601"
+    ],
+    "cwe": "CWE-601",
+    "n_files": 3,
+    "n_src": 1,
+    "n_test": 1,
+    "src_changed_lines": 13,
+    "src_files": [
+      "authlib/oauth2/rfc6749/authorization_server.py"
+    ],
+    "test_files": [
+      "tests/flask/test_oauth2/test_authorization_code_grant.py"
+    ],
+    "advisory_url": "https://github.com/advisories/GHSA-w8p2-r796-3vmq",
+    "summary": "Authlib OAuth 2.0 has Open Redirect in Authorization API that allows attacker-controlled redirect_uri through unsupported response_type",
+    "complexity": 13.3
+  }
+]

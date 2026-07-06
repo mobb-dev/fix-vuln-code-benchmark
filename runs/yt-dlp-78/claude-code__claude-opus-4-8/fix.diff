@@ -1,0 +1,49 @@
+diff --git a/yt_dlp/YoutubeDL.py b/yt_dlp/YoutubeDL.py
+index 7db6303..20ccf51 100644
+--- a/yt_dlp/YoutubeDL.py
++++ b/yt_dlp/YoutubeDL.py
+@@ -1254,9 +1254,12 @@ def _copy_infodict(info_dict):
+         info_dict.pop('__pending_error', None)
+         return info_dict
+ 
+-    def prepare_outtmpl(self, outtmpl, info_dict, sanitize=False):
++    def prepare_outtmpl(self, outtmpl, info_dict, sanitize=False, shell=False):
+         """ Make the outtmpl and info_dict suitable for substitution: ydl.escape_outtmpl(outtmpl) % info_dict
+         @param sanitize    Whether to sanitize the output as a filename
++        @param shell       Whether the result is interpolated into a shell command (e.g. --exec).
++                           When set, substituted values are shell-escaped so that untrusted
++                           metadata cannot inject shell syntax (the `q` conversion is already quoted)
+         """
+ 
+         info_dict.setdefault('epoch', int(time.time()))  # keep epoch consistent once set
+@@ -1479,6 +1482,17 @@ def create_key(outer_mobj):
+                 if fmt[-1] in 'csra':
+                     value = sanitize(last_field, value)
+ 
++            if shell and value is not None and outer_mobj.group('format')[-1] != 'q':
++                # Shell-escape values interpolated into a command (e.g. --exec) so that
++                # untrusted metadata cannot inject shell syntax. The `q` conversion is
++                # already shell-quoted, so it is left untouched to avoid double-quoting.
++                if fmt[-1] == 'r':
++                    value, fmt = repr(value), str_fmt
++                elif fmt[-1] == 'a':
++                    value, fmt = ascii(value), str_fmt
++                if fmt[-1] == 's':
++                    value, fmt = shell_quote(str(value), shell=True), 's'
++
+             key = '{}\0{}'.format(key.replace('%', '%\0'), outer_mobj.group('format'))
+             TMPL_DICT[key] = value
+             return '{prefix}%({key}){fmt}'.format(key=key, fmt=fmt, prefix=outer_mobj.group('prefix'))
+diff --git a/yt_dlp/postprocessor/exec.py b/yt_dlp/postprocessor/exec.py
+index 243487d..f04d98a 100644
+--- a/yt_dlp/postprocessor/exec.py
++++ b/yt_dlp/postprocessor/exec.py
+@@ -9,7 +9,7 @@ def __init__(self, downloader, exec_cmd):
+         self.exec_cmd = variadic(exec_cmd)
+ 
+     def parse_cmd(self, cmd, info):
+-        tmpl, tmpl_dict = self._downloader.prepare_outtmpl(cmd, info)
++        tmpl, tmpl_dict = self._downloader.prepare_outtmpl(cmd, info, shell=True)
+         if tmpl_dict:  # if there are no replacements, tmpl_dict = {}
+             return self._downloader.escape_outtmpl(tmpl) % tmpl_dict
+ 

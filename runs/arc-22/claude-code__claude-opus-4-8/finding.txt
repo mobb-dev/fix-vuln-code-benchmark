@@ -1,0 +1,39 @@
+Project: Basekick-Labs/arc
+Vulnerability type: Path Traversal (CWE-22)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  cmd/arc/main.go
+    - lines 11-17   in: import (
+    - lines 43-48   in: import (
+    - lines 200-209   in: func main() {
+    - lines 220-240   in: func main() {
+    - lines 716-726   in: func main() {
+    - lines 1206-1213   in: func main() {
+    - lines 1395-1401   in: func main() {
+
+  internal/api/delete.go
+    - lines 93-99   in: type DeleteHandler struct {
+    - lines 151-164   in: var dangerousPrefixPatterns = []string{
+    - lines 464-470   in: func (h *DeleteHandler) validateWhereClause(where string) (bool, error) {
+    - lines 782-796   in: type s3RewriteResult struct {
+
+  internal/api/import.go
+    - lines 65-82   in: type ImportHandler struct {
+    - lines 189-202   in: func (h *ImportHandler) handleFileImport(c *fiber.Ctx, format string, buildOpts
+
+  internal/database/duckdb.go
+    - lines 3-20   in: package database
+    - lines 47-63   in: func escapeSQLString(s string) string {
+    - lines 90-100   in: type Config struct {
+    - lines 114-125   in: type Config struct {
+    - lines 177-246   in: func buildDSN(cfg *Config) string {
+    - lines 301-340   in: func configureDatabase(db *sql.DB, cfg *Config, logger zerolog.Logger) error {
+    - lines 350-360   in: func verifyArcxLoaded(db *sql.DB, cfg *Config, logger zerolog.Logger) error {
+    - lines 753-762   in: func (d *DuckDB) QueryWithProfileContext(ctx context.Context, query string) (*sq
+    - lines 773-779   in: func (d *DuckDB) QueryWithProfileContext(ctx context.Context, query string) (*sq
+
+  internal/database/duckdb_arrow.go
+    - lines 9-14   in: import (
+    - lines 76-84   in: func (d *DuckDB) ArrowQueryWithProfileContext(ctx context.Context, query string)
+    - lines 100-106   in: func (d *DuckDB) ArrowQueryWithProfileContext(ctx context.Context, query string)

@@ -1,0 +1,118 @@
+diff --git a/cli/cmd/configserver/configserver.go b/cli/cmd/configserver/configserver.go
+index 18fa8273..d9d922d5 100644
+--- a/cli/cmd/configserver/configserver.go
++++ b/cli/cmd/configserver/configserver.go
+@@ -11,7 +11,7 @@ import (
+ 	"github.com/google/uuid"
+ 	"github.com/nhost/be/services/mimir/graph"
+ 	"github.com/nhost/nhost/cli/cmd/configserver/logsapi"
+-	cors "github.com/rs/cors/wrapper/gin"
++	"github.com/nhost/nhost/internal/lib/oapi/middleware"
+ 	"github.com/sirupsen/logrus"
+ 	"github.com/urfave/cli/v3"
+ )
+@@ -24,6 +24,7 @@ const (
+ 	storageLocalConfigPath      = "storage-local-config-path"
+ 	storageLocalSecretsPath     = "storage-local-secrets-path"
+ 	storageLocalRunServicesPath = "storage-local-run-services-path"
++	corsAllowedOriginsFlag      = "cors-allowed-origins"
+ 	dockerComposeProjectEnv     = "DOCKER_COMPOSE_PROJECT"
+ )
+ 
+@@ -75,6 +76,13 @@ func Command() *cli.Command {
+ 				Category: "plugins",
+ 				Sources:  cli.EnvVars("STORAGE_LOCAL_RUN_SERVICES_PATH"),
+ 			},
++			&cli.StringSliceFlag{ //nolint: exhaustruct
++				Name: corsAllowedOriginsFlag,
++				Usage: "Origins allowed to make cross-origin requests. " +
++					"If empty, all cross-origin requests are denied",
++				Category: "server",
++				Sources:  cli.EnvVars("CORS_ALLOWED_ORIGINS"),
++			},
+ 		},
+ 		Action: serve,
+ 	}
+@@ -158,6 +166,24 @@ func serve(_ context.Context, cmd *cli.Command) error {
+ 		return fmt.Errorf("failed to create resolver: %w", err)
+ 	}
+ 
++	// The configserver exposes the project's configuration and secrets without
++	// authentication, so cross-origin access must be restricted to the trusted
++	// dashboard origin(s). A nil AllowedOrigins would allow every origin, so we
++	// default to an empty (deny-all) slice when none are configured.
++	allowedOrigins := cmd.StringSlice(corsAllowedOriginsFlag)
++	if allowedOrigins == nil {
++		allowedOrigins = []string{}
++	}
++
++	corsMiddleware := middleware.CORS(middleware.CORSOptions{
++		AllowedOrigins:   allowedOrigins,
++		AllowedMethods:   []string{"GET", "POST"},
++		AllowedHeaders:   nil,
++		ExposedHeaders:   []string{},
++		AllowCredentials: false,
++		MaxAge:           "86400",
++	})
++
+ 	r := graph.SetupRouter(
+ 		"/v1/configserver",
+ 		resolver,
+@@ -167,7 +193,7 @@ func serve(_ context.Context, cmd *cli.Command) error {
+ 		cmd.Root().Version,
+ 		[]graphql.FieldMiddleware{},
+ 		gin.Recovery(),
+-		cors.Default(),
++		corsMiddleware,
+ 	)
+ 
+ 	if err := setupLogsAPI(
+diff --git a/cli/dockercompose/compose.go b/cli/dockercompose/compose.go
+index 7b89a43c..6009d3c1 100644
+--- a/cli/dockercompose/compose.go
++++ b/cli/dockercompose/compose.go
+@@ -627,6 +627,8 @@ func getServices( //nolint: funlen,cyclop
+ 		rootFolder,
+ 		nhostFolder,
+ 		projectName,
++		subdomain,
++		httpPort,
+ 		useTLS,
+ 		runServices...,
+ 	)
+diff --git a/cli/dockercompose/compose_cloud.go b/cli/dockercompose/compose_cloud.go
+index ce89a8c5..6b6f8fdf 100644
+--- a/cli/dockercompose/compose_cloud.go
++++ b/cli/dockercompose/compose_cloud.go
+@@ -128,6 +128,8 @@ func getServicesCloud(
+ 		rootFolder,
+ 		nhostFolder,
+ 		projectName,
++		subdomain,
++		httpPort,
+ 		useTLS,
+ 	)
+ 	if err != nil {
+diff --git a/cli/dockercompose/configserver.go b/cli/dockercompose/configserver.go
+index 2547dc84..80819a8d 100644
+--- a/cli/dockercompose/configserver.go
++++ b/cli/dockercompose/configserver.go
+@@ -11,6 +11,8 @@ func configserver( //nolint: funlen
+ 	rootPath,
+ 	nhostPath,
+ 	projectName string,
++	subdomain string,
++	httpPort uint,
+ 	useTLS bool,
+ 	runServices ...*RunService,
+ ) (*Service, error) {
+@@ -81,6 +83,9 @@ func configserver( //nolint: funlen
+ 			"configserver",
+ 			"--enable-playground",
+ 			"--debug",
++			// Restrict cross-origin access to the dashboard, which is the only
++			// legitimate consumer of the (unauthenticated) configserver API.
++			"--cors-allowed-origins=" + URL(subdomain, "dashboard", httpPort, useTLS),
+ 		}, extraArgs...),
+ 		Environment: map[string]string{
+ 			"DOCKER_HOST":            dockerEndpoint,

@@ -1,0 +1,11 @@
+METHODOLOGY: I identified the root cause as the use of `subprocess.run(..., shell=True)` on a command string into which attacker-controllable placeholders (especially `%P`, the repository file path) are substituted unquoted. I compared the maintainer's minimal fix (keep `shell=True`, but shell-quote every substituted value) against the agent's structurally different approach (drop the shell, `shlex.split` the template, then substitute placeholders into individual tokens), focusing on whether injection is closed at every placeholder and whether intended merge-driver behavior is preserved.
+
+EVIDENCE:
+- Agent removes `shell=True` and `cmd.replace(...)`-into-string, replacing it with `args = self._command_args(...)` built via `shlex.split(self.command, posix=(os.name != "nt"))` and placeholder substitution *after* tokenization, then `subprocess.run(args, ...)` with no shell (hunk at lines 157–183).
+- `_command_args` substitutes `%O/%A/%B/%L/%P` into already-split tokens, so a malicious `%P` value cannot spawn new tokens or be shell-interpreted.
+- Agent adds `_extract_stdout_redirect` to manually re-implement only `>`/`>>` stdout redirection (lines 102–123).
+- Maintainer's fix instead retains shell execution and wraps each value in `_shell_quote(...)`, preserving the full shell command template while neutralizing the values.
+
+REASONING: The agent's approach does close the command-injection vector at all placeholders: because tokenization happens before substitution and `shell=True` is gone, no substituted value (`%P`, `%A`, etc.) can introduce shell metacharacters that get executed — its added injection test confirms `; touch` becomes a literal `echo` argument. So the vulnerability itself is removed. However, by abandoning shell execution entirely, the fix changes intended behavior: git merge drivers are documented to run via the shell, so legitimate driver templates using pipes, `&&`/`;` sequencing, command substitution, globbing, env-var expansion, or quoting will silently break — only simple `>`/`>>` redirection is hand-re-implemented. The maintainer's fix deliberately preserved full shell semantics of the (locally trusted) command template while quoting only the attacker-controlled values. The agent's solution thus over-reaches, degrading functionality beyond what remediation requires.
+
+VERDICT: PARTIAL

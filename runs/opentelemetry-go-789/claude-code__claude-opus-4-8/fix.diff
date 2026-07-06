@@ -1,0 +1,101 @@
+diff --git a/baggage/baggage.go b/baggage/baggage.go
+index c4093e4..1f200a0 100644
+--- a/baggage/baggage.go
++++ b/baggage/baggage.go
+@@ -447,11 +447,15 @@ func New(members ...Member) (Baggage, error) {
+ 			Value:      m.value,
+ 			Properties: m.properties.asInternal(),
+ 		}
+-	}
+ 
+-	// Check member numbers after deduplication.
+-	if len(b) > maxMembers {
+-		return Baggage{}, errMemberNumber
++		// Check the member count as the list is built rather than after it is
++		// fully materialized. Deduplication can only grow the number of
++		// members, so once the limit is exceeded the result can never become
++		// valid again. Bailing out here bounds the amount of memory allocated
++		// for an arbitrarily large set of members.
++		if len(b) > maxMembers {
++			return Baggage{}, errMemberNumber
++		}
+ 	}
+ 
+ 	bag := Baggage{b}
+@@ -490,13 +494,16 @@ func Parse(bStr string) (Baggage, error) {
+ 			Value:      m.value,
+ 			Properties: m.properties.asInternal(),
+ 		}
+-	}
+ 
+-	// OpenTelemetry does not allow for duplicate list-members, but the W3C
+-	// specification does. Now that we have deduplicated, ensure the baggage
+-	// does not exceed list-member limits.
+-	if len(b) > maxMembers {
+-		return Baggage{}, errMemberNumber
++		// OpenTelemetry does not allow for duplicate list-members, but the W3C
++		// specification does. Enforce the list-member limit as members are
++		// deduplicated rather than after the whole list is materialized.
++		// Deduplication can only grow the number of members, so once the limit
++		// is exceeded the result can never become valid again. Bailing out here
++		// bounds the amount of memory allocated for the parsed baggage.
++		if len(b) > maxMembers {
++			return Baggage{}, errMemberNumber
++		}
+ 	}
+ 
+ 	return Baggage{b}, nil
+diff --git a/propagation/baggage.go b/propagation/baggage.go
+index 0518826..0c8cbd2 100644
+--- a/propagation/baggage.go
++++ b/propagation/baggage.go
+@@ -11,6 +11,14 @@ import (
+ 
+ const baggageHeader = "baggage"
+ 
++// maxBaggageMembers bounds the number of distinct list-members accumulated
++// while extracting baggage from multiple carrier values. It mirrors the
++// list-member limit enforced by the baggage package: a Baggage can never
++// contain more members than this, so once the limit is exceeded the extracted
++// baggage is guaranteed to be rejected. Enforcing it here bounds the amount of
++// memory allocated for an arbitrary number of carrier values.
++const maxBaggageMembers = 180
++
+ // Baggage is a propagator that supports the W3C Baggage format.
+ //
+ // This propagates user-defined baggage associated with a trace. The complete
+@@ -60,13 +68,32 @@ func extractMultiBaggage(parent context.Context, carrier ValuesGetter) context.C
+ 	if len(bVals) == 0 {
+ 		return parent
+ 	}
+-	var members []baggage.Member
++
++	// Deduplicate members as they are parsed so that the amount of memory
++	// allocated is bounded by the number of distinct list-members rather than
++	// the (untrusted, potentially very large) number of carrier values. Baggage
++	// resolves duplicates by last-one-wins, so overwriting here matches the
++	// semantics of baggage.New below.
++	deduped := make(map[string]baggage.Member)
+ 	for _, bStr := range bVals {
+ 		currBag, err := baggage.Parse(bStr)
+ 		if err != nil {
+ 			continue
+ 		}
+-		members = append(members, currBag.Members()...)
++		for _, m := range currBag.Members() {
++			deduped[m.Key()] = m
++		}
++		// The deduplicated set only ever grows. Once it exceeds the list-member
++		// limit the resulting baggage can never be valid, so stop early instead
++		// of accumulating and allocating further.
++		if len(deduped) > maxBaggageMembers {
++			return parent
++		}
++	}
++
++	members := make([]baggage.Member, 0, len(deduped))
++	for _, m := range deduped {
++		members = append(members, m)
+ 	}
+ 
+ 	b, err := baggage.New(members...)

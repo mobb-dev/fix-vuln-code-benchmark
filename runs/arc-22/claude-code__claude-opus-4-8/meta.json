@@ -1,0 +1,13 @@
+{
+  "agent": "claude-code",
+  "model": "claude-opus-4-8",
+  "tool_calls": 75,
+  "turns": 76,
+  "cost_usd": 6.610886999999999,
+  "usage": null,
+  "used_web": false,
+  "egress_attempts": [
+    "git log --oneline -5 && echo \"---REMOTES---\" && git remote -v && echo \"---TAGS---\" && git tag | head",
+    "cd /tmp && timeout 20 git clone --depth 1 https://github.com/Basekick-Labs/arc.git arc-upstream 2>&1 | tail -5; echo \"EXIT: $?\""
+  ]
+}

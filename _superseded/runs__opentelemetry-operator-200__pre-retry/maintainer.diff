@@ -1,0 +1,147 @@
+--- a/apis/v1alpha1/opentelemetrycollector_types.go
++++ b/apis/v1alpha1/opentelemetrycollector_types.go
+@@ -411,6 +411,16 @@ type OpenTelemetryTargetAllocatorPrometheusCR struct {
+ 	// Empty or nil map matches all service monitors.
+ 	// +optional
+ 	ServiceMonitorSelector map[string]string `json:"serviceMonitorSelector,omitempty"`
++	// DenyFSAccessThroughSMs causes the Target Allocator to drop ServiceMonitor and
++	// PodMonitor endpoints that reference arbitrary files on the file system. When
++	// enabled, endpoints with bearerTokenFile, tlsConfig.caFile, tlsConfig.certFile,
++	// or tlsConfig.keyFile are dropped from the produced scrape configuration while
++	// the remaining endpoints are kept. This prevents tenants from stealing the
++	// Collector's service account token via ServiceMonitor bearerTokenFile
++	// references. This is the equivalent of ArbitraryFSAccessThroughSMs.Deny from
++	// the Prometheus Operator.
++	// +optional
++	DenyFSAccessThroughSMs bool `json:"denyFSAccessThroughSMs,omitempty"`
+ }
+ 
+ // ScaleSubresourceStatus defines the observed state of the OpenTelemetryCollector's
+--- a/apis/v1beta1/targetallocator_types.go
++++ b/apis/v1beta1/targetallocator_types.go
+@@ -22,6 +22,16 @@ type TargetAllocatorPrometheusCR struct {
+ 	// If not configured, defaults to the target allocator's own namespace.
+ 	// +optional
+ 	SecretNamespaces []string `json:"secretNamespaces,omitempty"`
++	// DenyFSAccessThroughSMs causes the Target Allocator to drop ServiceMonitor and
++	// PodMonitor endpoints that reference arbitrary files on the file system. When
++	// enabled, endpoints with bearerTokenFile, tlsConfig.caFile, tlsConfig.certFile,
++	// or tlsConfig.keyFile are dropped from the produced scrape configuration while
++	// the remaining endpoints are kept. This prevents tenants from stealing the
++	// Collector's service account token via ServiceMonitor bearerTokenFile
++	// references. This is the equivalent of ArbitraryFSAccessThroughSMs.Deny from
++	// the Prometheus Operator.
++	// +optional
++	DenyFSAccessThroughSMs bool `json:"denyFSAccessThroughSMs,omitempty"`
+ 	// Default interval between consecutive scrapes. Intervals set in ServiceMonitors and PodMonitors override it.
+ 	//
+ 	// Default: "30s"
+--- a/cmd/otel-allocator/internal/config/config.go
++++ b/cmd/otel-allocator/internal/config/config.go
+@@ -92,6 +92,16 @@ type PrometheusCRConfig struct {
+ 	EvaluationInterval              model.Duration                `yaml:"evaluation_interval,omitempty"`
+ 	ScrapeProtocols                 []monitoringv1.ScrapeProtocol `yaml:"scrape_protocols,omitempty"`
+ 	ScrapeClasses                   []monitoringv1.ScrapeClass    `yaml:"scrape_classes,omitempty"`
++	// DenyFSAccessThroughSMs causes the Target Allocator to drop ServiceMonitor and
++	// PodMonitor endpoints that reference arbitrary files on the file system. When
++	// true, endpoints with bearerTokenFile, tlsConfig.caFile, tlsConfig.certFile, or
++	// tlsConfig.keyFile referencing paths outside an operator-owned mount are
++	// dropped from the produced scrape configuration while the remaining endpoints
++	// are kept. This prevents tenants from stealing the Collector's service account
++	// token. This is the equivalent of ArbitraryFSAccessThroughSMs.Deny from the
++	// Prometheus Operator.
++	// +optional
++	DenyFSAccessThroughSMs bool `yaml:"deny_fs_access_through_sms,omitempty"`
+ }
+ 
+ type HTTPSServerConfig struct {
+--- a/cmd/otel-allocator/internal/watcher/promOperator.go
++++ b/cmd/otel-allocator/internal/watcher/promOperator.go
+@@ -150,6 +150,7 @@ func NewPrometheusCRWatcher(
+ 		resourceSelector:                resourceSelector,
+ 		store:                           store,
+ 		prometheusCR:                    prom,
++		denyFSAccessThroughSMs:          cfg.PrometheusCR.DenyFSAccessThroughSMs,
+ 	}, nil
+ }
+ 
+@@ -170,6 +171,7 @@ type PrometheusCRWatcher struct {
+ 	resourceSelector                *prometheus.ResourceSelector
+ 	store                           *assets.StoreBuilder
+ 	prometheusCR                    *monitoringv1.Prometheus
++	denyFSAccessThroughSMs          bool
+ }
+ 
+ func getNamespaceInformer(ctx context.Context, allowList, denyList map[string]struct{}, promOperatorLogger *slog.Logger, clientset kubernetes.Interface, operatorMetrics *operator.Metrics) (cache.SharedIndexInformer, error) {
+@@ -649,6 +651,13 @@ func (w *PrometheusCRWatcher) LoadConfig(ctx context.Context) (*promconfig.Confi
+ 			return nil, unmarshalErr
+ 		}
+ 
++		// If denyFSAccessThroughSMs is enabled, drop scrape configs that reference
++		// arbitrary files on the file system. This prevents tenants from stealing
++		// the Collector's service account token.
++		if w.denyFSAccessThroughSMs {
++			w.filterScrapeConfigs(promCfg)
++		}
++
+ 		// set kubeconfig path to service discovery configs, else kubernetes_sd will always attempt in-cluster
+ 		// authentication even if running with a detected kubeconfig
+ 		for _, scrapeConfig := range promCfg.ScrapeConfigs {
+@@ -665,6 +674,44 @@ func (w *PrometheusCRWatcher) LoadConfig(ctx context.Context) (*promconfig.Confi
+ 	return promCfg, nil
+ }
+ 
++// filterScrapeConfigs drops scrape configs that reference arbitrary files on
++// the file system. This prevents tenants from stealing the Collector's service
++// account token via ServiceMonitor bearerTokenFile (via
++// authorization.credentials_file) or tlsConfig file references (caFile,
++// certFile, keyFile). This is the equivalent guard from
++// ArbitraryFSAccessThroughSMs.Deny in the Prometheus Operator.
++func (w *PrometheusCRWatcher) filterScrapeConfigs(promCfg *promconfig.Config) {
++	filtered := promCfg.ScrapeConfigs[:0]
++	for _, sc := range promCfg.ScrapeConfigs {
++		if reason := deniedFSAccessReason(sc); reason != "" {
++			w.logger.Warn("dropping scrape config that references arbitrary file path", "job", sc.JobName, "reason", reason)
++			continue
++		}
++		filtered = append(filtered, sc)
++	}
++	promCfg.ScrapeConfigs = filtered
++}
++
++// deniedFSAccessReason returns a non-empty reason if the scrape config
++// references arbitrary files via authorization or TLS config, or "" if the
++// config is allowed.
++func deniedFSAccessReason(sc *promconfig.ScrapeConfig) string {
++	if auth := sc.HTTPClientConfig.Authorization; auth != nil && auth.CredentialsFile != "" {
++		return fmt.Sprintf("authorization.credentials_file: %s", auth.CredentialsFile)
++	}
++	tls := &sc.HTTPClientConfig.TLSConfig
++	if tls.CAFile != "" {
++		return fmt.Sprintf("tls_config.ca_file: %s", tls.CAFile)
++	}
++	if tls.CertFile != "" {
++		return fmt.Sprintf("tls_config.cert_file: %s", tls.CertFile)
++	}
++	if tls.KeyFile != "" {
++		return fmt.Sprintf("tls_config.key_file: %s", tls.KeyFile)
++	}
++	return ""
++}
++
+ // WaitForNamedCacheSync adds a timeout to the informer's wait for the cache to be ready.
+ // If the PrometheusCRWatcher is unable to load an informer within 15 seconds, the method is
+ // cancelled and returns false. A successful informer load will return true. This method also
+--- a/internal/manifests/targetallocator/configmap.go
++++ b/internal/manifests/targetallocator/configmap.go
+@@ -117,6 +117,10 @@ func ConfigMap(params Params) (*corev1.ConfigMap, error) {
+ 			prometheusCRConfig["secret_namespaces"] = taSpec.PrometheusCR.SecretNamespaces
+ 		}
+ 
++		if taSpec.PrometheusCR.DenyFSAccessThroughSMs {
++			prometheusCRConfig["deny_fs_access_through_sms"] = true
++		}
++
+ 		prometheusCRConfig["service_monitor_namespace_selector"] = taSpec.PrometheusCR.ServiceMonitorNamespaceSelector
+ 		prometheusCRConfig["service_monitor_selector"] = taSpec.PrometheusCR.ServiceMonitorSelector
+ 

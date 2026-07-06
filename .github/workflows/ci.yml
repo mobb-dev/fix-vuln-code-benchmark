@@ -1,0 +1,21 @@
+name: CI
+# Minimal sanity checks: nothing is obviously broken. No tests, no benchmark runs.
+on: [push, pull_request]
+
+permissions:
+  contents: read
+  
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python syntax
+        run: git ls-files '*.py' | xargs -r python3 -m py_compile
+
+      - name: Shell syntax
+        run: git ls-files -z '*.sh' | xargs -0 -r -n1 bash -n
+
+      - name: JSON valid
+        run: git ls-files -z '*.json' | xargs -0 -r -n1 python3 -c 'import json,sys; json.load(open(sys.argv[1]))'

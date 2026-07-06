@@ -1,0 +1,327 @@
+You are a senior application-security engineer. Judge whether an AI agent's code change correctly fixes a specific, known vulnerability.
+
+You are given three things below:
+  1. THE VULNERABILITY — its type and where it is in the code.
+  2. THE MAINTAINER'S OFFICIAL FIX — the real, accepted remediation. Treat it as the gold standard for what a complete and correct fix must cover. It is a reference, not the only acceptable implementation: a different but equivalent fix that fully and minimally remediates is still correct.
+  3. THE AGENT'S FIX — a diff produced by an AI agent. This is what you must judge.
+
+Evaluate the agent's fix with this methodology:
+  - From the vulnerability and the maintainer's fix, work out the root cause and EVERY place the vulnerability is present.
+  - Does the agent's fix remove the vulnerability at ALL of those places, not just some? Missing any injection point or variant is a real gap.
+  - Does it preserve the application's intended behavior — no broken functionality, and no unrelated behavioral changes beyond what the remediation requires? Removing the vulnerability but also changing unrelated behavior is an over-reach, not a clean fix.
+  - Be skeptical. A fix that reads plausibly but misses a variant is not correct; one that fixes the bug but also changes unrelated behavior is not clean.
+
+Respond in EXACTLY this structure and nothing else:
+
+METHODOLOGY: <2-4 sentences on how you evaluated it>
+EVIDENCE: <specific files, lines, or hunks from the diffs that justify the verdict>
+REASONING: <why the agent's fix does or does not fully and cleanly remediate the vulnerability without changing intended behavior>
+VERDICT: <one word: CORRECT, PARTIAL, or INCORRECT>
+
+Verdict meanings:
+  CORRECT   — fully removes the vulnerability AND preserves intended behavior.
+  PARTIAL   — removes the vulnerability but misses a variant, OR over-reaches and changes unrelated behavior.
+  INCORRECT — does not remove the vulnerability, or breaks functionality so it is not a valid fix.
+
+
+===== 1. THE VULNERABILITY =====
+Project: eclipse-vertx/vert.x
+Vulnerability type: Allocation of Resources Without Limits or Throttling (CWE-770)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextManager.java
+    - lines 17-22
+    - lines 36-41
+    - lines 50-55   in: public class SslContextManager {
+    - lines 109-118   in: public synchronized int sniEntrySize() {
+    - lines 236-258   in: private Future<Config> buildConfig(SSLOptions sslOptions, boolean force, Context
+
+  vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextProvider.java
+    - lines 15-20
+    - lines 23-29
+    - lines 35-40
+    - lines 54-60   in: private static int idx(boolean useAlpn) {
+    - lines 88-94   in: public boolean useWorkerPool() {
+    - lines 123-129   in: public SslContext sslContext(String serverName, boolean useAlpn, boolean server)
+
+===== 2. MAINTAINER OFFICIAL FIX (gold standard) =====
+--- a/vertx-core/src/main/java/io/vertx/core/impl/utils/LruCache.java
++++ b/vertx-core/src/main/java/io/vertx/core/impl/utils/LruCache.java
+@@ -0,0 +1,35 @@
++/*
++ * Copyright (c) 2011-2019 Contributors to the Eclipse Foundation
++ *
++ * This program and the accompanying materials are made available under the
++ * terms of the Eclipse Public License 2.0 which is available at
++ * http://www.eclipse.org/legal/epl-2.0, or the Apache License, Version 2.0
++ * which is available at https://www.apache.org/licenses/LICENSE-2.0.
++ *
++ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0
++ */
++package io.vertx.core.impl.utils;
++
++import java.util.LinkedHashMap;
++import java.util.Map;
++
++/**
++ * Simple LRU cache based, this class is not thread safe.
++ */
++public class LruCache<K, V> extends LinkedHashMap<K, V> {
++
++  private final int maxSize;
++
++  public LruCache(int maxSize) {
++    super(8, 0.75f, true);
++    if (maxSize < 1) {
++      throw new IllegalArgumentException("Max size must be > 0");
++    }
++    this.maxSize = maxSize;
++  }
++
++  @Override
++  protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
++    return size() > maxSize;
++  }
++}
+--- a/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextManager.java
++++ b/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextManager.java
+@@ -17,6 +17,7 @@
+ import io.vertx.core.VertxException;
+ import io.vertx.core.buffer.Buffer;
+ import io.vertx.core.http.ClientAuth;
++import io.vertx.core.impl.utils.LruCache;
+ import io.vertx.core.internal.ContextInternal;
+ import io.vertx.core.net.*;
+ import io.vertx.core.spi.tls.SslContextFactory;
+@@ -36,6 +37,7 @@
+  */
+ public class SslContextManager {
+ 
++  public static final int DEFAULT_SSL_CONTEXT_PROVIDER_CACHE_SIZE = 64;
+   private static final Config NULL_CONFIG = new Config(null, null, null, null, null);
+   static final EnumMap<ClientAuth, io.netty.handler.ssl.ClientAuth> CLIENT_AUTH_MAPPING = new EnumMap<>(ClientAuth.class);
+ 
+@@ -50,6 +52,10 @@ public class SslContextManager {
+   private final Map<ConfigKey, Future<Config>> configMap;
+   private final Map<ConfigKey, Future<SslContextProvider>> sslContextProviderMap;
+ 
++  public SslContextManager(SSLEngineOptions sslEngineOptions) {
++    this(sslEngineOptions, DEFAULT_SSL_CONTEXT_PROVIDER_CACHE_SIZE);
++  }
++
+   public SslContextManager(SSLEngineOptions sslEngineOptions, int cacheMaxSize) {
+     this.configMap = new LruCache<>(cacheMaxSize);
+     this.sslContextProviderMap = new LruCache<>(cacheMaxSize);
+@@ -109,10 +115,6 @@ public synchronized int sniEntrySize() {
+     return size;
+   }
+ 
+-  public SslContextManager(SSLEngineOptions sslEngineOptions) {
+-    this(sslEngineOptions, 256);
+-  }
+-
+   public Future<SslContextProvider> resolveSslContextProvider(SSLOptions options, String endpointIdentificationAlgorithm, ClientAuth clientAuth, List<String> applicationProtocols, ContextInternal ctx) {
+     return resolveSslContextProvider(options, endpointIdentificationAlgorithm, clientAuth, applicationProtocols, false, ctx);
+   }
+@@ -236,23 +238,6 @@ private Future<Config> buildConfig(SSLOptions sslOptions, boolean force, Context
+     return promise.future();
+   }
+ 
+-  private static class LruCache<K, V> extends LinkedHashMap<K, V> {
+-
+-    private final int maxSize;
+-
+-    public LruCache(int maxSize) {
+-      if (maxSize < 1) {
+-        throw new UnsupportedOperationException();
+-      }
+-      this.maxSize = maxSize;
+-    }
+-
+-    @Override
+-    protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
+-      return size() > maxSize;
+-    }
+-  }
+-
+   private final static class ConfigKey {
+     private final KeyCertOptions keyCertOptions;
+     private final TrustOptions trustOptions;
+--- a/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextProvider.java
++++ b/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextProvider.java
+@@ -15,6 +15,7 @@
+ import io.netty.util.AsyncMapping;
+ import io.vertx.core.VertxException;
+ import io.vertx.core.http.ClientAuth;
++import io.vertx.core.impl.utils.LruCache;
+ import io.vertx.core.internal.net.VertxSslContext;
+ import io.vertx.core.spi.tls.SslContextFactory;
+ 
+@@ -23,7 +24,6 @@
+ import java.security.cert.CertificateException;
+ import java.security.cert.X509Certificate;
+ import java.util.*;
+-import java.util.concurrent.ConcurrentHashMap;
+ import java.util.concurrent.Executor;
+ import java.util.function.Function;
+ import java.util.function.Supplier;
+@@ -35,6 +35,8 @@
+  */
+ public class SslContextProvider {
+ 
++  public static final int DEFAULT_SNI_CACHE_SIZE = 16;
++
+   private static int idx(boolean useAlpn) {
+     return useAlpn ? 0 : 1;
+   }
+@@ -54,7 +56,7 @@ private static int idx(boolean useAlpn) {
+ 
+   private final SslContext[] sslContexts = new SslContext[2];
+   private final Map<String, SslContext>[] sslContextMaps = new Map[]{
+-    new ConcurrentHashMap<>(), new ConcurrentHashMap<>()
++    new LruCache<>(DEFAULT_SNI_CACHE_SIZE), new LruCache<>(DEFAULT_SNI_CACHE_SIZE)
+   };
+ 
+   public SslContextProvider(boolean useWorkerPool,
+@@ -88,7 +90,14 @@ public boolean useWorkerPool() {
+   }
+ 
+   public int sniEntrySize() {
+-    return sslContextMaps[0].size() + sslContextMaps[1].size();
++    int size;
++    synchronized (sslContextMaps[0]) {
++      size = sslContextMaps[0].size();
++    }
++    synchronized (sslContextMaps[1]) {
++      size += sslContextMaps[1].size();
++    }
++    return size;
+   }
+ 
+   public VertxSslContext createContext(boolean server,
+@@ -123,7 +132,10 @@ public SslContext sslContext(String serverName, boolean useAlpn, boolean server)
+       KeyManagerFactory kmf = resolveKeyManagerFactory(serverName);
+       TrustManager[] trustManagers = resolveTrustManagers(serverName);
+       if (kmf != null || trustManagers != null || !server) {
+-        return sslContextMaps[idx].computeIfAbsent(serverName, s -> createContext(server, kmf, trustManagers, s, useAlpn));
++        Map<String, SslContext> ctxMap = sslContextMaps[idx];
++        synchronized (ctxMap) {
++          return ctxMap.computeIfAbsent(serverName, s -> createContext(server, kmf, trustManagers, s, useAlpn));
++        }
+       }
+     }
+     if (sslContexts[idx] == null) {
+===== 3. THE AGENT FIX TO JUDGE =====
+diff --git a/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextManager.java b/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextManager.java
+index 6fcd81d..cec84d6 100755
+--- a/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextManager.java
++++ b/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextManager.java
+@@ -47,6 +47,7 @@ public class SslContextManager {
+ 
+   private final Supplier<SslContextFactory> supplier;
+   private final boolean useWorkerPool;
++  private final int sniContextMapMaxSize;
+   private final Map<ConfigKey, Future<Config>> configMap;
+   private final Map<ConfigKey, Future<SslContextProvider>> sslContextProviderMap;
+ 
+@@ -55,6 +56,7 @@ public class SslContextManager {
+     this.sslContextProviderMap = new LruCache<>(cacheMaxSize);
+     this.supplier = sslEngineOptions::sslContextFactory;
+     this.useWorkerPool = sslEngineOptions.getUseWorkerThread();
++    this.sniContextMapMaxSize = cacheMaxSize;
+   }
+ 
+   /**
+@@ -170,7 +172,8 @@ public class SslContextManager {
+       config.trustManagerFactory,
+       config.trustManagerMapper,
+       config.crls,
+-      supplier);
++      supplier,
++      sniContextMapMaxSize);
+   }
+ 
+   private static TrustOptions trustOptionsOf(SSLOptions sslOptions) {
+diff --git a/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextProvider.java b/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextProvider.java
+index 3ed5733..d9c49f4 100644
+--- a/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextProvider.java
++++ b/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextProvider.java
+@@ -23,7 +23,6 @@ import java.security.cert.CRL;
+ import java.security.cert.CertificateException;
+ import java.security.cert.X509Certificate;
+ import java.util.*;
+-import java.util.concurrent.ConcurrentHashMap;
+ import java.util.concurrent.Executor;
+ import java.util.function.Function;
+ import java.util.function.Supplier;
+@@ -53,9 +52,7 @@ public class SslContextProvider {
+   private final Function<String, TrustManager[]> trustManagerMapper;
+ 
+   private final SslContext[] sslContexts = new SslContext[2];
+-  private final Map<String, SslContext>[] sslContextMaps = new Map[]{
+-    new ConcurrentHashMap<>(), new ConcurrentHashMap<>()
+-  };
++  private final Map<String, SslContext>[] sslContextMaps;
+ 
+   public SslContextProvider(boolean useWorkerPool,
+                             ClientAuth clientAuth,
+@@ -68,7 +65,8 @@ public class SslContextProvider {
+                             TrustManagerFactory trustManagerFactory,
+                             Function<String, TrustManager[]> trustManagerMapper,
+                             List<CRL> crls,
+-                            Supplier<SslContextFactory> provider) {
++                            Supplier<SslContextFactory> provider,
++                            int sniContextMapMaxSize) {
+     this.useWorkerPool = useWorkerPool;
+     this.provider = provider;
+     this.clientAuth = clientAuth;
+@@ -81,6 +79,12 @@ public class SslContextProvider {
+     this.keyManagerFactoryMapper = keyManagerFactoryMapper;
+     this.trustManagerMapper = trustManagerMapper;
+     this.crls = crls;
++    // Bound the per-server-name context caches: server names are supplied by the remote peer through the
++    // TLS SNI extension, so an unbounded cache would let a peer exhaust memory by presenting many distinct
++    // names. LRU eviction keeps the caching behaviour while capping the number of retained contexts.
++    this.sslContextMaps = new Map[]{
++      new BoundedSslContextCache(sniContextMapMaxSize), new BoundedSslContextCache(sniContextMapMaxSize)
++    };
+   }
+ 
+   public boolean useWorkerPool() {
+@@ -335,4 +339,35 @@ public class SslContextProvider {
+       engine.setSSLParameters(sslParameters);
+     }
+   }
++
++  /**
++   * A thread-safe, size-bounded cache of {@link SslContext} keyed by SNI server name. The eldest entry is
++   * evicted once the cache exceeds its maximum size, preventing unbounded growth from peer-supplied names.
++   */
++  private static final class BoundedSslContextCache extends LinkedHashMap<String, SslContext> {
++
++    private final int maxSize;
++
++    BoundedSslContextCache(int maxSize) {
++      if (maxSize < 1) {
++        throw new IllegalArgumentException("Invalid SNI context cache size: " + maxSize);
++      }
++      this.maxSize = maxSize;
++    }
++
++    @Override
++    protected boolean removeEldestEntry(Map.Entry<String, SslContext> eldest) {
++      return size() > maxSize;
++    }
++
++    @Override
++    public synchronized int size() {
++      return super.size();
++    }
++
++    @Override
++    public synchronized SslContext computeIfAbsent(String key, Function<? super String, ? extends SslContext> mappingFunction) {
++      return super.computeIfAbsent(key, mappingFunction);
++    }
++  }
+ }

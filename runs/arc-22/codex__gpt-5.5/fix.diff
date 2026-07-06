@@ -1,0 +1,235 @@
+diff --git a/internal/api/delete.go b/internal/api/delete.go
+index f6f7f3d..16ca7cd 100644
+--- a/internal/api/delete.go
++++ b/internal/api/delete.go
+@@ -64,6 +64,36 @@ func fileMetadata(path string) (sizeBytes int64, sha256hex string, err error) {
+ 	return n, fmt.Sprintf("%x", h.Sum(nil)), nil
+ }
+ 
++func resolveLocalStoragePath(basePath, relativePath string) (string, error) {
++	if filepath.IsAbs(relativePath) {
++		return "", fmt.Errorf("path must be relative: %s", relativePath)
++	}
++	fullPath, err := filepath.Abs(filepath.Join(basePath, relativePath))
++	if err != nil {
++		return "", fmt.Errorf("failed to resolve path: %w", err)
++	}
++	return ensurePathWithinBase(basePath, fullPath)
++}
++
++func ensurePathWithinBase(basePath, path string) (string, error) {
++	absBase, err := filepath.Abs(basePath)
++	if err != nil {
++		return "", fmt.Errorf("failed to resolve storage root: %w", err)
++	}
++	absPath, err := filepath.Abs(path)
++	if err != nil {
++		return "", fmt.Errorf("failed to resolve path: %w", err)
++	}
++	rel, err := filepath.Rel(absBase, absPath)
++	if err != nil {
++		return "", fmt.Errorf("path escapes storage root: %w", err)
++	}
++	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
++		return "", fmt.Errorf("path escapes storage root: %s", path)
++	}
++	return absPath, nil
++}
++
+ // freeOSMemoryProcessStart anchors the throttle to the monotonic clock so wall
+ // clock adjustments (NTP steps, manual `date` changes) cannot misbehave.
+ var freeOSMemoryProcessStart = time.Now()
+@@ -228,18 +258,16 @@ func (h *DeleteHandler) handleDelete(c *fiber.Ctx) error {
+ 		})
+ 	}
+ 
+-	// Reject path traversal in database/measurement names — these values are
+-	// concatenated directly into storage prefixes and DuckDB paths.
+-	if strings.ContainsAny(req.Database, "/\\") || strings.Contains(req.Database, "..") {
++	if !isValidDatabaseName(req.Database) {
+ 		return c.Status(fiber.StatusBadRequest).JSON(DeleteResponse{
+ 			Success: false,
+-			Error:   "database name contains invalid characters",
++			Error:   "invalid database name: must start with a letter and contain only alphanumeric characters, underscores, or hyphens (max 64 characters)",
+ 		})
+ 	}
+-	if strings.ContainsAny(req.Measurement, "/\\") || strings.Contains(req.Measurement, "..") {
++	if !isValidMeasurementName(req.Measurement) {
+ 		return c.Status(fiber.StatusBadRequest).JSON(DeleteResponse{
+ 			Success: false,
+-			Error:   "measurement name contains invalid characters",
++			Error:   "invalid measurement name: must start with a letter and contain only alphanumeric characters, underscores, or hyphens",
+ 		})
+ 	}
+ 
+@@ -464,7 +492,6 @@ func (h *DeleteHandler) validateWhereClause(where string) (bool, error) {
+ 		return false, fmt.Errorf("WHERE clause contains forbidden keyword: %s", strings.ToUpper(match))
+ 	}
+ 
+-
+ 	// Check for dangerous prefixes
+ 	for _, pattern := range dangerousPrefixPatterns {
+ 		if strings.Contains(whereUpper, pattern) {
+@@ -508,8 +535,12 @@ func (h *DeleteHandler) findAffectedFiles(ctx context.Context, database, measure
+ 	var parquetFiles []fileInfo
+ 	for _, f := range files {
+ 		if strings.HasSuffix(strings.ToLower(f), ".parquet") {
++			queryPath, err := h.getQueryPath(f)
++			if err != nil {
++				return nil, err
++			}
+ 			parquetFiles = append(parquetFiles, fileInfo{
+-				queryPath:    h.getQueryPath(f),
++				queryPath:    queryPath,
+ 				relativePath: f,
+ 			})
+ 		}
+@@ -728,6 +759,13 @@ func (h *DeleteHandler) rewriteFileWithoutDeletedRows(ctx context.Context, query
+ func (h *DeleteHandler) rewriteLocalFile(ctx context.Context, filePath, _, whereClause string, rowsBefore, rowsAfter int64) (int64, error) {
+ 	db := h.db.DB()
+ 	deleted := rowsBefore - rowsAfter
++	if lb, ok := h.storage.(*storage.LocalBackend); ok {
++		var err error
++		filePath, err = ensurePathWithinBase(lb.GetBasePath(), filePath)
++		if err != nil {
++			return 0, err
++		}
++	}
+ 
+ 	// Create temp file for the rewritten data
+ 	dir := filepath.Dir(filePath)
+@@ -856,16 +894,16 @@ func (h *DeleteHandler) rewriteS3File(ctx context.Context, s3Path, relativePath,
+ }
+ 
+ // getQueryPath converts a storage-relative path to a DuckDB-compatible path
+-func (h *DeleteHandler) getQueryPath(relativePath string) string {
++func (h *DeleteHandler) getQueryPath(relativePath string) (string, error) {
+ 	switch backend := h.storage.(type) {
+ 	case *storage.LocalBackend:
+-		return filepath.Join(backend.GetBasePath(), relativePath)
++		return resolveLocalStoragePath(backend.GetBasePath(), relativePath)
+ 	case *storage.S3Backend:
+-		return fmt.Sprintf("s3://%s/%s%s", backend.GetBucket(), backend.GetPrefix(), relativePath)
++		return fmt.Sprintf("s3://%s/%s%s", backend.GetBucket(), backend.GetPrefix(), relativePath), nil
+ 	case *storage.AzureBlobBackend:
+-		return fmt.Sprintf("azure://%s/%s", backend.GetContainer(), relativePath)
++		return fmt.Sprintf("azure://%s/%s", backend.GetContainer(), relativePath), nil
+ 	default:
+-		return relativePath
++		return relativePath, nil
+ 	}
+ }
+ 
+@@ -902,11 +940,9 @@ func (h *DeleteHandler) updateManifestAfterRewrite(relativePath string, s3 *s3Re
+ 
+ 	if lb, ok := h.storage.(*storage.LocalBackend); ok {
+ 		basePath := lb.GetBasePath()
+-		fullPath := filepath.Join(basePath, relativePath)
+-		// Containment check: relativePath is already validated upstream, but
+-		// guard here too since fileMetadata opens the file for reading.
+-		if !strings.HasPrefix(fullPath, basePath+string(filepath.Separator)) {
+-			return fmt.Errorf("path escapes storage root: %s", relativePath)
++		fullPath, err := resolveLocalStoragePath(basePath, relativePath)
++		if err != nil {
++			return err
+ 		}
+ 		size, sha, err := fileMetadata(fullPath)
+ 		if err != nil {
+diff --git a/internal/api/delete_test.go b/internal/api/delete_test.go
+new file mode 100644
+index 0000000..e1d6c41
+--- /dev/null
++++ b/internal/api/delete_test.go
+@@ -0,0 +1,51 @@
++package api
++
++import (
++	"path/filepath"
++	"strings"
++	"testing"
++)
++
++func TestResolveLocalStoragePathAllowsPathInsideBase(t *testing.T) {
++	base := t.TempDir()
++
++	got, err := resolveLocalStoragePath(base, "db/cpu/2026/06/30/00/data.parquet")
++	if err != nil {
++		t.Fatalf("resolveLocalStoragePath returned error: %v", err)
++	}
++
++	want := filepath.Join(base, "db", "cpu", "2026", "06", "30", "00", "data.parquet")
++	if got != want {
++		t.Fatalf("resolved path = %q, want %q", got, want)
++	}
++}
++
++func TestResolveLocalStoragePathRejectsTraversal(t *testing.T) {
++	base := t.TempDir()
++
++	tests := []string{
++		"../outside.parquet",
++		"db/../../outside.parquet",
++		filepath.Join(base, "..", "outside.parquet"),
++	}
++
++	for _, input := range tests {
++		t.Run(input, func(t *testing.T) {
++			if got, err := resolveLocalStoragePath(base, input); err == nil {
++				t.Fatalf("resolveLocalStoragePath(%q) = %q, want error", input, got)
++			}
++		})
++	}
++}
++
++func TestEnsurePathWithinBaseRejectsSiblingPrefix(t *testing.T) {
++	root := t.TempDir()
++	base := filepath.Join(root, "data")
++	sibling := filepath.Join(root, "database", "file.parquet")
++
++	if got, err := ensurePathWithinBase(base, sibling); err == nil {
++		t.Fatalf("ensurePathWithinBase returned %q, want sibling rejection", got)
++	} else if !strings.Contains(err.Error(), "escapes storage root") {
++		t.Fatalf("error = %q, want storage-root escape error", err.Error())
++	}
++}
+diff --git a/internal/database/duckdb.go b/internal/database/duckdb.go
+index 40318b9..645d362 100644
+--- a/internal/database/duckdb.go
++++ b/internal/database/duckdb.go
+@@ -54,10 +54,10 @@ func escapeSQLString(s string) string {
+ // URLs that fail to resolve.
+ //
+ // Strips, in order:
+-//  - leading and trailing whitespace (paste artefacts),
+-//  - leading "http://" or "https://" (case-insensitive — RFC 3986 schemes
+-//    are case-insensitive and users routinely paste mixed-case),
+-//  - trailing slashes ("host:port/" → "host:port").
++//   - leading and trailing whitespace (paste artefacts),
++//   - leading "http://" or "https://" (case-insensitive — RFC 3986 schemes
++//     are case-insensitive and users routinely paste mixed-case),
++//   - trailing slashes ("host:port/" → "host:port").
+ //
+ // The case of the remainder is preserved (bucket names and path components
+ // can be case-sensitive depending on the S3 implementation).
+@@ -773,7 +773,7 @@ func (d *DuckDB) QueryWithProfileContext(ctx context.Context, query string) (*sq
+ 	if _, err := conn.ExecContext(ctx, "PRAGMA enable_profiling='json'"); err != nil {
+ 		d.logger.Warn().Err(err).Msg("Failed to enable profiling")
+ 	}
+-	if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA profiling_output='%s'", profilePath)); err != nil {
++	if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA profiling_output='%s'", escapeSQLString(profilePath))); err != nil {
+ 		d.logger.Warn().Err(err).Msg("Failed to set profiling output")
+ 	}
+ 	// Enable planner timing metrics
+diff --git a/internal/database/duckdb_arrow.go b/internal/database/duckdb_arrow.go
+index 6a1094c..62ea3f1 100644
+--- a/internal/database/duckdb_arrow.go
++++ b/internal/database/duckdb_arrow.go
+@@ -100,7 +100,7 @@ func (d *DuckDB) ArrowQueryWithProfileContext(ctx context.Context, query string)
+ 	if _, err := conn.ExecContext(ctx, "PRAGMA enable_profiling='json'"); err != nil {
+ 		d.logger.Warn().Err(err).Msg("Failed to enable profiling")
+ 	}
+-	if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA profiling_output='%s'", profilePath)); err != nil {
++	if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA profiling_output='%s'", escapeSQLString(profilePath))); err != nil {
+ 		d.logger.Warn().Err(err).Msg("Failed to set profiling output")
+ 	}
+ 	if _, err := conn.ExecContext(ctx, "SET custom_profiling_settings='{\"PLANNER\": \"true\", \"PLANNER_BINDING\": \"true\", \"PHYSICAL_PLANNER\": \"true\", \"OPERATOR_TIMING\": \"true\", \"OPERATOR_CARDINALITY\": \"true\"}'"); err != nil {

@@ -1,0 +1,12 @@
+{
+  "agent": "claude-code",
+  "model": "claude-opus-4-8",
+  "tool_calls": 24,
+  "turns": 25,
+  "cost_usd": 1.8753355000000003,
+  "usage": null,
+  "used_web": false,
+  "egress_attempts": [
+    "cd /work; timeout 30 gh api repos/dexidp/dex/contents/connector/authproxy/authproxy.go --jq '.download_url' 2>&1 | head; echo \"---try curl---\"; timeout 20 curl -s https://raw.githubusercontent.com/dex"
+  ]
+}

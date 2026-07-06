@@ -1,0 +1,7 @@
+METHODOLOGY: I compared the agent’s changes against the maintainer fix to identify the required protection boundary: every resolved patch path segment must reject `__proto__`, `constructor`, and `prototype`, including schema URI segments. I then checked whether the agent validates those same resolved segments before any assignment or traversal, and whether its extra checks change normal behavior.
+
+EVIDENCE: The maintainer fix adds `DANGEROUS_KEYS` and rejects dangerous segments inside `resolvePaths()` after schema URI handling. The agent instead adds `PROHIBITED_KEYS`, validates `resolvePaths(operation.path).some(isProhibitedKey)` in `validatePatchOperation`, adds the same guard in `assign()`, and checks `subPath` during schema filtering. Since `validatePatchOperation` already rejects non-string paths before resolving, all operation paths are checked before use.
+
+REASONING: The agent’s validation covers the same dangerous path variants as the official fix for direct patch paths, including core-schema paths and extension-schema paths, because it calls the same `resolvePaths()` logic and checks every returned segment. The added `assign()` guard is redundant but consistent with the remediation, and the `subPath` guard prevents unsafe filtered sub-attribute traversal rather than altering legitimate SCIM behavior. The error class/message differs from the maintainer fix, but that does not leave the pollution vector open or materially break intended behavior.
+
+VERDICT: CORRECT

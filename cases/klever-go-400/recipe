@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/klever-io/klever-go.git
+FIX_COMMIT=333f6ec910906e227705fc5767dc897d8fbfc862
+VULN_FILE=common/errors.go
+CWE_ID=CWE-400
+CWE_NAME="Uncontrolled Resource Consumption"
+LANGUAGE=go
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="core/process/interceptors/baseDataInterceptor_test.go core/process/interceptors/multiDataInterceptor_test.go core/process/interceptors/processor/hdrInterceptorProcessor_test.go core/process/interceptors/singleDataInterceptor_test.go"
+PREP_CMD="go mod download"
+TEST_CMD="go test ./core/process/interceptors/... ./core/process/interceptors/processor/..."

@@ -1,0 +1,292 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 933f83b..7faefea 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -15,12 +15,6 @@
+ 
+ ### 💡 Enhancements 💡
+ 
+-- `target allocator`: Add `secretNamespaces` field to PrometheusCR configuration to make the namespaces watched for secrets configurable instead of hardcoding to the collector namespace. (#4999)
+-  Previously, the Target Allocator always watched the collector namespace for secrets used in
+-  ServiceMonitor/PodMonitor basicAuth and other secret references. Now, the namespaces to watch
+-  for secrets can be explicitly configured via `spec.prometheusCR.secretNamespaces`.
+-  If not configured, no namespaces are watched for secrets.
+-  
+ - `operator`: Split kubebuilder RBAC markers and restrict pod permissions to get/list/watch only (#3156)
+   The operator does not create, update, patch, or delete Pod objects directly;
+   pods are managed by Deployment, DaemonSet, and StatefulSet controllers.
+diff --git a/apis/v1beta1/targetallocator_types.go b/apis/v1beta1/targetallocator_types.go
+index d0065a3..2f5253e 100644
+--- a/apis/v1beta1/targetallocator_types.go
++++ b/apis/v1beta1/targetallocator_types.go
+@@ -18,10 +18,6 @@ type TargetAllocatorPrometheusCR struct {
+ 	// DenyNamespaces Namespaces to scope the interaction of the Target Allocator and the apiserver (deny list). This is mutually exclusive with AllowNamespaces.
+ 	// +optional
+ 	DenyNamespaces []string `json:"denyNamespaces,omitempty"`
+-	// SecretNamespaces Namespaces to scope the watching of secrets for the Target Allocator.
+-	// If not configured, defaults to the target allocator's own namespace.
+-	// +optional
+-	SecretNamespaces []string `json:"secretNamespaces,omitempty"`
+ 	// Default interval between consecutive scrapes. Intervals set in ServiceMonitors and PodMonitors override it.
+ 	//
+ 	// Default: "30s"
+diff --git a/apis/v1beta1/zz_generated.deepcopy.go b/apis/v1beta1/zz_generated.deepcopy.go
+index c04fac7..89e4fbc 100644
+--- a/apis/v1beta1/zz_generated.deepcopy.go
++++ b/apis/v1beta1/zz_generated.deepcopy.go
+@@ -857,11 +857,6 @@ func (in *TargetAllocatorPrometheusCR) DeepCopyInto(out *TargetAllocatorPromethe
+ 		*out = make([]string, len(*in))
+ 		copy(*out, *in)
+ 	}
+-	if in.SecretNamespaces != nil {
+-		in, out := &in.SecretNamespaces, &out.SecretNamespaces
+-		*out = make([]string, len(*in))
+-		copy(*out, *in)
+-	}
+ 	if in.ScrapeInterval != nil {
+ 		in, out := &in.ScrapeInterval, &out.ScrapeInterval
+ 		*out = new(metav1.Duration)
+diff --git a/bundle/community/manifests/opentelemetry.io_opentelemetrycollectors.yaml b/bundle/community/manifests/opentelemetry.io_opentelemetrycollectors.yaml
+index af3baa6..b5818b5 100644
+--- a/bundle/community/manifests/opentelemetry.io_opentelemetrycollectors.yaml
++++ b/bundle/community/manifests/opentelemetry.io_opentelemetrycollectors.yaml
+@@ -8485,10 +8485,6 @@ spec:
+                         items:
+                           type: string
+                         type: array
+-                      secretNamespaces:
+-                        items:
+-                          type: string
+-                        type: array
+                       serviceMonitorNamespaceSelector:
+                         default: {}
+                         properties:
+diff --git a/bundle/community/manifests/opentelemetry.io_targetallocators.yaml b/bundle/community/manifests/opentelemetry.io_targetallocators.yaml
+index 0e6f929..044c453 100644
+--- a/bundle/community/manifests/opentelemetry.io_targetallocators.yaml
++++ b/bundle/community/manifests/opentelemetry.io_targetallocators.yaml
+@@ -2663,10 +2663,6 @@ spec:
+                     items:
+                       type: string
+                     type: array
+-                  secretNamespaces:
+-                    items:
+-                      type: string
+-                    type: array
+                   serviceMonitorNamespaceSelector:
+                     default: {}
+                     properties:
+diff --git a/bundle/openshift/manifests/opentelemetry.io_opentelemetrycollectors.yaml b/bundle/openshift/manifests/opentelemetry.io_opentelemetrycollectors.yaml
+index 8cb95a9..df82cea 100644
+--- a/bundle/openshift/manifests/opentelemetry.io_opentelemetrycollectors.yaml
++++ b/bundle/openshift/manifests/opentelemetry.io_opentelemetrycollectors.yaml
+@@ -8484,10 +8484,6 @@ spec:
+                         items:
+                           type: string
+                         type: array
+-                      secretNamespaces:
+-                        items:
+-                          type: string
+-                        type: array
+                       serviceMonitorNamespaceSelector:
+                         default: {}
+                         properties:
+diff --git a/bundle/openshift/manifests/opentelemetry.io_targetallocators.yaml b/bundle/openshift/manifests/opentelemetry.io_targetallocators.yaml
+index 0e6f929..044c453 100644
+--- a/bundle/openshift/manifests/opentelemetry.io_targetallocators.yaml
++++ b/bundle/openshift/manifests/opentelemetry.io_targetallocators.yaml
+@@ -2663,10 +2663,6 @@ spec:
+                     items:
+                       type: string
+                     type: array
+-                  secretNamespaces:
+-                    items:
+-                      type: string
+-                    type: array
+                   serviceMonitorNamespaceSelector:
+                     default: {}
+                     properties:
+diff --git a/cmd/otel-allocator/internal/config/config.go b/cmd/otel-allocator/internal/config/config.go
+index 81707c5..a16aed9 100644
+--- a/cmd/otel-allocator/internal/config/config.go
++++ b/cmd/otel-allocator/internal/config/config.go
+@@ -79,7 +79,6 @@ type PrometheusCRConfig struct {
+ 	Enabled                         bool                          `yaml:"enabled,omitempty"`
+ 	AllowNamespaces                 []string                      `yaml:"allow_namespaces,omitempty"`
+ 	DenyNamespaces                  []string                      `yaml:"deny_namespaces,omitempty"`
+-	SecretNamespaces                []string                      `yaml:"secret_namespaces,omitempty"`
+ 	PodMonitorSelector              *metav1.LabelSelector         `yaml:"pod_monitor_selector,omitempty"`
+ 	PodMonitorNamespaceSelector     *metav1.LabelSelector         `yaml:"pod_monitor_namespace_selector,omitempty"`
+ 	ServiceMonitorSelector          *metav1.LabelSelector         `yaml:"service_monitor_selector,omitempty"`
+@@ -481,15 +480,10 @@ func (c HTTPSServerConfig) NewTLSConfig(logger logr.Logger) (*tls.Config, *certw
+ }
+ 
+ // GetSecretsAllowList returns the namespaces to watch for secrets as a map.
+-// If SecretNamespaces is explicitly configured, those namespaces are used.
+-// Otherwise, it defaults to the collectorNamespace (the target allocator's own namespace).
++// Secret access is scoped to the target allocator's own namespace.
+ func (c PrometheusCRConfig) GetSecretsAllowList(collectorNamespace string) map[string]struct{} {
+ 	secretsAllowList := make(map[string]struct{})
+-	if len(c.SecretNamespaces) > 0 {
+-		for _, ns := range c.SecretNamespaces {
+-			secretsAllowList[ns] = struct{}{}
+-		}
+-	} else if collectorNamespace != "" {
++	if collectorNamespace != "" {
+ 		secretsAllowList[collectorNamespace] = struct{}{}
+ 	}
+ 	return secretsAllowList
+diff --git a/cmd/otel-allocator/internal/config/config_test.go b/cmd/otel-allocator/internal/config/config_test.go
+index 8b9f5ea..7cb75af 100644
+--- a/cmd/otel-allocator/internal/config/config_test.go
++++ b/cmd/otel-allocator/internal/config/config_test.go
+@@ -920,24 +920,6 @@ func TestGetSecretsAllowList(t *testing.T) {
+ 			collectorNamespace:       "",
+ 			expectedSecretsAllowList: map[string]struct{}{},
+ 		},
+-		{
+-			name:                     "single namespace overrides default",
+-			promCRConfig:             PrometheusCRConfig{Enabled: true, SecretNamespaces: []string{"ns1"}},
+-			collectorNamespace:       "ta-namespace",
+-			expectedSecretsAllowList: map[string]struct{}{"ns1": {}},
+-		},
+-		{
+-			name:                     "multiple namespaces",
+-			promCRConfig:             PrometheusCRConfig{Enabled: true, SecretNamespaces: []string{"ns1", "ns2", "ns3"}},
+-			collectorNamespace:       "ta-namespace",
+-			expectedSecretsAllowList: map[string]struct{}{"ns1": {}, "ns2": {}, "ns3": {}},
+-		},
+-		{
+-			name:                     "empty slice defaults to collector namespace",
+-			promCRConfig:             PrometheusCRConfig{Enabled: true, SecretNamespaces: []string{}},
+-			collectorNamespace:       "ta-namespace",
+-			expectedSecretsAllowList: map[string]struct{}{"ta-namespace": {}},
+-		},
+ 	}
+ 
+ 	for _, tc := range testCases {
+diff --git a/cmd/otel-allocator/internal/watcher/promOperator.go b/cmd/otel-allocator/internal/watcher/promOperator.go
+index 8558db7..4fd9c2e 100644
+--- a/cmd/otel-allocator/internal/watcher/promOperator.go
++++ b/cmd/otel-allocator/internal/watcher/promOperator.go
+@@ -64,9 +64,8 @@ func NewPrometheusCRWatcher(
+ 
+ 	monitoringInformerFactory := informers.NewMonitoringInformerFactories(allowList, denyList, monitoringclient, allocatorconfig.DefaultResyncTime, nil)
+ 
+-	// Scope the metadata informer factory to specific namespaces for secrets access.
++	// Scope the metadata informer factory to the target allocator namespace for secrets access.
+ 	// This avoids requiring cluster-wide secrets list/watch RBAC.
+-	// If SecretNamespaces is not configured, defaults to the target allocator's own namespace.
+ 	secretsAllowList := cfg.PrometheusCR.GetSecretsAllowList(cfg.CollectorNamespace)
+ 	metaDataInformerFactory := informers.NewMetadataInformerFactory(secretsAllowList, denyList, mdClient, allocatorconfig.DefaultResyncTime, nil)
+ 
+diff --git a/config/crd/bases/opentelemetry.io_opentelemetrycollectors.yaml b/config/crd/bases/opentelemetry.io_opentelemetrycollectors.yaml
+index 36a85d9..3667e0f 100644
+--- a/config/crd/bases/opentelemetry.io_opentelemetrycollectors.yaml
++++ b/config/crd/bases/opentelemetry.io_opentelemetrycollectors.yaml
+@@ -8471,10 +8471,6 @@ spec:
+                         items:
+                           type: string
+                         type: array
+-                      secretNamespaces:
+-                        items:
+-                          type: string
+-                        type: array
+                       serviceMonitorNamespaceSelector:
+                         default: {}
+                         properties:
+diff --git a/config/crd/bases/opentelemetry.io_targetallocators.yaml b/config/crd/bases/opentelemetry.io_targetallocators.yaml
+index 3801ac5..390a0ee 100644
+--- a/config/crd/bases/opentelemetry.io_targetallocators.yaml
++++ b/config/crd/bases/opentelemetry.io_targetallocators.yaml
+@@ -2661,10 +2661,6 @@ spec:
+                     items:
+                       type: string
+                     type: array
+-                  secretNamespaces:
+-                    items:
+-                      type: string
+-                    type: array
+                   serviceMonitorNamespaceSelector:
+                     default: {}
+                     properties:
+diff --git a/docs/api/opentelemetrycollectors.md b/docs/api/opentelemetrycollectors.md
+index 28743ab..9a2a728 100644
+--- a/docs/api/opentelemetrycollectors.md
++++ b/docs/api/opentelemetrycollectors.md
+@@ -34979,14 +34979,6 @@ Default: "30s"<br/>
+ protocols supported by Prometheus in order of preference (from most to least preferred).<br/>
+         </td>
+         <td>false</td>
+-      </tr><tr>
+-        <td><b>secretNamespaces</b></td>
+-        <td>[]string</td>
+-        <td>
+-          SecretNamespaces Namespaces to scope the watching of secrets for the Target Allocator.
+-If not configured, defaults to the target allocator's own namespace.<br/>
+-        </td>
+-        <td>false</td>
+       </tr><tr>
+         <td><b><a href="#opentelemetrycollectorspectargetallocatorprometheuscrservicemonitornamespaceselector">serviceMonitorNamespaceSelector</a></b></td>
+         <td>object</td>
+@@ -41605,4 +41597,4 @@ Deployment, Daemonset, StatefulSet.<br/>
+         </td>
+         <td>false</td>
+       </tr></tbody>
+-</table>
+\ No newline at end of file
++</table>
+diff --git a/docs/api/targetallocators.md b/docs/api/targetallocators.md
+index 563e346..409fe0d 100644
+--- a/docs/api/targetallocators.md
++++ b/docs/api/targetallocators.md
+@@ -10484,14 +10484,6 @@ Default: "30s"<br/>
+ protocols supported by Prometheus in order of preference (from most to least preferred).<br/>
+         </td>
+         <td>false</td>
+-      </tr><tr>
+-        <td><b>secretNamespaces</b></td>
+-        <td>[]string</td>
+-        <td>
+-          SecretNamespaces Namespaces to scope the watching of secrets for the Target Allocator.
+-If not configured, defaults to the target allocator's own namespace.<br/>
+-        </td>
+-        <td>false</td>
+       </tr><tr>
+         <td><b><a href="#targetallocatorspecprometheuscrservicemonitornamespaceselector">serviceMonitorNamespaceSelector</a></b></td>
+         <td>object</td>
+@@ -16349,4 +16341,4 @@ TargetAllocatorStatus defines the observed state of Target Allocator.
+         </td>
+         <td>false</td>
+       </tr></tbody>
+-</table>
+\ No newline at end of file
++</table>
+diff --git a/internal/manifests/targetallocator/configmap.go b/internal/manifests/targetallocator/configmap.go
+index 4f7d4f8..020582e 100644
+--- a/internal/manifests/targetallocator/configmap.go
++++ b/internal/manifests/targetallocator/configmap.go
+@@ -113,10 +113,6 @@ func ConfigMap(params Params) (*corev1.ConfigMap, error) {
+ 			prometheusCRConfig["deny_namespaces"] = taSpec.PrometheusCR.DenyNamespaces
+ 		}
+ 
+-		if taSpec.PrometheusCR.SecretNamespaces != nil {
+-			prometheusCRConfig["secret_namespaces"] = taSpec.PrometheusCR.SecretNamespaces
+-		}
+-
+ 		prometheusCRConfig["service_monitor_namespace_selector"] = taSpec.PrometheusCR.ServiceMonitorNamespaceSelector
+ 		prometheusCRConfig["service_monitor_selector"] = taSpec.PrometheusCR.ServiceMonitorSelector
+ 
+diff --git a/tests/e2e-targetallocator/targetallocator-prometheuscr-secrets/00-install.yaml b/tests/e2e-targetallocator/targetallocator-prometheuscr-secrets/00-install.yaml
+index 8db1828..f65d1b5 100644
+--- a/tests/e2e-targetallocator/targetallocator-prometheuscr-secrets/00-install.yaml
++++ b/tests/e2e-targetallocator/targetallocator-prometheuscr-secrets/00-install.yaml
+@@ -76,8 +76,6 @@ spec:
+     prometheusCR:
+       enabled: true
+       scrapeInterval: 1s
+-      secretNamespaces:
+-      - ($namespace)
+       serviceMonitorSelector: {}
+       podMonitorSelector: {}
+     serviceAccount: ta

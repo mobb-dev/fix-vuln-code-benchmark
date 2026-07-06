@@ -1,0 +1,149 @@
+diff --git a/dulwich/merge_drivers.py b/dulwich/merge_drivers.py
+index 0e327ea..d1253ac 100644
+--- a/dulwich/merge_drivers.py
++++ b/dulwich/merge_drivers.py
+@@ -29,6 +29,7 @@ __all__ = [
+ ]
+ 
+ import os
++import shlex
+ import subprocess
+ import tempfile
+ from collections.abc import Callable
+@@ -77,6 +78,52 @@ class ProcessMergeDriver:
+         self.command = command
+         self.name = name
+ 
++    def _command_args(
++        self,
++        ancestor_path: str,
++        ours_path: str,
++        theirs_path: str,
++        path: str | None,
++        marker_size: int,
++    ) -> list[str]:
++        """Build subprocess arguments with placeholders expanded."""
++        args = shlex.split(self.command, posix=(os.name != "nt"))
++        replacements = {
++            "%O": ancestor_path,
++            "%A": ours_path,
++            "%B": theirs_path,
++            "%L": str(marker_size),
++        }
++        if path:
++            replacements["%P"] = path
++        return [self._replace_placeholders(arg, replacements) for arg in args]
++
++    @staticmethod
++    def _replace_placeholders(arg: str, replacements: dict[str, str]) -> str:
++        for placeholder, value in replacements.items():
++            arg = arg.replace(placeholder, value)
++        return arg
++
++    @staticmethod
++    def _extract_stdout_redirect(args: list[str]) -> tuple[list[str], str | None, str]:
++        """Extract simple shell-style stdout redirection from arguments."""
++        stdout_path = None
++        stdout_mode = "wb"
++        cleaned_args = []
++        i = 0
++        while i < len(args):
++            arg = args[i]
++            if arg in (">", ">>"):
++                if stdout_path is not None or i + 1 >= len(args):
++                    raise ValueError("invalid stdout redirection")
++                stdout_path = args[i + 1]
++                stdout_mode = "ab" if arg == ">>" else "wb"
++                i += 2
++                continue
++            cleaned_args.append(arg)
++            i += 1
++        return cleaned_args, stdout_path, stdout_mode
++
+     def merge(
+         self,
+         ancestor: bytes,
+@@ -110,23 +157,27 @@ class ProcessMergeDriver:
+             with open(theirs_path, "wb") as f:
+                 f.write(theirs)
+ 
+-            # Prepare command with placeholders
+-            cmd = self.command
+-            cmd = cmd.replace("%O", ancestor_path)
+-            cmd = cmd.replace("%A", ours_path)
+-            cmd = cmd.replace("%B", theirs_path)
+-            cmd = cmd.replace("%L", str(marker_size))
+-            if path:
+-                cmd = cmd.replace("%P", path)
++            args = self._command_args(
++                ancestor_path, ours_path, theirs_path, path, marker_size
++            )
++            args, stdout_path, stdout_mode = self._extract_stdout_redirect(args)
+ 
+             # Execute merge command
+             try:
+-                result = subprocess.run(
+-                    cmd,
+-                    shell=True,
+-                    capture_output=True,
+-                    text=False,
+-                )
++                if stdout_path is None:
++                    result = subprocess.run(
++                        args,
++                        capture_output=True,
++                        text=False,
++                    )
++                else:
++                    with open(stdout_path, stdout_mode) as stdout:
++                        result = subprocess.run(
++                            args,
++                            stdout=stdout,
++                            stderr=subprocess.PIPE,
++                            text=False,
++                        )
+ 
+                 # Read merged content from ours file
+                 with open(ours_path, "rb") as f:
+@@ -137,7 +188,7 @@ class ProcessMergeDriver:
+ 
+                 return merged_content, success
+ 
+-            except subprocess.SubprocessError:
++            except (OSError, ValueError, subprocess.SubprocessError):
+                 # If the command fails completely, return original with conflicts
+                 return ours, False
+ 
+diff --git a/tests/test_merge_drivers.py b/tests/test_merge_drivers.py
+index 9b480bf..caba0c9 100644
+--- a/tests/test_merge_drivers.py
++++ b/tests/test_merge_drivers.py
+@@ -21,6 +21,7 @@
+ """Tests for merge driver support."""
+ 
+ import importlib.util
++import os
+ import sys
+ import unittest
+ 
+@@ -205,6 +206,20 @@ class ProcessMergeDriverTests(unittest.TestCase):
+         self.assertEqual(result, expected)
+         self.assertTrue(success)
+ 
++    def test_merge_path_does_not_inject_shell_commands(self):
++        """Test that merge driver placeholders are not interpreted by a shell."""
++        marker = os.path.join(os.getcwd(), "merge-driver-injection-marker")
++        self.addCleanup(lambda: os.path.exists(marker) and os.remove(marker))
++        command = f"echo path: %P > %A ; touch {marker}"
++        driver = ProcessMergeDriver(command, "path_driver")
++
++        result, success = driver.merge(b"a", b"b", b"c", path="dir/file.xml")
++
++        self.assertFalse(os.path.exists(marker))
++        self.assertIn(b"path: dir/file.xml", result)
++        self.assertIn(f"; touch {marker}".encode(), result)
++        self.assertTrue(success)
++
+ 
+ class MergeBlobsWithDriversTests(unittest.TestCase):
+     """Tests for merge_blobs with merge drivers."""

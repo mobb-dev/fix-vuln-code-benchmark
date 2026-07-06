@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/l3montree-dev/devguard.git
+FIX_COMMIT=1be88ec1309a5dc0566e35a23bdc4ea3ecd11417
+VULN_FILE=middlewares/access_control_middlewares.go
+CWE_ID=CWE-285
+CWE_NAME="Improper Authorization"
+LANGUAGE=go
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="router/router_test.go"
+PREP_CMD="go mod download"
+TEST_CMD="go test ./router/..."

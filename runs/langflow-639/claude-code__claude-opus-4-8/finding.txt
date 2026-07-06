@@ -1,0 +1,13 @@
+Project: langflow-ai/langflow
+Vulnerability type: Authorization Bypass Through User-Controlled Key (CWE-639)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  src/backend/base/langflow/api/v1/endpoints.py
+    - lines 412-417   in: async def check_flow_user_permission(
+    - lines 556-562   in: async def on_disconnect() -> None:
+    - lines 616-622   in: async def simplified_run_flow(
+    - lines 826-832   in: async def webhook_run_flow(
+
+  src/backend/base/langflow/helpers/flow.py
+    - lines 398-412   in: def get_arg_names(inputs: list[Vertex]) -> list[dict[str, str]]:

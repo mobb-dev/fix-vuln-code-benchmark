@@ -1,0 +1,12 @@
+Project: jupyter-server/jupyter_server
+Vulnerability type: Cross-site Scripting (CWE-79)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  jupyter_server/nbconvert/handlers.py
+    - lines 92-97   in: class NbconvertFileHandler(JupyterHandler):
+    - lines 173-178   in: class NbconvertPostHandler(JupyterHandler):
+
+  jupyter_server/serverapp.py
+    - lines 457-462   in: def init_settings(
+    - lines 1604-1609   in: def template_file_path(self) -> list[str]:

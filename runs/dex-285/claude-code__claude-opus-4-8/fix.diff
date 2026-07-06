@@ -1,0 +1,38 @@
+diff --git a/connector/authproxy/authproxy.go b/connector/authproxy/authproxy.go
+index f3d87fc..fd9252a 100644
+--- a/connector/authproxy/authproxy.go
++++ b/connector/authproxy/authproxy.go
+@@ -19,6 +19,7 @@ import (
+ // Headers retrieved to fetch user's email and group can be configured
+ // with userHeader and groupHeader.
+ type Config struct {
++	RedirectURI          string   `json:"redirectURI"`
+ 	UserIDHeader         string   `json:"userIDHeader"`
+ 	UserHeader           string   `json:"userHeader"`
+ 	UserNameHeader       string   `json:"userNameHeader"`
+@@ -56,6 +57,7 @@ func (c *Config) Open(id string, logger *slog.Logger) (connector.Connector, erro
+ 	}
+ 
+ 	return &callback{
++		redirectURI:          c.RedirectURI,
+ 		userIDHeader:         userIDHeader,
+ 		userHeader:           userHeader,
+ 		userNameHeader:       userNameHeader,
+@@ -71,6 +73,7 @@ func (c *Config) Open(id string, logger *slog.Logger) (connector.Connector, erro
+ // Callback is a connector which returns an identity with the HTTP header
+ // X-Remote-User as verified email.
+ type callback struct {
++	redirectURI          string
+ 	userIDHeader         string
+ 	userNameHeader       string
+ 	userHeader           string
+@@ -84,6 +87,9 @@ type callback struct {
+ 
+ // LoginURL returns the URL to redirect the user to login with.
+ func (m *callback) LoginURL(s connector.Scopes, callbackURL, state string) (string, error) {
++	if m.redirectURI != callbackURL {
++		return "", fmt.Errorf("expected callback URL %q did not match the URL in the config %q", callbackURL, m.redirectURI)
++	}
+ 	u, err := url.Parse(callbackURL)
+ 	if err != nil {
+ 		return "", fmt.Errorf("failed to parse callbackURL %q: %v", callbackURL, err)

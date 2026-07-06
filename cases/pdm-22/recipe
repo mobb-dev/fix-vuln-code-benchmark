@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/pdm-project/pdm.git
+FIX_COMMIT=41aa5f94a30e51b1a460af27312dd9dc532aad5a
+VULN_FILE=src/pdm/installers/installers.py
+CWE_ID=CWE-22
+CWE_NAME="Path Traversal"
+LANGUAGE=python
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="tests/test_installer.py"
+PREP_CMD="pip install -e '.[test]' || pip install -e '.[tests]' || pip install -e '.[dev]' || pip install -e '.[testing]' || pip install -e '.[all]' || pip install -e . || true; pip install -q pytest pytest-asyncio pytest-mock pytest-cov pyyaml httpx || true"
+TEST_CMD="python -m pytest tests/test_installer.py -x"

@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/AdguardTeam/dnsproxy.git
+FIX_COMMIT=f00d992ce9567a50f596853978ad6500acfdcf1d
+VULN_FILE=internal/cmd/proxy.go
+CWE_ID=CWE-362
+CWE_NAME="CWE-362"
+LANGUAGE=go
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="proxy/errors_internal_test.go proxy/proxy_internal_test.go proxy/serverquic_internal_test.go upstream/dot_internal_test.go"
+PREP_CMD="go mod download"
+TEST_CMD="go test ./proxy/... ./upstream/..."

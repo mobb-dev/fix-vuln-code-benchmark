@@ -1,0 +1,17 @@
+{
+  "agent": "claude-code",
+  "model": "claude-opus-4-8",
+  "tool_calls": 34,
+  "turns": 35,
+  "cost_usd": 3.6607950000000007,
+  "usage": null,
+  "used_web": false,
+  "egress_attempts": [
+    "for t in curl wget aria2c axel http; do which $t 2>/dev/null && $t --version 2>/dev/null | head -1; done; echo \"---curl config test---\"; printf 'header = \"X-Test: abc\"\\nuser-agent = \"yt\"\\n' | curl --c",
+    "command -v curl wget aria2c axel http 2>/dev/null; echo \"done\"",
+    "cd /tmp\n# Test curl reads cookie+header from a config file (not argv)\nprintf '%s\\n' '--cookie \"test=ytdlp\"' '--header \"X-Secret: abc123\"' '--user-agent \"yt-dlp\"' > /tmp/curlcfg\ncurl --config /tmp/curl",
+    "printf '%s\\n' 'header = X-Secret: abc123' 'user_agent = yt-dlp-test' > /tmp/wgetrc_test; wget --config=/tmp/wgetrc_test --debug --tries=1 --timeout=1 -O /dev/null http://127.0.0.1:1/ 2>&1 | grep -iE \"",
+    "man curl 2>/dev/null | col -b | grep -A3 -iE \"^\\s*-b, --cookie\" | head -12 || curl --help all 2>/dev/null | grep -iE \"\\-b, --cookie|--cookie \" | head",
+    "curl --help all 2>/dev/null | grep -i \"cookie\" | head"
+  ]
+}

@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/oviva-ag/epa4all-client.git
+FIX_COMMIT=e13fa838c7b2c7e66f9abfffbe108a85f2f4d0c6
+VULN_FILE=vau/vau-httpclient/src/main/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorFactory.java
+CWE_ID=CWE-295
+CWE_NAME="CWE-295"
+LANGUAGE=java
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="vau/vau-httpclient/src/test/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorFactoryTest.java vau/vau-httpclient/src/test/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorImplTest.java"
+PREP_CMD="mvn -q -pl vau/vau-httpclient -am -DskipTests install"
+TEST_CMD="mvn -q -pl vau/vau-httpclient -Dtest=SignedPublicKeysTrustValidatorFactoryTest,SignedPublicKeysTrustValidatorImplTest test"

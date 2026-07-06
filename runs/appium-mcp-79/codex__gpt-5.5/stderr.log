@@ -1,0 +1,11 @@
+Reading additional input from stdin...
+2026-06-30T11:58:25.013453Z ERROR codex_core::tools::router: error=apply_patch verification failed: Failed to find expected lines in /work/src/ui/mcp-ui-utils.ts:
+  test('addUIResourceToResponse preserves text response content and appends UI resource', () => {
+    const response = { content: [{ type: 'text', text: 'ok' }] };
+    const uiResource = createUIResource('ui://appium-mcp/test', '<p>ok</p>');
+
+    expect(addUIResourceToResponse(response, uiResource)).toEqual({
+      content: [{ type: 'text', text: 'ok' }, uiResource],
+    });
+  });
+});

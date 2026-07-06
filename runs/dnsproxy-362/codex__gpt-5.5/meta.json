@@ -1,0 +1,17 @@
+{
+  "agent": "codex",
+  "model": "gpt-5.5",
+  "tool_calls": 53,
+  "turns": null,
+  "cost_usd": null,
+  "usage": {
+    "input_tokens": 1042365,
+    "cached_input_tokens": 916864,
+    "output_tokens": 7543,
+    "reasoning_output_tokens": 2267
+  },
+  "used_web": false,
+  "egress_attempts": [
+    "/bin/bash -lc 'git remote -v && git status --short && git log --oneline -5'"
+  ]
+}

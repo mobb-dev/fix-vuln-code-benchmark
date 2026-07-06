@@ -1,0 +1,57 @@
+diff --color -ruN --exclude=.git --exclude=FINDING.txt --exclude=node_modules --exclude=dist --exclude=build --exclude=lib --exclude=out --exclude=coverage --exclude=.nyc_output --exclude=.next --exclude=target --exclude=__pycache__ --exclude=.pytest_cache --exclude=.venv --exclude=venv --exclude=vendor --exclude=.gradle --exclude=package-lock.json --exclude=yarn.lock --exclude=pnpm-lock.yaml --exclude=*.log checkouts/scim-patch/src/scimPatch.ts /Users/jonathansantilli/workspaces/cursor/vuln-fix-bench/_poc/scim-patch/claude/src/scimPatch.ts
+--- checkouts/scim-patch/src/scimPatch.ts	2026-06-30 12:29:33
++++ /Users/jonathansantilli/workspaces/cursor/vuln-fix-bench/_poc/scim-patch/claude/src/scimPatch.ts	2026-06-30 12:31:46
+@@ -65,6 +65,10 @@
+ const SPLIT_PERIOD = /(?!\B"[^[]*)\.(?![^\]]*"\B)/g;
+ // Valid patch operation, value needs to be in lowercase here.
+ const AUTHORIZED_OPERATION = ['remove', 'add', 'replace'];
++// Object keys that must never be used as a target attribute because writing to
++// them would mutate the prototype chain (prototype pollution, CWE-1321).
++// These are not valid SCIM attribute names, so rejecting them is safe.
++const PROHIBITED_KEYS = ['__proto__', 'constructor', 'prototype'];
+ 
+ const CORE_SCHEMA_USER = 'urn:ietf:params:scim:schemas:core:2.0:User';
+ const CORE_SCHEMA_GROUP = 'urn:ietf:params:scim:schemas:core:2.0:Group';
+@@ -141,8 +145,21 @@
+ 
+     if (operation.path && typeof operation.path !== 'string')
+         throw new InvalidScimPatchRequest('Path is supposed to be a string');
++
++    if (typeof operation.path === 'string' && resolvePaths(operation.path).some(isProhibitedKey))
++        throw new InvalidScimPatchRequest('Path contains an unsafe attribute name.');
+ }
+ 
++/*
++ * isProhibitedKey returns true if the supplied attribute name would pollute the
++ * prototype chain if used as an object key.
++ * @param key the attribute name we want to check.
++ * @return true if the key is unsafe to assign.
++ */
++function isProhibitedKey(key: string): boolean {
++    return PROHIBITED_KEYS.includes(key);
++}
++
+ function resolvePaths(path: string): string[] {
+     const uriIndex = path.lastIndexOf(':');
+ 
+@@ -358,6 +375,9 @@
+             });
+         } else {
+             schemas = schemas.flatMap((schema)=>{
++                if (isProhibitedKey(subPath))
++                    throw new InvalidScimPatchOp('Invalid patch query.');
++
+                 if (!schema[subPath] && options.isRemoveOp)
+                     throw new InvalidRemoveOpPath();
+ 
+@@ -435,6 +455,10 @@
+  * @param op patch operation
+  */
+ function assign(obj:any, keyPath:Array<string>, value:any, op: string) {
++    // Reject any key that would mutate the prototype chain (prototype pollution).
++    if (keyPath.some(isProhibitedKey))
++        throw new InvalidScimPatchOp('Invalid patch query.');
++
+     const lastKeyIndex = keyPath.length-1;
+     for (let i = 0; i < lastKeyIndex; ++ i) {
+         const key = keyPath[i];

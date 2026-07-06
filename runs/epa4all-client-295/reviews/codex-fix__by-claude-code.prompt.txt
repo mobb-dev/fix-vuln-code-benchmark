@@ -1,0 +1,198 @@
+You are a senior application-security engineer. Judge whether an AI agent's code change correctly fixes a specific, known vulnerability.
+
+You are given three things below:
+  1. THE VULNERABILITY — its type and where it is in the code.
+  2. THE MAINTAINER'S OFFICIAL FIX — the real, accepted remediation. Treat it as the gold standard for what a complete and correct fix must cover. It is a reference, not the only acceptable implementation: a different but equivalent fix that fully and minimally remediates is still correct.
+  3. THE AGENT'S FIX — a diff produced by an AI agent. This is what you must judge.
+
+Evaluate the agent's fix with this methodology:
+  - From the vulnerability and the maintainer's fix, work out the root cause and EVERY place the vulnerability is present.
+  - Does the agent's fix remove the vulnerability at ALL of those places, not just some? Missing any injection point or variant is a real gap.
+  - Does it preserve the application's intended behavior — no broken functionality, and no unrelated behavioral changes beyond what the remediation requires? Removing the vulnerability but also changing unrelated behavior is an over-reach, not a clean fix.
+  - Be skeptical. A fix that reads plausibly but misses a variant is not correct; one that fixes the bug but also changes unrelated behavior is not clean.
+
+Respond in EXACTLY this structure and nothing else:
+
+METHODOLOGY: <2-4 sentences on how you evaluated it>
+EVIDENCE: <specific files, lines, or hunks from the diffs that justify the verdict>
+REASONING: <why the agent's fix does or does not fully and cleanly remediate the vulnerability without changing intended behavior>
+VERDICT: <one word: CORRECT, PARTIAL, or INCORRECT>
+
+Verdict meanings:
+  CORRECT   — fully removes the vulnerability AND preserves intended behavior.
+  PARTIAL   — removes the vulnerability but misses a variant, OR over-reaches and changes unrelated behavior.
+  INCORRECT — does not remove the vulnerability, or breaks functionality so it is not a valid fix.
+
+
+===== 1. THE VULNERABILITY =====
+Project: oviva-ag/epa4all-client
+Vulnerability type: Improper Certificate Validation (CWE-295)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  vau/vau-httpclient/src/main/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorFactory.java
+    - lines 2-7
+    - lines 19-25   in: public SignedPublicKeysTrustValidatorFactory(
+
+  vau/vau-httpclient/src/main/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorImpl.java
+    - lines 2-10
+    - lines 20-29   in: public class SignedPublicKeysTrustValidatorImpl implements SignedPublicKeysTrust
+    - lines 42-48   in: public boolean isTrusted(SignedPublicKeys signedPublicKeys) {
+    - lines 53-58   in: public boolean isTrusted(SignedPublicKeys signedPublicKeys) {
+
+===== 2. MAINTAINER OFFICIAL FIX (gold standard) =====
+--- a/vau/vau-httpclient/src/main/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorFactory.java
++++ b/vau/vau-httpclient/src/main/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorFactory.java
+@@ -2,6 +2,7 @@
+ 
+ import com.oviva.telematik.vau.httpclient.HttpClient;
+ import com.oviva.telematik.vau.httpclient.internal.cert.TrustValidator;
++import com.oviva.telematik.vau.httpclient.internal.cert.VauCertificateClient;
+ import de.gematik.vau.lib.VauClientStateMachine;
+ import java.net.URI;
+ 
+@@ -19,7 +20,8 @@ public SignedPublicKeysTrustValidatorFactory(
+   }
+ 
+   public VauClientStateMachine create(URI vauUri) {
++    var certClient = new VauCertificateClient(outerClient, trustValidator);
+     return new VauClientStateMachine(
+-        isPu, new SignedPublicKeysTrustValidatorImpl(outerClient, trustValidator, vauUri));
++        isPu, new SignedPublicKeysTrustValidatorImpl(certClient, vauUri));
+   }
+ }
+--- a/vau/vau-httpclient/src/main/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorImpl.java
++++ b/vau/vau-httpclient/src/main/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorImpl.java
+@@ -2,9 +2,7 @@
+ 
+ import com.nimbusds.jose.JOSEException;
+ import com.nimbusds.jose.crypto.impl.ECDSA;
+-import com.oviva.telematik.vau.httpclient.HttpClient;
+ import com.oviva.telematik.vau.httpclient.internal.cert.CertificateValidationException;
+-import com.oviva.telematik.vau.httpclient.internal.cert.TrustValidator;
+ import com.oviva.telematik.vau.httpclient.internal.cert.VauCertificateClient;
+ import de.gematik.vau.lib.data.SignedPublicKeysTrustValidator;
+ import java.net.URI;
+@@ -20,10 +18,9 @@ public class SignedPublicKeysTrustValidatorImpl implements SignedPublicKeysTrust
+   private final VauCertificateClient certDataClient;
+   private final URI vauUri;
+ 
+-  public SignedPublicKeysTrustValidatorImpl(
+-      HttpClient outerClient, TrustValidator trustValidator, URI vauUri) {
++  public SignedPublicKeysTrustValidatorImpl(VauCertificateClient client, URI vauUri) {
+     this.vauUri = vauUri;
+-    certDataClient = new VauCertificateClient(outerClient, trustValidator);
++    this.certDataClient = client;
+   }
+ 
+   @Override
+@@ -42,7 +39,7 @@ public boolean isTrusted(SignedPublicKeys signedPublicKeys) {
+ 
+       // https://www.rfc-editor.org/rfc/rfc7515.html#appendix-A.3.1
+       var signatureDer = ECDSA.transcodeSignatureToDER(signedPublicKeys.signatureEs256());
+-      ecdsa.verify(signatureDer);
++      return ecdsa.verify(signatureDer);
+ 
+     } catch (CertificateValidationException
+         | InvalidKeyException
+@@ -53,6 +50,5 @@ public boolean isTrusted(SignedPublicKeys signedPublicKeys) {
+       log.atDebug().setCause(e).log("failed to validate certificate: {}", e.getMessage());
+       return false;
+     }
+-    return true;
+   }
+ }
+===== 3. THE AGENT FIX TO JUDGE =====
+diff --git a/vau/vau-httpclient/src/main/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorImpl.java b/vau/vau-httpclient/src/main/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorImpl.java
+index bb73e05..cd5f7d6 100644
+--- a/vau/vau-httpclient/src/main/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorImpl.java
++++ b/vau/vau-httpclient/src/main/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorImpl.java
+@@ -42,7 +42,9 @@ public class SignedPublicKeysTrustValidatorImpl implements SignedPublicKeysTrust
+ 
+       // https://www.rfc-editor.org/rfc/rfc7515.html#appendix-A.3.1
+       var signatureDer = ECDSA.transcodeSignatureToDER(signedPublicKeys.signatureEs256());
+-      ecdsa.verify(signatureDer);
++      if (!ecdsa.verify(signatureDer)) {
++        throw new SignatureException("invalid signed public keys signature");
++      }
+ 
+     } catch (CertificateValidationException
+         | InvalidKeyException
+diff --git a/vau/vau-httpclient/src/test/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorImplTest.java b/vau/vau-httpclient/src/test/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorImplTest.java
+new file mode 100644
+index 0000000..7f025e0
+--- /dev/null
++++ b/vau/vau-httpclient/src/test/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorImplTest.java
+@@ -0,0 +1,72 @@
++package com.oviva.telematik.vau.httpclient.internal;
++
++import static org.junit.jupiter.api.Assertions.assertFalse;
++
++import com.fasterxml.jackson.dataformat.cbor.databind.CBORMapper;
++import com.oviva.telematik.vau.httpclient.HttpClient;
++import com.oviva.telematik.vau.httpclient.HttpResponse;
++import com.oviva.telematik.vau.httpclient.internal.cert.CertDataResponse;
++import com.oviva.telematik.vau.httpclient.internal.cert.TrustValidator;
++import de.gematik.vau.lib.data.SignedPublicKeysTrustValidator.SignedPublicKeys;
++import java.io.IOException;
++import java.net.URI;
++import java.nio.charset.StandardCharsets;
++import java.nio.file.Files;
++import java.nio.file.Path;
++import java.security.Security;
++import java.util.ArrayList;
++import java.util.Arrays;
++import java.util.List;
++import org.bouncycastle.jce.provider.BouncyCastleProvider;
++import org.bouncycastle.util.io.pem.PemObject;
++import org.bouncycastle.util.io.pem.PemReader;
++import org.junit.jupiter.api.Test;
++
++class SignedPublicKeysTrustValidatorImplTest {
++
++  static {
++    Security.addProvider(new BouncyCastleProvider());
++  }
++
++  @Test
++  void isTrustedReturnsFalseWhenSignatureVerificationFails() throws IOException {
++    var certDataResponse =
++        new CertDataResponse(
++            loadFirstPemObject("src/test/resources/cert.pem"),
++            loadFirstPemObject("src/test/resources/ca.pem"),
++            loadPemObjects("src/test/resources/chain.pem"));
++    var certDataResponseBody = new CBORMapper().writeValueAsBytes(certDataResponse);
++    HttpClient outerClient = req -> new HttpResponse(200, List.of(), certDataResponseBody);
++    TrustValidator trustValidator = (cert, issuerCa, certificateChain, ocspResponseDer) -> {};
++    var validator =
++        new SignedPublicKeysTrustValidatorImpl(
++            outerClient, trustValidator, URI.create("https://example.test/vau"));
++
++    var invalidSignature = new byte[64];
++    Arrays.fill(invalidSignature, (byte) 1);
++
++    assertFalse(
++        validator.isTrusted(
++            new SignedPublicKeys(
++                "signed-public-keys".getBytes(StandardCharsets.UTF_8),
++                invalidSignature,
++                new byte[] {1, 2, 3},
++                1,
++                new byte[] {4, 5, 6})));
++  }
++
++  private static byte[] loadFirstPemObject(String path) throws IOException {
++    return loadPemObjects(path).get(0);
++  }
++
++  private static List<byte[]> loadPemObjects(String path) throws IOException {
++    try (var reader = new PemReader(Files.newBufferedReader(Path.of(path)))) {
++      var objects = new ArrayList<byte[]>();
++      PemObject pemObject;
++      while ((pemObject = reader.readPemObject()) != null) {
++        objects.add(pemObject.getContent());
++      }
++      return objects;
++    }
++  }
++}

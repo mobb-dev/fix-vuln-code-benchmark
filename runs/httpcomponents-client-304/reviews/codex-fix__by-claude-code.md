@@ -1,0 +1,11 @@
+METHODOLOGY: I derived the root cause from the gold standard — SCRAM mutual auth was skipping the critical server-signature verification step: a final/200 response with no `Authentication-Info`, no `data`, or no `v` was silently treated as success, and out-of-sequence/sid-unbound messages were accepted. I checked whether the agent forces signature verification at every one of those exit points and whether it covers the other places the maintainer touched (sid binding, iteration ceiling, default scheme priority).
+
+EVIDENCE:
+- ScramScheme `authChallenge == null && !challenged`: agent now throws `"SCRAM server final message missing"` when `state == CLIENT_FINAL_SENT || expectedV != null` (matches maintainer intent).
+- Final-response path `data == null` and `vB64 == null`: agent now throws instead of `return` (closes the silent-success holes); also adds `state != CLIENT_FINAL_SENT` sequencing throw.
+- AuthenticationHandler: agent adds `extractAuthenticationInfo(...)` and routes the non-challenged case through `processChallenge`, so the scheme is actually invoked to verify on a 200.
+- MISSING vs gold standard: DefaultAuthenticationStrategy is untouched (SCRAM_SHA_256 still in `DEFAULT_SCHEME_PRIORITY`); no `sid` presence/`sid` mismatch validation in either server-first or Authentication-Info; no `maxIterationsAllowed` ceiling; `isChallengeComplete()` is left as `complete || COMPLETE || FAILED`.
+
+REASONING: The agent fixes the core CWE-304 defect — the skipped server-signature check. Missing `Authentication-Info`, missing `data`, and missing `v` now all fail authentication, and basic state sequencing is enforced, so a malicious/MITM server can no longer have authentication "succeed" without proving knowledge of the server key. That is the primary, most exploitable variant and it is genuinely closed. However, the fix diverges from the gold standard at several places the maintainer treated as part of the remediation: it never validates the `sid` (presence in server-first, and match in Authentication-Info), so session-binding enforcement that the maintainer added is absent; it omits the iteration-count upper bound; and it does not remove SCRAM from the default scheme priority. These are real residual gaps relative to a complete fix, even though the central signature-verification step is now enforced.
+
+VERDICT: PARTIAL

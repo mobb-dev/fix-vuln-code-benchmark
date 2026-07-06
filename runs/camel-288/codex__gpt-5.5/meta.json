@@ -1,0 +1,17 @@
+{
+  "agent": "codex",
+  "model": "gpt-5.5",
+  "tool_calls": 40,
+  "turns": null,
+  "cost_usd": null,
+  "usage": {
+    "input_tokens": 1108412,
+    "cached_input_tokens": 1001472,
+    "output_tokens": 11073,
+    "reasoning_output_tokens": 2557
+  },
+  "used_web": false,
+  "egress_attempts": [
+    "/bin/bash -lc 'curl -I --max-time 20 https://repo.maven.apache.org/maven2/org/l2x6/cq/cq-alias-fastinstall-quickly-extension/4.21.0/cq-alias-fastinstall-quickly-extension-4.21.0.pom'"
+  ]
+}

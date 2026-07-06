@@ -1,0 +1,14 @@
+{
+  "agent": "claude-code",
+  "model": "claude-opus-4-8",
+  "tool_calls": 33,
+  "turns": 34,
+  "cost_usd": 2.934229,
+  "usage": null,
+  "used_web": false,
+  "egress_attempts": [
+    "git log --oneline -5 && echo \"---REMOTES---\" && git remote -v && echo \"---\" && git diff HEAD~1 --stat 2>/dev/null | tail -20",
+    "git remote -v; echo \"===\"; git log --oneline -5",
+    "cd /tmp && timeout 20 curl -sL \"https://raw.githubusercontent.com/apache/httpcomponents-client/master/httpclient5/src/main/java/org/apache/hc/client5/http/impl/auth/ScramScheme.java\" -o up_scram.java "
+  ]
+}

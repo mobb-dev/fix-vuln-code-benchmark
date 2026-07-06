@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/mvantellingen/python-zeep.git
+FIX_COMMIT=83eb07bc6c84d841329d4f88856fecdba86f753e
+VULN_FILE=src/zeep/exceptions.py
+CWE_ID=CWE-918
+CWE_NAME="Server-Side Request Forgery"
+LANGUAGE=python
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="tests/test_loader.py tests/test_xsd_schemas.py"
+PREP_CMD="pip install -e '.[test]' 2>/dev/null || pip install -e '.[dev]' 2>/dev/null || pip install -e . 2>/dev/null || uv sync --dev 2>/dev/null || true; pip install -q pytest pytest-asyncio 2>/dev/null || true"
+TEST_CMD="python -m pytest tests/test_loader.py tests/test_xsd_schemas.py -x"

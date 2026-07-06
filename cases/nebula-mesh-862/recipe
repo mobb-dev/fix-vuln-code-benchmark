@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/forgekeep/nebula-mesh.git
+FIX_COMMIT=9d8bcd7667ecd0c2975cc71fb35a02fe131f76f2
+VULN_FILE=internal/api/audit.go
+CWE_ID=CWE-862
+CWE_NAME="Missing Authorization"
+LANGUAGE=go
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="internal/api/authz_test.go internal/api/inflight_authz_test.go internal/web/oidc_disable_cascade_test.go"
+PREP_CMD="go mod download"
+TEST_CMD="go test ./internal/api/... ./internal/web/..."

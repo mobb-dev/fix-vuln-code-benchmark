@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/marimo-team/marimo.git
+FIX_COMMIT=fdd55c8cf6260ae23bb411dc9d9269def5cf75d6
+VULN_FILE=marimo/_server/api/endpoints/assets.py
+CWE_ID=CWE-79
+CWE_NAME="Cross-site Scripting (XSS)"
+LANGUAGE=python
+# Used by verify.sh (execution verification): maintainer test, env prep, test command.
+TEST_FILES="tests/_server/api/endpoints/test_assets.py"
+PREP_CMD="uv pip install --system -e . pytest pytest-asyncio httpx"
+TEST_CMD="python -m pytest tests/_server/api/endpoints/test_assets.py -k test_inject_service_worker_escapes_file_key -q"

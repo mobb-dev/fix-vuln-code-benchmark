@@ -1,0 +1,104 @@
+diff --git a/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/BasicAuthenticationConfigurer.java b/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/BasicAuthenticationConfigurer.java
+index bef37925..b7510999 100644
+--- a/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/BasicAuthenticationConfigurer.java
++++ b/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/BasicAuthenticationConfigurer.java
+@@ -35,12 +35,9 @@ public class BasicAuthenticationConfigurer implements MainAuthenticationConfigur
+             AuthenticationConfig authenticationConfig,
+             HttpServerConfigurationProperties properties) {
+         String authPropertiesFileName = properties.getBasicPropertiesFile();
+-        String path
+-                = isNotEmpty(properties.getAuthenticationPath()) ? properties.getAuthenticationPath() : properties.getPath();
+-        // root means to authenticate everything
+-        if ("/".equals(path)) {
+-            path = "/*";
+-        }
++        // ensure the path protects the configured path and everything below it (CWE-288)
++        String path = MainAuthenticationConfigurer.toAuthenticationPath(
++                isNotEmpty(properties.getAuthenticationPath()) ? properties.getAuthenticationPath() : properties.getPath());
+         String realm = properties.getAuthenticationRealm() != null ? properties.getAuthenticationRealm() : DEFAULT_REALM;
+ 
+         AuthenticationConfigEntry entry = new AuthenticationConfigEntry();
+@@ -64,12 +61,9 @@ public class BasicAuthenticationConfigurer implements MainAuthenticationConfigur
+             AuthenticationConfig authenticationConfig,
+             HttpManagementServerConfigurationProperties properties) {
+         String authPropertiesFileName = properties.getBasicPropertiesFile();
+-        String path
+-                = isNotEmpty(properties.getAuthenticationPath()) ? properties.getAuthenticationPath() : properties.getPath();
+-        // root means to authenticate everything
+-        if ("/".equals(path)) {
+-            path = "/*";
+-        }
++        // ensure the path protects the configured path and everything below it (CWE-288)
++        String path = MainAuthenticationConfigurer.toAuthenticationPath(
++                isNotEmpty(properties.getAuthenticationPath()) ? properties.getAuthenticationPath() : properties.getPath());
+         String realm = properties.getAuthenticationRealm() != null ? properties.getAuthenticationRealm() : DEFAULT_REALM;
+ 
+         AuthenticationConfigEntry entry = new AuthenticationConfigEntry();
+diff --git a/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/JWTAuthenticationConfigurer.java b/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/JWTAuthenticationConfigurer.java
+index 61616107..61e962df 100644
+--- a/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/JWTAuthenticationConfigurer.java
++++ b/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/JWTAuthenticationConfigurer.java
+@@ -37,12 +37,9 @@ public class JWTAuthenticationConfigurer implements MainAuthenticationConfigurer
+             AuthenticationConfig authenticationConfig,
+             HttpServerConfigurationProperties properties) {
+ 
+-        String path
+-                = isNotEmpty(properties.getAuthenticationPath()) ? properties.getAuthenticationPath() : properties.getPath();
+-        // root means to authenticate everything
+-        if ("/".equals(path)) {
+-            path = "/*";
+-        }
++        // ensure the path protects the configured path and everything below it (CWE-288)
++        String path = MainAuthenticationConfigurer.toAuthenticationPath(
++                isNotEmpty(properties.getAuthenticationPath()) ? properties.getAuthenticationPath() : properties.getPath());
+         String realm = properties.getAuthenticationRealm() != null ? properties.getAuthenticationRealm() : null;
+ 
+         AuthenticationConfigEntry entry = new AuthenticationConfigEntry();
+@@ -72,12 +69,9 @@ public class JWTAuthenticationConfigurer implements MainAuthenticationConfigurer
+             AuthenticationConfig authenticationConfig,
+             HttpManagementServerConfigurationProperties properties) {
+ 
+-        String path
+-                = isNotEmpty(properties.getAuthenticationPath()) ? properties.getAuthenticationPath() : properties.getPath();
+-        // root means to authenticate everything
+-        if ("/".equals(path)) {
+-            path = "/*";
+-        }
++        // ensure the path protects the configured path and everything below it (CWE-288)
++        String path = MainAuthenticationConfigurer.toAuthenticationPath(
++                isNotEmpty(properties.getAuthenticationPath()) ? properties.getAuthenticationPath() : properties.getPath());
+         String realm = properties.getAuthenticationRealm() != null ? properties.getAuthenticationRealm() : null;
+ 
+         AuthenticationConfigEntry entry = new AuthenticationConfigEntry();
+diff --git a/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/MainAuthenticationConfigurer.java b/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/MainAuthenticationConfigurer.java
+index 72011adc..84c0fec6 100644
+--- a/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/MainAuthenticationConfigurer.java
++++ b/components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/MainAuthenticationConfigurer.java
+@@ -30,4 +30,27 @@ public interface MainAuthenticationConfigurer {
+     void configureAuthentication(
+             AuthenticationConfig authenticationConfig, HttpManagementServerConfigurationProperties properties);
+ 
++    /**
++     * Normalizes the configured authentication path into a wildcard pattern so that authentication is applied to the
++     * configured path <em>and everything beneath it</em>.
++     * <p>
++     * Without this, a non-wildcard path (such as the server context-path or an explicitly configured
++     * {@code authenticationPath}) is registered as an exact-match route, leaving every sub-path reachable without
++     * authentication. That is an authentication bypass using an alternate path (CWE-288).
++     *
++     * @param  path the configured authentication path (may be {@code null} or empty)
++     * @return      a wildcard path that protects the configured path and all sub-paths
++     */
++    static String toAuthenticationPath(String path) {
++        if (path == null || path.isEmpty()) {
++            // protect everything when no path is configured
++            return "/*";
++        }
++        if (!path.endsWith("*")) {
++            // turn the path into a prefix match so sub-paths are also authenticated
++            path = path + "*";
++        }
++        return path;
++    }
++
+ }

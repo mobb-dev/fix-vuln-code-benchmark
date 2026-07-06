@@ -1,0 +1,7 @@
+METHODOLOGY: I derived the root cause from the maintainer's fix: on a security-boundary redirect (cross-origin or scheme downgrade), credential-bearing headers must be stripped, and the gold-standard fix shows the missing variant is the `Cookie` header (added to the strip logic and the debug-log condition). I then checked whether the agent's diff strips `Cookie` at the same two locations.
+
+EVIDENCE: The agent's diff in `propagatedHeaders` only adds `headers.remove(PROXY_AUTHORIZATION)` unconditionally and refactors the existing `AUTHORIZATION` removal. It never imports or removes `COOKIE`, and it makes no change to the `exitAfterHandlingRedirect` debug-log condition (lines 113-119) where the maintainer added `|| request.getHeaders().contains(COOKIE)`. The added test only asserts `Proxy-Authorization` is stripped — nothing about cookies.
+
+REASONING: The actual vulnerability (CWE-200) is the `Cookie` header leaking across a redirect security boundary. The agent's fix does not touch the `Cookie` header anywhere, so the information-exposure vulnerability remains fully unremediated. Worse, the change it does make — stripping `Proxy-Authorization` unconditionally on every redirect rather than only on the security boundary — is unrelated to the vulnerability and alters intended behavior (proxy credentials previously survived same-origin redirects under the NTLM/SCRAM/no-strip path). So it both misses the target and introduces an unrelated behavioral change.
+
+VERDICT: INCORRECT

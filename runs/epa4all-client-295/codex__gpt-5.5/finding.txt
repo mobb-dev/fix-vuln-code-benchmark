@@ -1,0 +1,14 @@
+Project: oviva-ag/epa4all-client
+Vulnerability type: Improper Certificate Validation (CWE-295)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  vau/vau-httpclient/src/main/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorFactory.java
+    - lines 2-7
+    - lines 19-25   in: public SignedPublicKeysTrustValidatorFactory(
+
+  vau/vau-httpclient/src/main/java/com/oviva/telematik/vau/httpclient/internal/SignedPublicKeysTrustValidatorImpl.java
+    - lines 2-10
+    - lines 20-29   in: public class SignedPublicKeysTrustValidatorImpl implements SignedPublicKeysTrust
+    - lines 42-48   in: public boolean isTrusted(SignedPublicKeys signedPublicKeys) {
+    - lines 53-58   in: public boolean isTrusted(SignedPublicKeys signedPublicKeys) {

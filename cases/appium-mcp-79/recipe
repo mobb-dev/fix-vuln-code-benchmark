@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/appium/appium-mcp.git
+FIX_COMMIT=e222bbbd6fe2b656a320efcd143563f08061a83d
+VULN_FILE=src/ui/mcp-ui-utils.ts
+CWE_ID=CWE-79
+CWE_NAME="Cross-site Scripting"
+LANGUAGE=node
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="src/tests/mcp-ui-utils.test.ts"
+PREP_CMD="npm install --no-audit --no-fund --silent 2>/dev/null || yarn --silent 2>/dev/null || pnpm i --silent 2>/dev/null || true"
+TEST_CMD="npx --yes jest src/tests/mcp-ui-utils.test.ts || npx --yes mocha src/tests/mcp-ui-utils.test.ts || npm test"

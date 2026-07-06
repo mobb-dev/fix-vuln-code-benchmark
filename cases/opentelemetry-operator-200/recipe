@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/open-telemetry/opentelemetry-operator.git
+FIX_COMMIT=95a8c2a3dc64a762d3ab8eba8c903b5702a03a9c
+VULN_FILE=apis/v1alpha1/opentelemetrycollector_types.go
+CWE_ID=CWE-200
+CWE_NAME="Information Exposure"
+LANGUAGE=go
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="cmd/otel-allocator/internal/watcher/promOperator_denyfs_test.go internal/manifests/targetallocator/configmap_test.go"
+PREP_CMD="go mod download"
+TEST_CMD="go test ./cmd/otel-allocator/internal/watcher/... ./internal/manifests/targetallocator/..."

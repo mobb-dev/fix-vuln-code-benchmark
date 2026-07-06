@@ -1,0 +1,623 @@
+You are a senior application-security engineer. Judge whether an AI agent's code change correctly fixes a specific, known vulnerability.
+
+You are given three things below:
+  1. THE VULNERABILITY — its type and where it is in the code.
+  2. THE MAINTAINER'S OFFICIAL FIX — the real, accepted remediation. Treat it as the gold standard for what a complete and correct fix must cover. It is a reference, not the only acceptable implementation: a different but equivalent fix that fully and minimally remediates is still correct.
+  3. THE AGENT'S FIX — a diff produced by an AI agent. This is what you must judge.
+
+Evaluate the agent's fix with this methodology:
+  - From the vulnerability and the maintainer's fix, work out the root cause and EVERY place the vulnerability is present.
+  - Does the agent's fix remove the vulnerability at ALL of those places, not just some? Missing any injection point or variant is a real gap.
+  - Does it preserve the application's intended behavior — no broken functionality, and no unrelated behavioral changes beyond what the remediation requires? Removing the vulnerability but also changing unrelated behavior is an over-reach, not a clean fix.
+  - Be skeptical. A fix that reads plausibly but misses a variant is not correct; one that fixes the bug but also changes unrelated behavior is not clean.
+
+Respond in EXACTLY this structure and nothing else:
+
+METHODOLOGY: <2-4 sentences on how you evaluated it>
+EVIDENCE: <specific files, lines, or hunks from the diffs that justify the verdict>
+REASONING: <why the agent's fix does or does not fully and cleanly remediate the vulnerability without changing intended behavior>
+VERDICT: <one word: CORRECT, PARTIAL, or INCORRECT>
+
+Verdict meanings:
+  CORRECT   — fully removes the vulnerability AND preserves intended behavior.
+  PARTIAL   — removes the vulnerability but misses a variant, OR over-reaches and changes unrelated behavior.
+  INCORRECT — does not remove the vulnerability, or breaks functionality so it is not a valid fix.
+
+
+===== 1. THE VULNERABILITY =====
+Project: apache/camel
+Vulnerability type: Object Attribute Modification (CWE-915)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  components/camel-coap/src/main/java/org/apache/camel/coap/CamelCoapResource.java
+    - lines 22-27
+    - lines 99-111   in: public void handleRequest(Exchange exchange) {
+
+  components/camel-coap/src/main/java/org/apache/camel/coap/CoAPComponent.java
+    - lines 32-37
+    - lines 59-72
+    - lines 156-165   in: private static void doEnableDTLS(
+
+  components/camel-coap/src/main/java/org/apache/camel/coap/CoAPEndpoint.java
+    - lines 38-43
+    - lines 76-82
+    - lines 109-114   in: public class CoAPEndpoint extends DefaultEndpoint implements EndpointServiceLoca
+    - lines 272-277   in: public void setClient(CoapClient client) {
+
+===== 2. MAINTAINER OFFICIAL FIX (gold standard) =====
+--- a/components/camel-coap/src/generated/java/org/apache/camel/coap/CoAPComponentConfigurer.java
++++ b/components/camel-coap/src/generated/java/org/apache/camel/coap/CoAPComponentConfigurer.java
+@@ -30,6 +30,8 @@ public boolean configure(CamelContext camelContext, Object obj, String name, Obj
+         case "client": target.setClient(property(camelContext, org.eclipse.californium.core.CoapClient.class, value)); return true;
+         case "configurationfile":
+         case "configurationFile": target.setConfigurationFile(property(camelContext, java.lang.String.class, value)); return true;
++        case "headerfilterstrategy":
++        case "headerFilterStrategy": target.setHeaderFilterStrategy(property(camelContext, org.apache.camel.spi.HeaderFilterStrategy.class, value)); return true;
+         case "lazystartproducer":
+         case "lazyStartProducer": target.setLazyStartProducer(property(camelContext, boolean.class, value)); return true;
+         default: return false;
+@@ -46,6 +48,8 @@ public Class<?> getOptionType(String name, boolean ignoreCase) {
+         case "client": return org.eclipse.californium.core.CoapClient.class;
+         case "configurationfile":
+         case "configurationFile": return java.lang.String.class;
++        case "headerfilterstrategy":
++        case "headerFilterStrategy": return org.apache.camel.spi.HeaderFilterStrategy.class;
+         case "lazystartproducer":
+         case "lazyStartProducer": return boolean.class;
+         default: return null;
+@@ -63,6 +67,8 @@ public Object getOptionValue(Object obj, String name, boolean ignoreCase) {
+         case "client": return target.getClient();
+         case "configurationfile":
+         case "configurationFile": return target.getConfigurationFile();
++        case "headerfilterstrategy":
++        case "headerFilterStrategy": return target.getHeaderFilterStrategy();
+         case "lazystartproducer":
+         case "lazyStartProducer": return target.isLazyStartProducer();
+         default: return null;
+--- a/components/camel-coap/src/generated/java/org/apache/camel/coap/CoAPEndpointConfigurer.java
++++ b/components/camel-coap/src/generated/java/org/apache/camel/coap/CoAPEndpointConfigurer.java
+@@ -41,6 +41,8 @@ public boolean configure(CamelContext camelContext, Object obj, String name, Obj
+         case "exceptionHandler": target.setExceptionHandler(property(camelContext, org.apache.camel.spi.ExceptionHandler.class, value)); return true;
+         case "exchangepattern":
+         case "exchangePattern": target.setExchangePattern(property(camelContext, org.apache.camel.ExchangePattern.class, value)); return true;
++        case "headerfilterstrategy":
++        case "headerFilterStrategy": target.setHeaderFilterStrategy(property(camelContext, org.apache.camel.spi.HeaderFilterStrategy.class, value)); return true;
+         case "lazystartproducer":
+         case "lazyStartProducer": target.setLazyStartProducer(property(camelContext, boolean.class, value)); return true;
+         case "notify": target.setNotify(property(camelContext, boolean.class, value)); return true;
+@@ -79,6 +81,8 @@ public Class<?> getOptionType(String name, boolean ignoreCase) {
+         case "exceptionHandler": return org.apache.camel.spi.ExceptionHandler.class;
+         case "exchangepattern":
+         case "exchangePattern": return org.apache.camel.ExchangePattern.class;
++        case "headerfilterstrategy":
++        case "headerFilterStrategy": return org.apache.camel.spi.HeaderFilterStrategy.class;
+         case "lazystartproducer":
+         case "lazyStartProducer": return boolean.class;
+         case "notify": return boolean.class;
+@@ -118,6 +122,8 @@ public Object getOptionValue(Object obj, String name, boolean ignoreCase) {
+         case "exceptionHandler": return target.getExceptionHandler();
+         case "exchangepattern":
+         case "exchangePattern": return target.getExchangePattern();
++        case "headerfilterstrategy":
++        case "headerFilterStrategy": return target.getHeaderFilterStrategy();
+         case "lazystartproducer":
+         case "lazyStartProducer": return target.isLazyStartProducer();
+         case "notify": return target.isNotify();
+--- a/components/camel-coap/src/generated/java/org/apache/camel/coap/CoAPEndpointUriFactory.java
++++ b/components/camel-coap/src/generated/java/org/apache/camel/coap/CoAPEndpointUriFactory.java
+@@ -24,7 +24,7 @@ public class CoAPEndpointUriFactory extends org.apache.camel.support.component.E
+     private static final Set<String> SECRET_PROPERTY_NAMES;
+     private static final Map<String, String> MULTI_VALUE_PREFIXES;
+     static {
+-        Set<String> props = new HashSet<>(19);
++        Set<String> props = new HashSet<>(20);
+         props.add("advancedCertificateVerifier");
+         props.add("advancedPskStore");
+         props.add("alias");
+@@ -35,6 +35,7 @@ public class CoAPEndpointUriFactory extends org.apache.camel.support.component.E
+         props.add("coapMethodRestrict");
+         props.add("exceptionHandler");
+         props.add("exchangePattern");
++        props.add("headerFilterStrategy");
+         props.add("lazyStartProducer");
+         props.add("notify");
+         props.add("observable");
+--- a/components/camel-coap/src/main/java/org/apache/camel/coap/CamelCoapResource.java
++++ b/components/camel-coap/src/main/java/org/apache/camel/coap/CamelCoapResource.java
+@@ -22,6 +22,7 @@
+ import java.util.concurrent.ConcurrentHashMap;
+ 
+ import org.apache.camel.Message;
++import org.apache.camel.spi.HeaderFilterStrategy;
+ import org.eclipse.californium.core.CoapResource;
+ import org.eclipse.californium.core.coap.CoAP.ResponseCode;
+ import org.eclipse.californium.core.coap.MediaTypeRegistry;
+@@ -99,13 +100,22 @@ public void handleRequest(Exchange exchange) {
+             camelExchange = consumer.createExchange(false);
+             consumer.createUoW(camelExchange);
+ 
++            HeaderFilterStrategy strategy = consumer.getCoapEndpoint().getHeaderFilterStrategy();
+             OptionSet options = exchange.getRequest().getOptions();
+             for (String s : options.getUriQuery()) {
+                 int i = s.indexOf('=');
++                String name;
++                String value;
+                 if (i == -1) {
+-                    camelExchange.getIn().setHeader(s, "");
++                    name = s;
++                    value = "";
+                 } else {
+-                    camelExchange.getIn().setHeader(s.substring(0, i), s.substring(i + 1));
++                    name = s.substring(0, i);
++                    value = s.substring(i + 1);
++                }
++                if (strategy == null
++                        || !strategy.applyFilterToExternalHeaders(name, value, camelExchange)) {
++                    camelExchange.getIn().setHeader(name, value);
+                 }
+             }
+ 
+--- a/components/camel-coap/src/main/java/org/apache/camel/coap/CoAPComponent.java
++++ b/components/camel-coap/src/main/java/org/apache/camel/coap/CoAPComponent.java
+@@ -32,6 +32,8 @@
+ import org.apache.camel.Consumer;
+ import org.apache.camel.Endpoint;
+ import org.apache.camel.Processor;
++import org.apache.camel.spi.HeaderFilterStrategy;
++import org.apache.camel.spi.HeaderFilterStrategyAware;
+ import org.apache.camel.spi.Metadata;
+ import org.apache.camel.spi.RestConfiguration;
+ import org.apache.camel.spi.RestConsumerFactory;
+@@ -59,14 +61,17 @@
+  * Represents the component that manages {@link CoAPEndpoint}.
+  */
+ @Component("coap,coaps,coap+tcp,coaps+tcp")
+-public class CoAPComponent extends DefaultComponent implements RestConsumerFactory {
++public class CoAPComponent extends DefaultComponent implements RestConsumerFactory, HeaderFilterStrategyAware {
+     static final int DEFAULT_PORT = 5684;
+     private static final Logger LOG = LoggerFactory.getLogger(CoAPComponent.class);
+ 
+     @Metadata
+     private String configurationFile;
+     @Metadata(label = "producer,advanced")
+     private CoapClient client;
++    @Metadata(label = "filter",
++              description = "To use a custom org.apache.camel.spi.HeaderFilterStrategy to filter header to and from Camel message.")
++    private HeaderFilterStrategy headerFilterStrategy;
+ 
+     final Map<Integer, CoapServer> servers = new ConcurrentHashMap<>();
+ 
+@@ -156,10 +161,26 @@ private static void doEnableDTLS(
+         coapBuilder.setConnector(connector);
+     }
+ 
++    @Override
++    public HeaderFilterStrategy getHeaderFilterStrategy() {
++        return headerFilterStrategy;
++    }
++
++    /**
++     * To use a custom {@link org.apache.camel.spi.HeaderFilterStrategy} to filter header to and from Camel message.
++     */
++    @Override
++    public void setHeaderFilterStrategy(HeaderFilterStrategy headerFilterStrategy) {
++        this.headerFilterStrategy = headerFilterStrategy;
++    }
++
+     @Override
+     protected Endpoint createEndpoint(String uri, String remaining, Map<String, Object> parameters) throws Exception {
+         CoAPEndpoint endpoint = new CoAPEndpoint(uri, this);
+         endpoint.setClient(client);
++        if (headerFilterStrategy != null) {
++            endpoint.setHeaderFilterStrategy(headerFilterStrategy);
++        }
+         setProperties(endpoint, parameters);
+         return endpoint;
+     }
+--- a/components/camel-coap/src/main/java/org/apache/camel/coap/CoAPEndpoint.java
++++ b/components/camel-coap/src/main/java/org/apache/camel/coap/CoAPEndpoint.java
+@@ -38,6 +38,8 @@
+ import org.apache.camel.Processor;
+ import org.apache.camel.Producer;
+ import org.apache.camel.spi.EndpointServiceLocation;
++import org.apache.camel.spi.HeaderFilterStrategy;
++import org.apache.camel.spi.HeaderFilterStrategyAware;
+ import org.apache.camel.spi.UriEndpoint;
+ import org.apache.camel.spi.UriParam;
+ import org.apache.camel.spi.UriPath;
+@@ -76,7 +78,7 @@
+  */
+ @UriEndpoint(firstVersion = "2.16.0", scheme = "coap,coaps,coap+tcp,coaps+tcp", title = "CoAP", syntax = "coap:uri",
+              category = { Category.IOT }, headersClass = CoAPConstants.class)
+-public class CoAPEndpoint extends DefaultEndpoint implements EndpointServiceLocation {
++public class CoAPEndpoint extends DefaultEndpoint implements EndpointServiceLocation, HeaderFilterStrategyAware {
+     final static Logger LOGGER = LoggerFactory.getLogger(CoAPEndpoint.class);
+     @UriPath
+     private URI uri;
+@@ -109,6 +111,9 @@ public class CoAPEndpoint extends DefaultEndpoint implements EndpointServiceLoca
+     private boolean notify;
+     @UriParam(label = "producer,advanced")
+     private CoapClient client;
++    @UriParam(label = "advanced",
++              description = "To use a custom HeaderFilterStrategy to filter header to and from Camel message.")
++    private HeaderFilterStrategy headerFilterStrategy;
+ 
+     private CoAPComponent component;
+ 
+@@ -272,6 +277,22 @@ public void setClient(CoapClient client) {
+         this.client = client;
+     }
+ 
++    @Override
++    public HeaderFilterStrategy getHeaderFilterStrategy() {
++        if (headerFilterStrategy == null) {
++            headerFilterStrategy = new CoAPHeaderFilterStrategy();
++        }
++        return headerFilterStrategy;
++    }
++
++    /**
++     * To use a custom {@link org.apache.camel.spi.HeaderFilterStrategy} to filter header to and from Camel message.
++     */
++    @Override
++    public void setHeaderFilterStrategy(HeaderFilterStrategy headerFilterStrategy) {
++        this.headerFilterStrategy = headerFilterStrategy;
++    }
++
+     /**
+      * Get the SSLContextParameters object for setting up TLS. This is required for coaps+tcp, and for coaps when we are
+      * using certificates for TLS (as opposed to RPK or PKS).
+--- a/components/camel-coap/src/main/java/org/apache/camel/coap/CoAPHeaderFilterStrategy.java
++++ b/components/camel-coap/src/main/java/org/apache/camel/coap/CoAPHeaderFilterStrategy.java
+@@ -0,0 +1,33 @@
++/*
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++package org.apache.camel.coap;
++
++import org.apache.camel.support.DefaultHeaderFilterStrategy;
++
++/**
++ * Default header filter strategy for CoAP endpoints.
++ * <p>
++ * Filters out Camel internal headers (starting with "Camel" or "camel") in both directions to prevent external CoAP
++ * clients from injecting internal Camel headers via query parameters.
++ */
++public class CoAPHeaderFilterStrategy extends DefaultHeaderFilterStrategy {
++
++    public CoAPHeaderFilterStrategy() {
++        setOutFilterStartsWith(CAMEL_FILTER_STARTS_WITH);
++        setInFilterStartsWith(CAMEL_FILTER_STARTS_WITH);
++    }
++}
+--- a/dsl/camel-componentdsl/src/generated/java/org/apache/camel/builder/component/dsl/CoapComponentBuilderFactory.java
++++ b/dsl/camel-componentdsl/src/generated/java/org/apache/camel/builder/component/dsl/CoapComponentBuilderFactory.java
+@@ -159,6 +159,24 @@ default CoapComponentBuilder autowiredEnabled(boolean autowiredEnabled) {
+             doSetProperty("autowiredEnabled", autowiredEnabled);
+             return this;
+         }
++    
++        /**
++         * To use a custom org.apache.camel.spi.HeaderFilterStrategy to filter
++         * header to and from Camel message.
++         * 
++         * The option is a:
++         * &lt;code&gt;org.apache.camel.spi.HeaderFilterStrategy&lt;/code&gt;
++         * type.
++         * 
++         * Group: filter
++         * 
++         * @param headerFilterStrategy the value to set
++         * @return the dsl builder
++         */
++        default CoapComponentBuilder headerFilterStrategy(org.apache.camel.spi.HeaderFilterStrategy headerFilterStrategy) {
++            doSetProperty("headerFilterStrategy", headerFilterStrategy);
++            return this;
++        }
+     }
+ 
+     class CoapComponentBuilderImpl
+@@ -179,6 +197,7 @@ protected boolean setPropertyOnComponent(
+             case "lazyStartProducer": ((CoAPComponent) component).setLazyStartProducer((boolean) value); return true;
+             case "client": ((CoAPComponent) component).setClient((org.eclipse.californium.core.CoapClient) value); return true;
+             case "autowiredEnabled": ((CoAPComponent) component).setAutowiredEnabled((boolean) value); return true;
++            case "headerFilterStrategy": ((CoAPComponent) component).setHeaderFilterStrategy((org.apache.camel.spi.HeaderFilterStrategy) value); return true;
+             default: return false;
+             }
+         }
+--- a/dsl/camel-componentdsl/src/generated/java/org/apache/camel/builder/component/dsl/CoapTcpComponentBuilderFactory.java
++++ b/dsl/camel-componentdsl/src/generated/java/org/apache/camel/builder/component/dsl/CoapTcpComponentBuilderFactory.java
+@@ -159,6 +159,24 @@ default CoapTcpComponentBuilder autowiredEnabled(boolean autowiredEnabled) {
+             doSetProperty("autowiredEnabled", autowiredEnabled);
+             return this;
+         }
++    
++        /**
++         * To use a custom org.apache.camel.spi.HeaderFilterStrategy to filter
++         * header to and from Camel message.
++         * 
++         * The option is a:
++         * &lt;code&gt;org.apache.camel.spi.HeaderFilterStrategy&lt;/code&gt;
++         * type.
++         * 
++         * Group: filter
++         * 
++         * @param headerFilterStrategy the value to set
++         * @return the dsl builder
++         */
++        default CoapTcpComponentBuilder headerFilterStrategy(org.apache.camel.spi.HeaderFilterStrategy headerFilterStrategy) {
++            doSetProperty("headerFilterStrategy", headerFilterStrategy);
++            return this;
++        }
+     }
+ 
+     class CoapTcpComponentBuilderImpl
+@@ -179,6 +197,7 @@ protected boolean setPropertyOnComponent(
+             case "lazyStartProducer": ((CoAPComponent) component).setLazyStartProducer((boolean) value); return true;
+             case "client": ((CoAPComponent) component).setClient((org.eclipse.californium.core.CoapClient) value); return true;
+             case "autowiredEnabled": ((CoAPComponent) component).setAutowiredEnabled((boolean) value); return true;
++            case "headerFilterStrategy": ((CoAPComponent) component).setHeaderFilterStrategy((org.apache.camel.spi.HeaderFilterStrategy) value); return true;
+             default: return false;
+             }
+         }
+--- a/dsl/camel-componentdsl/src/generated/java/org/apache/camel/builder/component/dsl/CoapsComponentBuilderFactory.java
++++ b/dsl/camel-componentdsl/src/generated/java/org/apache/camel/builder/component/dsl/CoapsComponentBuilderFactory.java
+@@ -159,6 +159,24 @@ default CoapsComponentBuilder autowiredEnabled(boolean autowiredEnabled) {
+             doSetProperty("autowiredEnabled", autowiredEnabled);
+             return this;
+         }
++    
++        /**
++         * To use a custom org.apache.camel.spi.HeaderFilterStrategy to filter
++         * header to and from Camel message.
++         * 
++         * The option is a:
++         * &lt;code&gt;org.apache.camel.spi.HeaderFilterStrategy&lt;/code&gt;
++         * type.
++         * 
++         * Group: filter
++         * 
++         * @param headerFilterStrategy the value to set
++         * @return the dsl builder
++         */
++        default CoapsComponentBuilder headerFilterStrategy(org.apache.camel.spi.HeaderFilterStrategy headerFilterStrategy) {
++            doSetProperty("headerFilterStrategy", headerFilterStrategy);
++            return this;
++        }
+     }
+ 
+     class CoapsComponentBuilderImpl
+@@ -179,6 +197,7 @@ protected boolean setPropertyOnComponent(
+             case "lazyStartProducer": ((CoAPComponent) component).setLazyStartProducer((boolean) value); return true;
+             case "client": ((CoAPComponent) component).setClient((org.eclipse.californium.core.CoapClient) value); return true;
+             case "autowiredEnabled": ((CoAPComponent) component).setAutowiredEnabled((boolean) value); return true;
++            case "headerFilterStrategy": ((CoAPComponent) component).setHeaderFilterStrategy((org.apache.camel.spi.HeaderFilterStrategy) value); return true;
+             default: return false;
+             }
+         }
+--- a/dsl/camel-componentdsl/src/generated/java/org/apache/camel/builder/component/dsl/CoapsTcpComponentBuilderFactory.java
++++ b/dsl/camel-componentdsl/src/generated/java/org/apache/camel/builder/component/dsl/CoapsTcpComponentBuilderFactory.java
+@@ -159,6 +159,24 @@ default CoapsTcpComponentBuilder autowiredEnabled(boolean autowiredEnabled) {
+             doSetProperty("autowiredEnabled", autowiredEnabled);
+             return this;
+         }
++    
++        /**
++         * To use a custom org.apache.camel.spi.HeaderFilterStrategy to filter
++         * header to and from Camel message.
++         * 
++         * The option is a:
++         * &lt;code&gt;org.apache.camel.spi.HeaderFilterStrategy&lt;/code&gt;
++         * type.
++         * 
++         * Group: filter
++         * 
++         * @param headerFilterStrategy the value to set
++         * @return the dsl builder
++         */
++        default CoapsTcpComponentBuilder headerFilterStrategy(org.apache.camel.spi.HeaderFilterStrategy headerFilterStrategy) {
++            doSetProperty("headerFilterStrategy", headerFilterStrategy);
++            return this;
++        }
+     }
+ 
+     class CoapsTcpComponentBuilderImpl
+@@ -179,6 +197,7 @@ protected boolean setPropertyOnComponent(
+             case "lazyStartProducer": ((CoAPComponent) component).setLazyStartProducer((boolean) value); return true;
+             case "client": ((CoAPComponent) component).setClient((org.eclipse.californium.core.CoapClient) value); return true;
+             case "autowiredEnabled": ((CoAPComponent) component).setAutowiredEnabled((boolean) value); return true;
++            case "headerFilterStrategy": ((CoAPComponent) component).setHeaderFilterStrategy((org.apache.camel.spi.HeaderFilterStrategy) value); return true;
+             default: return false;
+             }
+         }
+--- a/dsl/camel-endpointdsl/src/generated/java/org/apache/camel/builder/endpoint/dsl/CoAPEndpointBuilderFactory.java
++++ b/dsl/camel-endpointdsl/src/generated/java/org/apache/camel/builder/endpoint/dsl/CoAPEndpointBuilderFactory.java
+@@ -510,6 +510,38 @@ default AdvancedCoAPEndpointConsumerBuilder exchangePattern(String exchangePatte
+             doSetProperty("exchangePattern", exchangePattern);
+             return this;
+         }
++        /**
++         * To use a custom HeaderFilterStrategy to filter header to and from
++         * Camel message.
++         * 
++         * The option is a:
++         * <code>org.apache.camel.spi.HeaderFilterStrategy</code> type.
++         * 
++         * Group: advanced
++         * 
++         * @param headerFilterStrategy the value to set
++         * @return the dsl builder
++         */
++        default AdvancedCoAPEndpointConsumerBuilder headerFilterStrategy(org.apache.camel.spi.HeaderFilterStrategy headerFilterStrategy) {
++            doSetProperty("headerFilterStrategy", headerFilterStrategy);
++            return this;
++        }
++        /**
++         * To use a custom HeaderFilterStrategy to filter header to and from
++         * Camel message.
++         * 
++         * The option will be converted to a
++         * <code>org.apache.camel.spi.HeaderFilterStrategy</code> type.
++         * 
++         * Group: advanced
++         * 
++         * @param headerFilterStrategy the value to set
++         * @return the dsl builder
++         */
++        default AdvancedCoAPEndpointConsumerBuilder headerFilterStrategy(String headerFilterStrategy) {
++            doSetProperty("headerFilterStrategy", headerFilterStrategy);
++            return this;
++        }
+     }
+ 
+     /**
+@@ -905,6 +937,38 @@ default AdvancedCoAPEndpointProducerBuilder lazyStartProducer(String lazyStartPr
+             doSetProperty("lazyStartProducer", lazyStartProducer);
+             return this;
+         }
++        /**
++         * To use a custom HeaderFilterStrategy to filter header to and from
++         * Camel message.
++         * 
++         * The option is a:
++         * <code>org.apache.camel.spi.HeaderFilterStrategy</code> type.
++         * 
++         * Group: advanced
++         * 
++         * @param headerFilterStrategy the value to set
++         * @return the dsl builder
++         */
++        default AdvancedCoAPEndpointProducerBuilder headerFilterStrategy(org.apache.camel.spi.HeaderFilterStrategy headerFilterStrategy) {
++            doSetProperty("headerFilterStrategy", headerFilterStrategy);
++            return this;
++        }
++        /**
++         * To use a custom HeaderFilterStrategy to filter header to and from
++         * Camel message.
++         * 
++         * The option will be converted to a
++         * <code>org.apache.camel.spi.HeaderFilterStrategy</code> type.
++         * 
++         * Group: advanced
++         * 
++         * @param headerFilterStrategy the value to set
++         * @return the dsl builder
++         */
++        default AdvancedCoAPEndpointProducerBuilder headerFilterStrategy(String headerFilterStrategy) {
++            doSetProperty("headerFilterStrategy", headerFilterStrategy);
++            return this;
++        }
+     }
+ 
+     /**
+@@ -1194,6 +1258,38 @@ default CoAPEndpointBuilder basic() {
+             return (CoAPEndpointBuilder) this;
+         }
+ 
++        /**
++         * To use a custom HeaderFilterStrategy to filter header to and from
++         * Camel message.
++         * 
++         * The option is a:
++         * <code>org.apache.camel.spi.HeaderFilterStrategy</code> type.
++         * 
++         * Group: advanced
++         * 
++         * @param headerFilterStrategy the value to set
++         * @return the dsl builder
++         */
++        default AdvancedCoAPEndpointBuilder headerFilterStrategy(org.apache.camel.spi.HeaderFilterStrategy headerFilterStrategy) {
++            doSetProperty("headerFilterStrategy", headerFilterStrategy);
++            return this;
++        }
++        /**
++         * To use a custom HeaderFilterStrategy to filter header to and from
++         * Camel message.
++         * 
++         * The option will be converted to a
++         * <code>org.apache.camel.spi.HeaderFilterStrategy</code> type.
++         * 
++         * Group: advanced
++         * 
++         * @param headerFilterStrategy the value to set
++         * @return the dsl builder
++         */
++        default AdvancedCoAPEndpointBuilder headerFilterStrategy(String headerFilterStrategy) {
++            doSetProperty("headerFilterStrategy", headerFilterStrategy);
++            return this;
++        }
+     }
+ 
+     public interface CoAPBuilders {
+===== 3. THE AGENT FIX TO JUDGE =====
+diff --git a/components/camel-coap/src/main/java/org/apache/camel/coap/CamelCoapResource.java b/components/camel-coap/src/main/java/org/apache/camel/coap/CamelCoapResource.java
+index 25cd4fc1..27eb969e 100644
+--- a/components/camel-coap/src/main/java/org/apache/camel/coap/CamelCoapResource.java
++++ b/components/camel-coap/src/main/java/org/apache/camel/coap/CamelCoapResource.java
+@@ -22,6 +22,8 @@ import java.util.Map;
+ import java.util.concurrent.ConcurrentHashMap;
+ 
+ import org.apache.camel.Message;
++import org.apache.camel.spi.HeaderFilterStrategy;
++import org.apache.camel.support.DefaultHeaderFilterStrategy;
+ import org.eclipse.californium.core.CoapResource;
+ import org.eclipse.californium.core.coap.CoAP.ResponseCode;
+ import org.eclipse.californium.core.coap.MediaTypeRegistry;
+@@ -36,6 +38,12 @@ final class CamelCoapResource extends CoapResource {
+ 
+     private static final Logger LOG = LoggerFactory.getLogger(CamelCoapResource.class);
+ 
++    /**
++     * Filters out Camel reserved (Camel-prefixed) header names so that remote clients cannot inject or overwrite
++     * internal Camel control headers via the CoAP request (CWE-915).
++     */
++    private static final HeaderFilterStrategy HEADER_FILTER_STRATEGY = createHeaderFilterStrategy();
++
+     private final Map<String, CoAPConsumer> consumers = new ConcurrentHashMap<>();
+     private final List<CamelCoapResource> possibles;
+ 
+@@ -50,6 +58,12 @@ final class CamelCoapResource extends CoapResource {
+         this.possibles = possibles;
+     }
+ 
++    private static HeaderFilterStrategy createHeaderFilterStrategy() {
++        DefaultHeaderFilterStrategy strategy = new DefaultHeaderFilterStrategy();
++        strategy.setInFilterStartsWith(DefaultHeaderFilterStrategy.CAMEL_FILTER_STARTS_WITH);
++        return strategy;
++    }
++
+     void addConsumer(CoAPConsumer consumer) {
+         CoAPEndpoint coapEndpoint = consumer.getCoapEndpoint();
+         String coapMethodRestrict = CoAPHelper.getDefaultMethodRestrict(coapEndpoint.getCoapMethodRestrict());
+@@ -102,11 +116,13 @@ final class CamelCoapResource extends CoapResource {
+             OptionSet options = exchange.getRequest().getOptions();
+             for (String s : options.getUriQuery()) {
+                 int i = s.indexOf('=');
+-                if (i == -1) {
+-                    camelExchange.getIn().setHeader(s, "");
+-                } else {
+-                    camelExchange.getIn().setHeader(s.substring(0, i), s.substring(i + 1));
++                String name = i == -1 ? s : s.substring(0, i);
++                String value = i == -1 ? "" : s.substring(i + 1);
++                // Do not let remote clients inject/override internal Camel headers (CWE-915)
++                if (HEADER_FILTER_STRATEGY.applyFilterToExternalHeaders(name, value, camelExchange)) {
++                    continue;
+                 }
++                camelExchange.getIn().setHeader(name, value);
+             }
+ 
+             if (options.hasContentFormat()) {

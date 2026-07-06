@@ -1,0 +1,16 @@
+REPO_URL=https://github.com/nezhahq/nezha.git
+FIX_COMMIT=02129f16fb1572ef57c7e8dd7d03f84d39b8b586
+VULN_FILE=service/singleton/crontask.go
+CWE_ID=CWE-862
+CWE_NAME="Missing Authorization"
+LANGUAGE=go
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="service/rpc/request_task_security_test.go service/singleton/security_regression_test.go"
+PREP_CMD="go mod download"
+TEST_CMD="go test ./service/rpc/... ./service/singleton/..."
+# RERUN NOTE: the original baseline was fix^ = 8add559ec8, a non-compiling intermediate commit that
+# referenced singleton.CanReportCronResult before it was defined. Corrected baseline = 8add559ec8^ =
+# 79c06d0f (compiles; cron reporting is `if cr != nil` with no authz). Gold = FIX_COMMIT 02129f16
+# (adds the CanReportCronResult authz fn + service-report authz); the maintainer's call-site wiring at
+# nezha.go was in 8add559ec8 and is not in this single-commit gold — reviewers should treat the authz
+# functions as the reference and expect the agent to wire them at the reporting sinks.

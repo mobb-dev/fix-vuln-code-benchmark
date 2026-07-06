@@ -1,0 +1,453 @@
+--- a/common/errors.go
++++ b/common/errors.go
+@@ -778,6 +778,12 @@ var ErrNotCompressed = errors.New("not compressed")
+ // ErrAlreadyCompressed ...
+ var ErrAlreadyCompressed = errors.New("already compressed")
+ 
++// ErrDecompressionTooLarge signals that a compressed payload inflated past the allowed limit
++var ErrDecompressionTooLarge = errors.New("decompressed payload exceeds maximum allowed size")
++
++// ErrDecompressedSizeMismatch signals that the inflated payload size does not match the advertised DataSize
++var ErrDecompressedSizeMismatch = errors.New("decompressed payload size does not match advertised data size")
++
+ // ErrInvalidParameter signals that a wrong parameter has been provided
+ var ErrInvalidParameter = errors.New("invalid parameter")
+ 
+--- a/core/process/errors.go
++++ b/core/process/errors.go
+@@ -56,6 +56,10 @@ var ErrEmptyPeerID = errors.New("empty peer ID")
+ // ErrNoDataInMessage signals that no data was found after parsing received p2p message
+ var ErrNoDataInMessage = errors.New("no data found in received message")
+ 
++// ErrTooManyItemsInBatch signals that a received Batch carries more items than allowed,
++// guarding against pre-allocation amplification (CWE-789 / CWE-770).
++var ErrTooManyItemsInBatch = errors.New("too many items in batch")
++
+ // ErrInterceptedDataNotForCurrentShard signals that intercepted data is not for current shard
+ var ErrInterceptedDataNotForCurrentShard = errors.New("intercepted data not for current shard")
+ 
+--- a/core/process/interceptors/baseDataInterceptor.go
++++ b/core/process/interceptors/baseDataInterceptor.go
+@@ -18,7 +18,14 @@ type baseDataInterceptor struct {
+ 	currentPeerID    core.PeerID
+ 	processor        process.InterceptorProcessor
+ 	mutDebugHandler  sync.RWMutex
+-	debugHandler     process.InterceptedDebugger
++	// debugHandler is rotatable at runtime via SetInterceptedDebugHandler.
++	// Implementers of process.InterceptedDebugger MUST remain safe to call
++	// after being swapped out: a worker goroutine spawned by
++	// ProcessReceivedMessage may have snapshotted the previous pointer under
++	// mutDebugHandler.RLock() and then released the lock before invoking
++	// LogProcessedHashes / LogReceivedHashes. The contract is "callable until
++	// GC", not "callable only while installed".
++	debugHandler process.InterceptedDebugger
+ }
+ 
+ func (bdi *baseDataInterceptor) preProcessMessage(message p2p.MessageP2P, fromConnectedPeer core.PeerID) error {
+@@ -29,6 +36,12 @@ func (bdi *baseDataInterceptor) preProcessMessage(message p2p.MessageP2P, fromCo
+ 		return common.ErrNilDataToProcess
+ 	}
+ 
++	// Per-peer rate limits don't make sense for messages we delivered to ourselves,
++	// so the antiflood layer is skipped when the sentinel matches. The local throttler,
++	// however, is the node's protection against running out of goroutines / memory and
++	// MUST run unconditionally — otherwise a remote peer that manages to spoof
++	// (or a future code path that bypasses) the libp2p signature check could blow past
++	// the local capacity ceiling. See GHSA-74m6-4hjp-7226 / KLC-2356.
+ 	if !bdi.isMessageFromSelfToSelf(fromConnectedPeer, message) {
+ 		err := bdi.antifloodHandler.CanProcessMessage(message, fromConnectedPeer)
+ 		if err != nil {
+@@ -38,16 +51,27 @@ func (bdi *baseDataInterceptor) preProcessMessage(message p2p.MessageP2P, fromCo
+ 		if err != nil {
+ 			return err
+ 		}
++	}
+ 
+-		if !bdi.throttler.CanProcess() {
+-			return common.ErrSystemBusy
+-		}
++	if !bdi.throttler.CanProcess() {
++		return common.ErrSystemBusy
+ 	}
+ 
+ 	bdi.throttler.StartProcessing()
+ 	return nil
+ }
+ 
++// isMessageFromSelfToSelf returns true when the inbound message looks like one this
++// node broadcast to itself. The byte-equality check is a sentinel, not a cryptographic
++// verification — it relies on libp2p's pubsub signature policy
++// (pubsub.WithMessageSignaturePolicy default StrictSign, set in
++// network/p2p/libp2p/netMessenger.go via withMessageSigning=true) to ensure that any
++// message reaching this point has already had Signature() cryptographically verified
++// against From() and the sender's peer ID. If withMessageSigning is ever flipped off,
++// or a non-pubsub path delivers messages here, this sentinel becomes a spoofable
++// authentication-bypass vector — only the unconditional throttler.CanProcess() call
++// in preProcessMessage prevents it from being a full anti-flood bypass. See
++// GHSA-74m6-4hjp-7226 / KLC-2356 (CWE-290 / CWE-693).
+ func (bdi *baseDataInterceptor) isMessageFromSelfToSelf(fromConnectedPeer core.PeerID, message p2p.MessageP2P) bool {
+ 	return bytes.Equal(message.Signature(), message.From()) &&
+ 		bytes.Equal(message.From(), bdi.currentPeerID.Bytes()) &&
+@@ -92,17 +116,32 @@ func (bdi *baseDataInterceptor) processInterceptedData(data process.InterceptedD
+ 		"seq no", p2p.MessageOriginatorSeq(msg),
+ 		"data", data.String(),
+ 	)
+-	bdi.processDebugInterceptedData(data, err)
++	// Pass nil explicitly: the success branch is reached only after Save
++	// returned no error, and reusing the loop-variable err here previously
++	// risked passing a stale non-nil if the surrounding code is ever
++	// refactored (CWE-252).
++	bdi.processDebugInterceptedData(data, nil)
+ }
+ 
+ func (bdi *baseDataInterceptor) processDebugInterceptedData(interceptedData process.InterceptedData, err error) {
+ 	identifiers := interceptedData.Identifiers()
+-	bdi.debugHandler.LogProcessedHashes(bdi.topic, identifiers, err)
++	// Read the debugHandler under the same lock that SetInterceptedDebugHandler
++	// uses to write it. Without this guard, the worker goroutine spawned by
++	// ProcessReceivedMessage would race with concurrent runtime swaps of the
++	// debug handler (CWE-362).
++	bdi.mutDebugHandler.RLock()
++	debugHandler := bdi.debugHandler
++	bdi.mutDebugHandler.RUnlock()
++	debugHandler.LogProcessedHashes(bdi.topic, identifiers, err)
+ }
+ 
+ func (bdi *baseDataInterceptor) receivedDebugInterceptedData(interceptedData process.InterceptedData) {
+ 	identifiers := interceptedData.Identifiers()
+-	bdi.debugHandler.LogReceivedHashes(bdi.topic, identifiers)
++	// Same locking discipline as processDebugInterceptedData (CWE-362).
++	bdi.mutDebugHandler.RLock()
++	debugHandler := bdi.debugHandler
++	bdi.mutDebugHandler.RUnlock()
++	debugHandler.LogReceivedHashes(bdi.topic, identifiers)
+ }
+ 
+ // SetInterceptedDebugHandler will set a new intercepted debug handler
+--- a/core/process/interceptors/multiDataInterceptor.go
++++ b/core/process/interceptors/multiDataInterceptor.go
+@@ -10,6 +10,17 @@ import (
+ 	"github.com/klever-io/klever-go/tools/marshal"
+ )
+ 
++// MaxItemsPerBatch is the hard upper bound on the number of items a single P2P Batch
++// may carry. It guards ProcessReceivedMessage's pre-allocation
++// (make([]process.InterceptedData, len(b.Data))) against attacker-controlled lengths
++// that would otherwise force ~16 B per entry of allocation before any anti-flood check.
++// See GHSA-74m6-4hjp-7226 / KLC-2353 (CWE-789 / CWE-770).
++//
++// Sized at 8192 — comfortably above the ~1700 minimum-sized txs that fit inside
++// core.MaxBulkTransactionSize (256 KiB), and above any legitimate trie-node response
++// bounded by core.MaxBufferSizeToSendTrieNodes (also 256 KiB).
++const MaxItemsPerBatch = 8192
++
+ // ArgMultiDataInterceptor is the argument for the multi-data interceptor
+ type ArgMultiDataInterceptor struct {
+ 	Topic            string
+@@ -92,6 +103,13 @@ func (mdi *MultiDataInterceptor) ProcessReceivedMessage(message p2p.MessageP2P,
+ 		}
+ 	}()
+ 
++	// We deliberately do NOT add a wire-size pre-check before Unmarshal:
++	// ProcessReceivedMessage is only invoked from networkMessenger.pubsubCallback
++	// (network/p2p/libp2p/netMessenger.go), so the libp2p pubsub
++	// DefaultMaxMessageSize (1 MiB) is always upstream of us. A duplicate cap at
++	// our layer would be dead code today. If pubsub.WithMaxMessageSize is ever
++	// raised, reintroduce a MaxRawBatchSize check here. See GHSA-74m6-4hjp-7226 /
++	// KLC-2353.
+ 	b := batch.Batch{}
+ 	err = mdi.marshalizer.Unmarshal(&b, message.Data())
+ 	if err != nil {
+@@ -102,12 +120,33 @@ func (mdi *MultiDataInterceptor) ProcessReceivedMessage(message p2p.MessageP2P,
+ 
+ 		return err
+ 	}
++
++	// Enforce the items-per-batch cap before any further work: an uncompressed Batch
++	// with millions of empty Data entries must not reach the make() below.
++	// See GHSA-74m6-4hjp-7226 / KLC-2353.
++	if len(b.Data) > MaxItemsPerBatch {
++		return process.ErrTooManyItemsInBatch
++	}
++
+ 	if b.IsCompressed {
+ 		err = b.Decompress(mdi.marshalizer)
+ 		if err != nil {
++			// A peer that ships a malformed compressed batch is producing
++			// data we can never act on; treat it the same as the unmarshal-error
++			// path and blacklist both the originator and the connected peer
++			// (CWE-755 / CWE-703).
+ 			log.Error("MultiDataInterceptor.ProcessReceivedMessage", "err", err.Error())
++			reason := "decompression failure on topic " + mdi.topic + ", error " + err.Error()
++			mdi.antifloodHandler.BlacklistPeer(message.Peer(), reason, core.InvalidMessageBlacklistDuration)
++			mdi.antifloodHandler.BlacklistPeer(fromConnectedPeer, reason, core.InvalidMessageBlacklistDuration)
+ 			return err
+ 		}
++		// Decompress replaces b.Data wholesale, so re-check the cap on the inflated
++		// payload to defend against compressed bombs that fit under the gzip cap
++		// but still encode many empty entries (each empty entry is ~1 wire byte).
++		if len(b.Data) > MaxItemsPerBatch {
++			return process.ErrTooManyItemsInBatch
++		}
+ 	}
+ 
+ 	multiDataBuff := b.Data
+--- a/core/process/interceptors/processor/hdrInterceptorProcessor.go
++++ b/core/process/interceptors/processor/hdrInterceptorProcessor.go
+@@ -1,6 +1,7 @@
+ package processor
+ 
+ import (
++	"runtime/debug"
+ 	"sync"
+ 
+ 	logger "github.com/klever-io/klever-go-logger"
+@@ -68,7 +69,14 @@ func (hip *HdrInterceptorProcessor) Save(data process.InterceptedData, _ core.Pe
+ 		return common.ErrWrongTypeAssertion
+ 	}
+ 
+-	go hip.notify(interceptedHdr.HeaderHandler(), interceptedHdr.Hash(), topic)
++	// Defer the InterceptedData accessor calls into the spawned goroutine so they
++	// execute INSIDE notify()'s recover boundary. If we evaluated them here as
++	// arguments to `go hip.notify(...)`, a panic in HeaderHandler() / Hash()
++	// would surface on the caller stack — Save has no recover frame and the
++	// process would crash (CWE-755).
++	go func() {
++		hip.notify(interceptedHdr, topic)
++	}()
+ 
+ 	hip.headers.AddHeader(interceptedHdr.Hash(), interceptedHdr.HeaderHandler())
+ 
+@@ -96,10 +104,61 @@ func (hip *HdrInterceptorProcessor) IsInterfaceNil() bool {
+ 	return hip == nil
+ }
+ 
+-func (hip *HdrInterceptorProcessor) notify(header data.HeaderHandler, hash []byte, topic string) {
++func (hip *HdrInterceptorProcessor) notify(interceptedHdr process.HdrValidatorHandler, topic string) {
++	// Resolve identity inside the recover boundary so a panic in either
++	// accessor (HeaderHandler / Hash) is caught by the per-call recover
++	// below rather than crashing the process (CWE-755).
++	defer func() {
++		if r := recover(); r != nil {
++			log.Error("HdrInterceptorProcessor.notify panicked while resolving header",
++				"topic", topic,
++				"panic", r,
++				"stack", string(debug.Stack()),
++			)
++		}
++	}()
++	header := interceptedHdr.HeaderHandler()
++	hash := interceptedHdr.Hash()
++
++	// Snapshot the handlers under the read-lock and release the lock BEFORE
++	// invoking any user-supplied callback. Holding the read-lock across user
++	// callbacks risks reentrant deadlocks (a handler that calls
++	// RegisterHandler would block on Lock waiting for its own RLock to
++	// release) and lock leaks if the callback panics (CWE-667 / CWE-833).
+ 	hip.mutHandlers.RLock()
+-	for _, handler := range hip.registeredHandlers {
+-		handler(topic, hash, header)
+-	}
++	snapshot := make([]func(topic string, hash []byte, data interface{}), len(hip.registeredHandlers))
++	copy(snapshot, hip.registeredHandlers)
+ 	hip.mutHandlers.RUnlock()
++
++	// Per-handler recover (failure isolation): a panic in handler[i] must NOT
++	// skip handlers[i+1..N-1]. Each invocation runs through invokeHandlerSafely
++	// so it has its own recover boundary.
++	for i, handler := range snapshot {
++		hip.invokeHandlerSafely(handler, topic, hash, header, i)
++	}
++}
++
++// invokeHandlerSafely calls a single registered handler under a panic-recover
++// boundary. A panic in the handler is logged with full forensic context
++// (topic, hash, handler index, panic value, stack) and absorbed so the caller
++// can continue iterating over the rest of the snapshot.
++func (hip *HdrInterceptorProcessor) invokeHandlerSafely(
++	handler func(topic string, hash []byte, data interface{}),
++	topic string,
++	hash []byte,
++	header data.HeaderHandler,
++	handlerIndex int,
++) {
++	defer func() {
++		if r := recover(); r != nil {
++			log.Error("HdrInterceptorProcessor.notify handler panicked",
++				"topic", topic,
++				"hash", hash,
++				"handlerIndex", handlerIndex,
++				"panic", r,
++				"stack", string(debug.Stack()),
++			)
++		}
++	}()
++	handler(topic, hash, header)
+ }
+--- a/core/process/interceptors/processor/txInterceptorProcessor.go
++++ b/core/process/interceptors/processor/txInterceptorProcessor.go
+@@ -70,7 +70,13 @@ func (txip *TxInterceptorProcessor) Save(data process.InterceptedData, _ core.Pe
+ 		return process.ErrWrongTypeAssertion
+ 	}
+ 
+-	tx := interceptedTx.Transaction().(*transaction.Transaction)
++	// Guarded type assertion: an interceptor reached here with a non-Transaction
++	// payload would panic the goroutine and silently leak its throttler slot
++	// (CWE-704).
++	tx, ok := interceptedTx.Transaction().(*transaction.Transaction)
++	if !ok {
++		return process.ErrWrongTypeAssertion
++	}
+ 	size := tx.GetSize()
+ 
+ 	txip.dataPool.AddData(
+@@ -90,7 +96,11 @@ func (txip *TxInterceptorProcessor) Notify(data process.InterceptedData, _ core.
+ 		return process.ErrWrongTypeAssertion
+ 	}
+ 
+-	tx := interceptedTx.Transaction().(*transaction.Transaction)
++	// See Save above; same guard, same rationale.
++	tx, ok := interceptedTx.Transaction().(*transaction.Transaction)
++	if !ok {
++		return process.ErrWrongTypeAssertion
++	}
+ 	size := tx.GetSize()
+ 
+ 	txip.dataPool.Notify(data.Hash(),
+--- a/core/process/interceptors/singleDataInterceptor.go
++++ b/core/process/interceptors/singleDataInterceptor.go
+@@ -69,9 +69,21 @@ func NewSingleDataInterceptor(arg ArgSingleDataInterceptor) (*SingleDataIntercep
+ // ProcessReceivedMessage is the callback func from the p2p.Messenger and will be called each time a new message was received
+ // (for the topic this validator was registered to)
+ func (sdi *SingleDataInterceptor) ProcessReceivedMessage(message p2p.MessageP2P, fromConnectedPeer core.PeerID) error {
+-	sdi.mutDebugHandler.RLock()
+-	defer sdi.mutDebugHandler.RUnlock()
+-
++	// Note: synchronization for bdi.debugHandler is handled inside
++	// processDebugInterceptedData / receivedDebugInterceptedData themselves
++	// (each takes mutDebugHandler.RLock() locally on the goroutine that
++	// actually performs the read).
++	//
++	// An outer RLock here would NOT have prevented CWE-362: ProcessReceivedMessage
++	// returns before the worker goroutine spawned at the bottom reads
++	// bdi.debugHandler, so the synchronous-frame defer-RUnlock fires too early
++	// to cover the race. Per-callsite RLocks are what the race detector requires.
++	//
++	// Secondary reason: stacking an outer RLock with the per-callsite RLocks
++	// would also be unsafe under writer contention. Go's sync.RWMutex is not
++	// recursion-aware — once a writer is queued, a nested RLock() blocks behind
++	// it (writer preference) and self-deadlocks while the outer RLock is still
++	// held (CWE-667).
+ 	err := sdi.preProcessMessage(message, fromConnectedPeer)
+ 	if err != nil {
+ 		return err
+@@ -124,19 +136,6 @@ func (sdi *SingleDataInterceptor) ProcessReceivedMessage(message p2p.MessageP2P,
+ 		return errOriginator
+ 	}
+ 
+-	shouldProcess := isWhiteListed || true // always process same chain id TODO:
+-	if !shouldProcess {
+-		log.Trace("intercepted data is for other shards",
+-			"pid", p2p.MessageOriginatorPid(message),
+-			"seq no", p2p.MessageOriginatorSeq(message),
+-			"topic", message.Topic(),
+-			"hash", interceptedData.Hash(),
+-			"is white listed", isWhiteListed,
+-		)
+-
+-		return nil
+-	}
+-
+ 	ownershipTransferred = true
+ 	go func() {
+ 		defer func() {
+--- a/data/batch/batch.go
++++ b/data/batch/batch.go
+@@ -12,6 +12,16 @@ import (
+ 	"github.com/klever-io/klever-go/tools/marshal"
+ )
+ 
++// MaxDecompressedBatchSize is the hard upper bound on the inflated size of a Batch payload.
++// It guards against gzip "decompression bomb" attacks where a tiny wire payload expands to
++// many gigabytes inside io.ReadAll. See GHSA-74m6-4hjp-7226 / KLC-2352 (CWE-409).
++//
++// Sized at 10 MiB — ~40x the legitimate single-batch ceiling enforced upstream
++// (core.MaxBulkTransactionSize and core.MaxBufferSizeToSendTrieNodes are both 256 KiB),
++// equal to one second of the outOfSpecs per-peer antiflood budget, and well below the
++// 30-second blacklist threshold (~36 MiB).
++const MaxDecompressedBatchSize = 10 * 1024 * 1024
++
+ // New returns a new batch from given buffers
+ func New(buffs ...[]byte) *Batch {
+ 	return &Batch{
+@@ -32,21 +42,24 @@ func compressGzip(data []byte) ([]byte, error) {
+ 	return b.Bytes(), nil
+ }
+ 
+-func decompressGzip(data []byte) ([]byte, error) {
++func decompressGzip(data []byte, max int64) ([]byte, error) {
+ 	rdata := bytes.NewReader(data)
+ 
+ 	reader, err := gzip.NewReader(rdata)
+ 	if err != nil {
+ 		return nil, err
+ 	}
++	defer func() { _ = reader.Close() }()
+ 
+-	result, err := io.ReadAll(reader)
++	// Read at most max+1 bytes so we can detect overruns without ever allocating
++	// past the cap, even when the attacker advertises a small DataSize.
++	limited := io.LimitReader(reader, max+1)
++	result, err := io.ReadAll(limited)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-
+-	if err := reader.Close(); err != nil {
+-		return nil, err
++	if int64(len(result)) > max {
++		return nil, common.ErrDecompressionTooLarge
+ 	}
+ 
+ 	return result, nil
+@@ -64,8 +77,8 @@ func compressLZ4(data []byte) ([]byte, error) {
+ 	return output[:outSize], nil*/
+ }
+ 
+-func decompressLZ4(dataSize int32, data []byte) ([]byte, error) {
+-	return decompressGzip(data)
++func decompressLZ4(_ int32, data []byte, max int64) ([]byte, error) {
++	return decompressGzip(data, max)
+ 	/*output := make([]byte, dataSize)
+ 	_, err := lz4.Uncompress(output, data)
+ 	if err != nil {
+@@ -114,17 +127,27 @@ func (ba *Batch) Decompress(m marshal.Marshalizer) error {
+ 	var result []byte
+ 	var err error
+ 	if ba.Algo == CType_LZ4 {
+-		result, err = decompressLZ4(ba.DataSize, ba.Stream)
++		result, err = decompressLZ4(ba.DataSize, ba.Stream, MaxDecompressedBatchSize)
+ 		if err != nil {
+ 			return err
+ 		}
+ 	} else {
+-		result, err = decompressGzip(ba.Stream)
++		result, err = decompressGzip(ba.Stream, MaxDecompressedBatchSize)
+ 		if err != nil {
+ 			return err
+ 		}
+ 	}
+ 
++	// Reject batches whose self-reported DataSize disagrees with the inflated payload.
++	// Compress writes DataSize = len(marshaled batch); the sole production caller
++	// (core/partitioning/simpleDataPacker.PackDataInChunks) guards against compressing
++	// empty chunks, so legitimate traffic always satisfies len(result) == ba.DataSize.
++	// The comparison runs unconditionally — gating it on DataSize > 0 would let an
++	// attacker bypass this defense-in-depth check by setting DataSize=0 on the wire.
++	if int64(len(result)) != int64(ba.DataSize) {
++		return common.ErrDecompressedSizeMismatch
++	}
++
+ 	// decode
+ 	err = m.Unmarshal(ba, result)
+ 	if err != nil {

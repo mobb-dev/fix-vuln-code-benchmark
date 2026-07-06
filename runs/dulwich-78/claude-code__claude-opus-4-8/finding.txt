@@ -1,0 +1,9 @@
+Project: jelmer/dulwich
+Vulnerability type: OS Command Injection (CWE-78)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  dulwich/merge_drivers.py
+    - lines 29-35
+    - lines 64-69   in: def merge(
+    - lines 110-123   in: def merge(

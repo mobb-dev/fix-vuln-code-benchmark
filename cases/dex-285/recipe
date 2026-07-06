@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/dexidp/dex.git
+FIX_COMMIT=204dbb2e3ff7692af3b7ca4362b1ee46fb43c227
+VULN_FILE=connector/authproxy/authproxy.go
+CWE_ID=CWE-285
+CWE_NAME="Improper Authorization"
+LANGUAGE=go
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="connector/authproxy/authproxy_test.go connector/oauth/oauth_test.go"
+PREP_CMD="go mod download"
+TEST_CMD="go test ./connector/authproxy/... ./connector/oauth/..."

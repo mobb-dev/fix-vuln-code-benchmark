@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/google/go-attestation.git
+FIX_COMMIT=b6e905e7ae52937f02b5ca494dd1c6a3ac7a1003
+VULN_FILE=attest/internal/events.go
+CWE_ID=CWE-20
+CWE_NAME="Improper Input Validation"
+LANGUAGE=go
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="attest/internal/events_test.go"
+PREP_CMD="go mod download"
+TEST_CMD="go test ./attest/internal/..."

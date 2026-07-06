@@ -1,0 +1,62 @@
+diff --git a/internal/auth/generic/generic.go b/internal/auth/generic/generic.go
+index 2126780..725b18b 100644
+--- a/internal/auth/generic/generic.go
++++ b/internal/auth/generic/generic.go
+@@ -386,7 +386,10 @@ func (a AuthService) validateOpaqueToken(ctx context.Context, tokenStr string) (
+ 		return nil, fmt.Errorf("failed to parse introspection response: %w", err)
+ 	}
+ 
+-	if introspectResp.Active != nil && !*introspectResp.Active {
++	// Per RFC 7662, "active" is a REQUIRED field and the token must be treated
++	// as invalid unless the endpoint explicitly reports active: true. Fail
++	// closed if the field is absent or false to avoid an authentication bypass.
++	if introspectResp.Active == nil || !*introspectResp.Active {
+ 		logger.InfoContext(ctx, "token is not active")
+ 		return nil, &MCPAuthError{Code: http.StatusUnauthorized, Message: "token is not active", ScopesRequired: a.ScopesRequired}
+ 	}
+diff --git a/internal/auth/generic/generic_test.go b/internal/auth/generic/generic_test.go
+index 1d52c20..497cdbf 100644
+--- a/internal/auth/generic/generic_test.go
++++ b/internal/auth/generic/generic_test.go
+@@ -295,6 +295,20 @@ func TestValidateMCPAuth_Opaque(t *testing.T) {
+ 			wantError:   true,
+ 			errContains: "token is not active",
+ 		},
++		{
++			// Per RFC 7662, "active" is REQUIRED; a response missing it must be
++			// rejected (fail closed) rather than treated as a valid token.
++			name:           "opaque token missing active field",
++			token:          "opaque-missing-active",
++			scopesRequired: []string{"read:files"},
++			mockResponse: map[string]any{
++				"scope": "read:files",
++				"exp":   time.Now().Add(time.Hour).Unix(),
++			},
++			mockStatus:  http.StatusOK,
++			wantError:   true,
++			errContains: "token is not active",
++		},
+ 		{
+ 			name:           "insufficient scopes",
+ 			token:          "opaque-bad-scope",
+@@ -626,6 +640,20 @@ func TestValidateOpaqueToken(t *testing.T) {
+ 			wantError:   true,
+ 			errContains: "token is not active",
+ 		},
++		{
++			// Per RFC 7662, "active" is REQUIRED; a response missing it must be
++			// rejected (fail closed) rather than treated as a valid token.
++			name:           "opaque token missing active field",
++			token:          "opaque-missing-active",
++			scopesRequired: []string{"read:files"},
++			mockResponse: map[string]any{
++				"scope": "read:files",
++				"exp":   time.Now().Add(time.Hour).Unix(),
++			},
++			mockStatus:  http.StatusOK,
++			wantError:   true,
++			errContains: "token is not active",
++		},
+ 		{
+ 			name:           "insufficient scopes",
+ 			token:          "opaque-bad-scope",

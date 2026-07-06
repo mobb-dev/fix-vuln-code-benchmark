@@ -1,0 +1,233 @@
+You are a senior application-security engineer. Judge whether an AI agent's code change correctly fixes a specific, known vulnerability.
+
+You are given three things below:
+  1. THE VULNERABILITY — its type and where it is in the code.
+  2. THE MAINTAINER'S OFFICIAL FIX — the real, accepted remediation. Treat it as the gold standard for what a complete and correct fix must cover. It is a reference, not the only acceptable implementation: a different but equivalent fix that fully and minimally remediates is still correct.
+  3. THE AGENT'S FIX — a diff produced by an AI agent. This is what you must judge.
+
+Evaluate the agent's fix with this methodology:
+  - From the vulnerability and the maintainer's fix, work out the root cause and EVERY place the vulnerability is present.
+  - Does the agent's fix remove the vulnerability at ALL of those places, not just some? Missing any injection point or variant is a real gap.
+  - Does it preserve the application's intended behavior — no broken functionality, and no unrelated behavioral changes beyond what the remediation requires? Removing the vulnerability but also changing unrelated behavior is an over-reach, not a clean fix.
+  - Be skeptical. A fix that reads plausibly but misses a variant is not correct; one that fixes the bug but also changes unrelated behavior is not clean.
+
+Respond in EXACTLY this structure and nothing else:
+
+METHODOLOGY: <2-4 sentences on how you evaluated it>
+EVIDENCE: <specific files, lines, or hunks from the diffs that justify the verdict>
+REASONING: <why the agent's fix does or does not fully and cleanly remediate the vulnerability without changing intended behavior>
+VERDICT: <one word: CORRECT, PARTIAL, or INCORRECT>
+
+Verdict meanings:
+  CORRECT   — fully removes the vulnerability AND preserves intended behavior.
+  PARTIAL   — removes the vulnerability but misses a variant, OR over-reaches and changes unrelated behavior.
+  INCORRECT — does not remove the vulnerability, or breaks functionality so it is not a valid fix.
+
+
+===== 1. THE VULNERABILITY =====
+Project: thomaspoignant/scim-patch
+Vulnerability type: Prototype Pollution (CWE-1321)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  src/scimPatch.ts
+    - lines 68-73   in: const AUTHORIZED_OPERATION = ['remove', 'add', 'replace'];
+    - lines 146-167   in: function validatePatchOperation(operation: ScimPatchOperation): void {
+
+===== 2. MAINTAINER OFFICIAL FIX (gold standard) =====
+--- a/src/scimPatch.ts
++++ b/src/scimPatch.ts
+@@ -68,6 +68,8 @@ const AUTHORIZED_OPERATION = ['remove', 'add', 'replace'];
+ 
+ const CORE_SCHEMA_USER = 'urn:ietf:params:scim:schemas:core:2.0:User';
+ const CORE_SCHEMA_GROUP = 'urn:ietf:params:scim:schemas:core:2.0:Group';
++// Keys that would let a patch reach Object.prototype (prototype pollution, GHSA-9m6g-wc8r-q59c).
++const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+ 
+ export const PATCH_OPERATION_SCHEMA = 'urn:ietf:params:scim:api:messages:2.0:PatchOp';
+ /*
+@@ -146,22 +148,30 @@ function validatePatchOperation(operation: ScimPatchOperation): void {
+ function resolvePaths(path: string): string[] {
+     const uriIndex = path.lastIndexOf(':');
+ 
++    let paths: string[];
+     if (uriIndex < 0) {
+         // No schema prefix - this is a core schema path
+-        return path.split(SPLIT_PERIOD);
++        paths = path.split(SPLIT_PERIOD);
++    } else {
++        const schemaUri = path.substring(0, uriIndex);
++        paths = path.substring(uriIndex + 1).split(SPLIT_PERIOD);
++        switch (schemaUri) {
++            case CORE_SCHEMA_GROUP:
++            case CORE_SCHEMA_USER:
++                // Ignore core schema URIs in paths.  These are allowed but not part of object keys
++                break;
++            default:
++                // Assume any other provided schema URI is an extension
++                paths.unshift(schemaUri);
++                break;
++        }
+     }
+ 
+-    const schemaUri = path.substring(0, uriIndex);
+-    const paths = path.substring(uriIndex +1).split(SPLIT_PERIOD);
+-    switch(schemaUri) {
+-        case CORE_SCHEMA_GROUP:
+-        case CORE_SCHEMA_USER:
+-            // Ignore core schema URIs in paths.  These are allowed but not part of object keys
+-            break;
+-        default:
+-            // Assume any other provided schema URI is an extension
+-            paths.unshift(schemaUri);
+-            break;
++    // Reject keys that would walk into Object.prototype (prototype pollution, GHSA-9m6g-wc8r-q59c).
++    for (const segment of paths) {
++        if (DANGEROUS_KEYS.has(segment)) {
++            throw new InvalidScimPatchOp(`Forbidden key in patch path: ${segment}`);
++        }
+     }
+     return paths;
+ }
+
+===== 3. THE AGENT FIX TO JUDGE =====
+diff --color -ruN --exclude=.git --exclude=FINDING.txt --exclude=node_modules --exclude=dist --exclude=build --exclude=lib --exclude=out --exclude=coverage --exclude=.nyc_output --exclude=.next --exclude=target --exclude=__pycache__ --exclude=.pytest_cache --exclude=.venv --exclude=venv --exclude=vendor --exclude=.gradle --exclude=package-lock.json --exclude=yarn.lock --exclude=pnpm-lock.yaml --exclude=*.log checkouts/scim-patch/src/scimPatch.ts /Users/jonathansantilli/workspaces/cursor/vuln-fix-bench/_poc/scim-patch/codex/src/scimPatch.ts
+--- checkouts/scim-patch/src/scimPatch.ts	2026-06-30 12:29:33
++++ /Users/jonathansantilli/workspaces/cursor/vuln-fix-bench/_poc/scim-patch/codex/src/scimPatch.ts	2026-06-30 12:31:34
+@@ -65,6 +65,7 @@
+ const SPLIT_PERIOD = /(?!\B"[^[]*)\.(?![^\]]*"\B)/g;
+ // Valid patch operation, value needs to be in lowercase here.
+ const AUTHORIZED_OPERATION = ['remove', 'add', 'replace'];
++const PROTOTYPE_POLLUTION_KEYS = ['__proto__', 'prototype', 'constructor'];
+ 
+ const CORE_SCHEMA_USER = 'urn:ietf:params:scim:schemas:core:2.0:User';
+ const CORE_SCHEMA_GROUP = 'urn:ietf:params:scim:schemas:core:2.0:Group';
+@@ -141,6 +142,9 @@
+ 
+     if (operation.path && typeof operation.path !== 'string')
+         throw new InvalidScimPatchRequest('Path is supposed to be a string');
++
++    if (operation.path)
++        validatePathSegments(resolvePaths(operation.path));
+ }
+ 
+ function resolvePaths(path: string): string[] {
+@@ -236,6 +240,9 @@
+             const resource: Record<string, any> = e.schema;
+             // check issue https://github.com/thomaspoignant/scim-patch/issues/42 to see why we should add this
+             const parsedPath = parse(e.valuePath);
++            if ("attrPath" in parsedPath)
++                validatePathSegments(resolvePaths(parsedPath.attrPath));
++
+             if (isAddOperation(patch.op) &&
+               "compValue" in parsedPath &&
+               parsedPath.compValue !== undefined &&
+@@ -312,6 +319,7 @@
+         throw new InvalidScimPatchOp(`This part of the path ${subPath} is invalid for SCIM patch request.`);
+ 
+     const [, attrName, valuePath] = matchRequest;
++    validatePropertyKey(attrName);
+     const element = schema[attrName];
+ 
+     if (!Array.isArray(element))
+@@ -435,10 +443,12 @@
+  * @param op patch operation
+  */
+ function assign(obj:any, keyPath:Array<string>, value:any, op: string) {
++    validatePathSegments(keyPath);
++
+     const lastKeyIndex = keyPath.length-1;
+     for (let i = 0; i < lastKeyIndex; ++ i) {
+         const key = keyPath[i];
+-        if (!(key in obj)){
++        if (!Object.prototype.hasOwnProperty.call(obj, key)){
+             obj[key] = {};
+         }
+         obj = obj[key];
+@@ -517,6 +527,28 @@
+ 
+ function isValidOperation(operation: string): boolean {
+     return AUTHORIZED_OPERATION.includes(operation.toLowerCase());
++}
++
++function validatePathSegments(paths: string[]): void {
++    paths.forEach(validatePathSegment);
++}
++
++function validatePathSegment(path: string): void {
++    if (!IS_ARRAY_SEARCH.test(path)) {
++        validatePropertyKey(path);
++        return;
++    }
++
++    const matchRequest = path.match(ARRAY_SEARCH);
++    if (!matchRequest)
++        return;
++
++    validatePropertyKey(matchRequest[1]);
++}
++
++function validatePropertyKey(key: string): void {
++    if (PROTOTYPE_POLLUTION_KEYS.includes(key))
++        throw new InvalidScimPatchRequest(`Invalid path attribute "${key}" in the request.`);
+ }
+ 
+ /**
+diff --color -ruN --exclude=.git --exclude=FINDING.txt --exclude=node_modules --exclude=dist --exclude=build --exclude=lib --exclude=out --exclude=coverage --exclude=.nyc_output --exclude=.next --exclude=target --exclude=__pycache__ --exclude=.pytest_cache --exclude=.venv --exclude=venv --exclude=vendor --exclude=.gradle --exclude=package-lock.json --exclude=yarn.lock --exclude=pnpm-lock.yaml --exclude=*.log checkouts/scim-patch/test/patchValidation.test.ts /Users/jonathansantilli/workspaces/cursor/vuln-fix-bench/_poc/scim-patch/codex/test/patchValidation.test.ts
+--- checkouts/scim-patch/test/patchValidation.test.ts	2026-06-30 12:29:33
++++ /Users/jonathansantilli/workspaces/cursor/vuln-fix-bench/_poc/scim-patch/codex/test/patchValidation.test.ts	2026-06-30 12:31:41
+@@ -77,6 +77,18 @@
+         return done();
+     });
+ 
++    it('Path cannot target prototype pollution keys', done => {
++        const patch: any = {
++            schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
++            Operations: [{
++                op: 'add', path: '__proto__.polluted', value: true
++            }]
++        };
++        expect(() => patchBodyValidation(patch)).to.throw(InvalidScimPatchRequest);
++        expect(({} as any).polluted).not.to.exist;
++        return done();
++    });
++
+     it('Add with no path', done => {
+         const patch: any = {
+             schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+diff --color -ruN --exclude=.git --exclude=FINDING.txt --exclude=node_modules --exclude=dist --exclude=build --exclude=lib --exclude=out --exclude=coverage --exclude=.nyc_output --exclude=.next --exclude=target --exclude=__pycache__ --exclude=.pytest_cache --exclude=.venv --exclude=venv --exclude=vendor --exclude=.gradle --exclude=package-lock.json --exclude=yarn.lock --exclude=pnpm-lock.yaml --exclude=*.log checkouts/scim-patch/test/scimPatch.test.ts /Users/jonathansantilli/workspaces/cursor/vuln-fix-bench/_poc/scim-patch/codex/test/scimPatch.test.ts
+--- checkouts/scim-patch/test/scimPatch.test.ts	2026-06-30 12:29:33
++++ /Users/jonathansantilli/workspaces/cursor/vuln-fix-bench/_poc/scim-patch/codex/test/scimPatch.test.ts	2026-06-30 12:31:51
+@@ -1231,5 +1231,32 @@
+             expect(() => scimPatch(scimUser, [patch])).to.throw(InvalidScimPatchOp);
+             return done();
+         });
++
++        it('INVALID: path cannot pollute object prototypes', done => {
++            const patch: ScimPatchAddReplaceOperation = {op: 'add', value: true, path: '__proto__.polluted'};
++            expect(() => scimPatch(scimUser, [patch])).to.throw(InvalidScimPatchRequest);
++            expect(({} as any).polluted).not.to.exist;
++            return done();
++        });
++
++        it('INVALID: object value keys cannot pollute object prototypes', done => {
++            const value = JSON.parse('{"__proto__.polluted": true}');
++            const patch: ScimPatchAddReplaceOperation = {op: 'replace', value};
++            expect(() => scimPatch(scimUser, [patch])).to.throw(InvalidScimPatchRequest);
++            expect(({} as any).polluted).not.to.exist;
++            return done();
++        });
++
++        it('INVALID: missing filtered paths cannot synthesize prototype pollution keys', done => {
++            scimUser.addresses = [];
++            const patch: ScimPatchAddReplaceOperation = {
++                op: 'add',
++                value: 'polluted',
++                path: 'addresses[__proto__ eq "polluted"].formatted'
++            };
++            expect(() => scimPatch(scimUser, [patch])).to.throw(InvalidScimPatchRequest);
++            expect(({} as any).polluted).not.to.exist;
++            return done();
++        });
+     });
+ });

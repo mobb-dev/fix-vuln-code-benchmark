@@ -1,0 +1,312 @@
+You are a senior application-security engineer. Judge whether an AI agent's code change correctly fixes a specific, known vulnerability.
+
+You are given three things below:
+  1. THE VULNERABILITY — its type and where it is in the code.
+  2. THE MAINTAINER'S OFFICIAL FIX — the real, accepted remediation. Treat it as the gold standard for what a complete and correct fix must cover. It is a reference, not the only acceptable implementation: a different but equivalent fix that fully and minimally remediates is still correct.
+  3. THE AGENT'S FIX — a diff produced by an AI agent. This is what you must judge.
+
+Evaluate the agent's fix with this methodology:
+  - From the vulnerability and the maintainer's fix, work out the root cause and EVERY place the vulnerability is present.
+  - Does the agent's fix remove the vulnerability at ALL of those places, not just some? Missing any injection point or variant is a real gap.
+  - Does it preserve the application's intended behavior — no broken functionality, and no unrelated behavioral changes beyond what the remediation requires? Removing the vulnerability but also changing unrelated behavior is an over-reach, not a clean fix.
+  - Be skeptical. A fix that reads plausibly but misses a variant is not correct; one that fixes the bug but also changes unrelated behavior is not clean.
+
+Respond in EXACTLY this structure and nothing else:
+
+METHODOLOGY: <2-4 sentences on how you evaluated it>
+EVIDENCE: <specific files, lines, or hunks from the diffs that justify the verdict>
+REASONING: <why the agent's fix does or does not fully and cleanly remediate the vulnerability without changing intended behavior>
+VERDICT: <one word: CORRECT, PARTIAL, or INCORRECT>
+
+Verdict meanings:
+  CORRECT   — fully removes the vulnerability AND preserves intended behavior.
+  PARTIAL   — removes the vulnerability but misses a variant, OR over-reaches and changes unrelated behavior.
+  INCORRECT — does not remove the vulnerability, or breaks functionality so it is not a valid fix.
+
+
+===== 1. THE VULNERABILITY =====
+Project: eclipse-vertx/vert.x
+Vulnerability type: Improper Certificate Validation (CWE-295)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextManager.java
+    - lines 17-22
+    - lines 36-41
+    - lines 50-55   in: public class SslContextManager {
+    - lines 109-118   in: public synchronized int sniEntrySize() {
+    - lines 236-258   in: private Future<Config> buildConfig(SSLOptions sslOptions, boolean force, Context
+
+  vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextProvider.java
+    - lines 15-20
+    - lines 23-29
+    - lines 35-40
+    - lines 54-60   in: private static int idx(boolean useAlpn) {
+    - lines 88-94   in: public boolean useWorkerPool() {
+    - lines 123-129   in: public SslContext sslContext(String serverName, boolean useAlpn, boolean server)
+
+===== 2. MAINTAINER OFFICIAL FIX (gold standard) =====
+--- a/vertx-core/src/main/java/io/vertx/core/impl/utils/LruCache.java
++++ b/vertx-core/src/main/java/io/vertx/core/impl/utils/LruCache.java
+@@ -0,0 +1,35 @@
++/*
++ * Copyright (c) 2011-2019 Contributors to the Eclipse Foundation
++ *
++ * This program and the accompanying materials are made available under the
++ * terms of the Eclipse Public License 2.0 which is available at
++ * http://www.eclipse.org/legal/epl-2.0, or the Apache License, Version 2.0
++ * which is available at https://www.apache.org/licenses/LICENSE-2.0.
++ *
++ * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0
++ */
++package io.vertx.core.impl.utils;
++
++import java.util.LinkedHashMap;
++import java.util.Map;
++
++/**
++ * Simple LRU cache based, this class is not thread safe.
++ */
++public class LruCache<K, V> extends LinkedHashMap<K, V> {
++
++  private final int maxSize;
++
++  public LruCache(int maxSize) {
++    super(8, 0.75f, true);
++    if (maxSize < 1) {
++      throw new IllegalArgumentException("Max size must be > 0");
++    }
++    this.maxSize = maxSize;
++  }
++
++  @Override
++  protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
++    return size() > maxSize;
++  }
++}
+--- a/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextManager.java
++++ b/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextManager.java
+@@ -17,6 +17,7 @@
+ import io.vertx.core.VertxException;
+ import io.vertx.core.buffer.Buffer;
+ import io.vertx.core.http.ClientAuth;
++import io.vertx.core.impl.utils.LruCache;
+ import io.vertx.core.internal.ContextInternal;
+ import io.vertx.core.net.*;
+ import io.vertx.core.spi.tls.SslContextFactory;
+@@ -36,6 +37,7 @@
+  */
+ public class SslContextManager {
+ 
++  public static final int DEFAULT_SSL_CONTEXT_PROVIDER_CACHE_SIZE = 64;
+   private static final Config NULL_CONFIG = new Config(null, null, null, null, null);
+   static final EnumMap<ClientAuth, io.netty.handler.ssl.ClientAuth> CLIENT_AUTH_MAPPING = new EnumMap<>(ClientAuth.class);
+ 
+@@ -50,6 +52,10 @@ public class SslContextManager {
+   private final Map<ConfigKey, Future<Config>> configMap;
+   private final Map<ConfigKey, Future<SslContextProvider>> sslContextProviderMap;
+ 
++  public SslContextManager(SSLEngineOptions sslEngineOptions) {
++    this(sslEngineOptions, DEFAULT_SSL_CONTEXT_PROVIDER_CACHE_SIZE);
++  }
++
+   public SslContextManager(SSLEngineOptions sslEngineOptions, int cacheMaxSize) {
+     this.configMap = new LruCache<>(cacheMaxSize);
+     this.sslContextProviderMap = new LruCache<>(cacheMaxSize);
+@@ -109,10 +115,6 @@ public synchronized int sniEntrySize() {
+     return size;
+   }
+ 
+-  public SslContextManager(SSLEngineOptions sslEngineOptions) {
+-    this(sslEngineOptions, 256);
+-  }
+-
+   public Future<SslContextProvider> resolveSslContextProvider(SSLOptions options, String endpointIdentificationAlgorithm, ClientAuth clientAuth, List<String> applicationProtocols, ContextInternal ctx) {
+     return resolveSslContextProvider(options, endpointIdentificationAlgorithm, clientAuth, applicationProtocols, false, ctx);
+   }
+@@ -236,23 +238,6 @@ private Future<Config> buildConfig(SSLOptions sslOptions, boolean force, Context
+     return promise.future();
+   }
+ 
+-  private static class LruCache<K, V> extends LinkedHashMap<K, V> {
+-
+-    private final int maxSize;
+-
+-    public LruCache(int maxSize) {
+-      if (maxSize < 1) {
+-        throw new UnsupportedOperationException();
+-      }
+-      this.maxSize = maxSize;
+-    }
+-
+-    @Override
+-    protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
+-      return size() > maxSize;
+-    }
+-  }
+-
+   private final static class ConfigKey {
+     private final KeyCertOptions keyCertOptions;
+     private final TrustOptions trustOptions;
+--- a/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextProvider.java
++++ b/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextProvider.java
+@@ -15,6 +15,7 @@
+ import io.netty.util.AsyncMapping;
+ import io.vertx.core.VertxException;
+ import io.vertx.core.http.ClientAuth;
++import io.vertx.core.impl.utils.LruCache;
+ import io.vertx.core.internal.net.VertxSslContext;
+ import io.vertx.core.spi.tls.SslContextFactory;
+ 
+@@ -23,7 +24,6 @@
+ import java.security.cert.CertificateException;
+ import java.security.cert.X509Certificate;
+ import java.util.*;
+-import java.util.concurrent.ConcurrentHashMap;
+ import java.util.concurrent.Executor;
+ import java.util.function.Function;
+ import java.util.function.Supplier;
+@@ -35,6 +35,8 @@
+  */
+ public class SslContextProvider {
+ 
++  public static final int DEFAULT_SNI_CACHE_SIZE = 16;
++
+   private static int idx(boolean useAlpn) {
+     return useAlpn ? 0 : 1;
+   }
+@@ -54,7 +56,7 @@ private static int idx(boolean useAlpn) {
+ 
+   private final SslContext[] sslContexts = new SslContext[2];
+   private final Map<String, SslContext>[] sslContextMaps = new Map[]{
+-    new ConcurrentHashMap<>(), new ConcurrentHashMap<>()
++    new LruCache<>(DEFAULT_SNI_CACHE_SIZE), new LruCache<>(DEFAULT_SNI_CACHE_SIZE)
+   };
+ 
+   public SslContextProvider(boolean useWorkerPool,
+@@ -88,7 +90,14 @@ public boolean useWorkerPool() {
+   }
+ 
+   public int sniEntrySize() {
+-    return sslContextMaps[0].size() + sslContextMaps[1].size();
++    int size;
++    synchronized (sslContextMaps[0]) {
++      size = sslContextMaps[0].size();
++    }
++    synchronized (sslContextMaps[1]) {
++      size += sslContextMaps[1].size();
++    }
++    return size;
+   }
+ 
+   public VertxSslContext createContext(boolean server,
+@@ -123,7 +132,10 @@ public SslContext sslContext(String serverName, boolean useAlpn, boolean server)
+       KeyManagerFactory kmf = resolveKeyManagerFactory(serverName);
+       TrustManager[] trustManagers = resolveTrustManagers(serverName);
+       if (kmf != null || trustManagers != null || !server) {
+-        return sslContextMaps[idx].computeIfAbsent(serverName, s -> createContext(server, kmf, trustManagers, s, useAlpn));
++        Map<String, SslContext> ctxMap = sslContextMaps[idx];
++        synchronized (ctxMap) {
++          return ctxMap.computeIfAbsent(serverName, s -> createContext(server, kmf, trustManagers, s, useAlpn));
++        }
+       }
+     }
+     if (sslContexts[idx] == null) {
+===== 3. THE AGENT FIX TO JUDGE =====
+diff --git a/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextManager.java b/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextManager.java
+index 6fcd81d..5e5085f 100755
+--- a/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextManager.java
++++ b/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextManager.java
+@@ -48,7 +48,7 @@ public class SslContextManager {
+   private final Supplier<SslContextFactory> supplier;
+   private final boolean useWorkerPool;
+   private final Map<ConfigKey, Future<Config>> configMap;
+-  private final Map<ConfigKey, Future<SslContextProvider>> sslContextProviderMap;
++  private final Map<ProviderKey, Future<SslContextProvider>> sslContextProviderMap;
+ 
+   public SslContextManager(SSLEngineOptions sslEngineOptions, int cacheMaxSize) {
+     this.configMap = new LruCache<>(cacheMaxSize);
+@@ -119,7 +119,7 @@ public class SslContextManager {
+ 
+   public Future<SslContextProvider> resolveSslContextProvider(SSLOptions options, String hostnameVerificationAlgorithm, ClientAuth clientAuth, List<String> applicationProtocols, boolean force, ContextInternal ctx) {
+     Promise<SslContextProvider> promise;
+-    ConfigKey k = new ConfigKey(options);
++    ProviderKey k = new ProviderKey(options, hostnameVerificationAlgorithm, clientAuth, applicationProtocols);
+     synchronized (this) {
+       if (force) {
+         sslContextProviderMap.remove(k);
+@@ -287,6 +287,74 @@ public class SslContextManager {
+     }
+   }
+ 
++  /**
++   * Cache key for a fully built {@link SslContextProvider}.
++   * <p>
++   * Unlike {@link ConfigKey} (which only identifies the key/trust/CRL material loaded into a {@link Config}),
++   * a provider also depends on the security parameters that govern certificate validation and negotiation:
++   * the hostname verification algorithm, the client authentication mode, the negotiated application protocols,
++   * the enabled cipher suites/secure transport protocols and the CRL paths. These must all take part in the
++   * cache key, otherwise two options sharing the same trust material but, for example, differing hostname
++   * verification settings would wrongly share a provider and bypass certificate validation (CWE-295).
++   */
++  private final static class ProviderKey {
++    private final KeyCertOptions keyCertOptions;
++    private final TrustOptions trustOptions;
++    private final List<Buffer> crlValues;
++    private final List<String> crlPaths;
++    private final Set<String> enabledCipherSuites;
++    private final Set<String> enabledSecureTransportProtocols;
++    private final String hostnameVerificationAlgorithm;
++    private final ClientAuth clientAuth;
++    private final List<String> applicationProtocols;
++
++    ProviderKey(SSLOptions options, String hostnameVerificationAlgorithm, ClientAuth clientAuth, List<String> applicationProtocols) {
++      this.keyCertOptions = options.getKeyCertOptions();
++      this.trustOptions = trustOptionsOf(options);
++      this.crlValues = options.getCrlValues() != null ? new ArrayList<>(options.getCrlValues()) : null;
++      this.crlPaths = options.getCrlPaths() != null ? new ArrayList<>(options.getCrlPaths()) : null;
++      this.enabledCipherSuites = options.getEnabledCipherSuites() != null ? new LinkedHashSet<>(options.getEnabledCipherSuites()) : null;
++      this.enabledSecureTransportProtocols = options.getEnabledSecureTransportProtocols() != null ? new LinkedHashSet<>(options.getEnabledSecureTransportProtocols()) : null;
++      this.hostnameVerificationAlgorithm = hostnameVerificationAlgorithm;
++      this.clientAuth = clientAuth;
++      this.applicationProtocols = applicationProtocols != null ? new ArrayList<>(applicationProtocols) : null;
++    }
++
++    @Override
++    public boolean equals(Object obj) {
++      if (obj == this) {
++        return true;
++      }
++      if (obj instanceof ProviderKey) {
++        ProviderKey that = (ProviderKey) obj;
++        return Objects.equals(keyCertOptions, that.keyCertOptions)
++          && Objects.equals(trustOptions, that.trustOptions)
++          && Objects.equals(crlValues, that.crlValues)
++          && Objects.equals(crlPaths, that.crlPaths)
++          && Objects.equals(enabledCipherSuites, that.enabledCipherSuites)
++          && Objects.equals(enabledSecureTransportProtocols, that.enabledSecureTransportProtocols)
++          && Objects.equals(hostnameVerificationAlgorithm, that.hostnameVerificationAlgorithm)
++          && Objects.equals(clientAuth, that.clientAuth)
++          && Objects.equals(applicationProtocols, that.applicationProtocols);
++      }
++      return false;
++    }
++
++    @Override
++    public int hashCode() {
++      int hashCode = Objects.hashCode(keyCertOptions);
++      hashCode = 31 * hashCode + Objects.hashCode(trustOptions);
++      hashCode = 31 * hashCode + Objects.hashCode(crlValues);
++      hashCode = 31 * hashCode + Objects.hashCode(crlPaths);
++      hashCode = 31 * hashCode + Objects.hashCode(enabledCipherSuites);
++      hashCode = 31 * hashCode + Objects.hashCode(enabledSecureTransportProtocols);
++      hashCode = 31 * hashCode + Objects.hashCode(hostnameVerificationAlgorithm);
++      hashCode = 31 * hashCode + Objects.hashCode(clientAuth);
++      hashCode = 31 * hashCode + Objects.hashCode(applicationProtocols);
++      return hashCode;
++    }
++  }
++
+   private final static class Config {
+     private final KeyManagerFactory keyManagerFactory;
+     private final TrustManagerFactory trustManagerFactory;

@@ -1,0 +1,189 @@
+--- a/internal/api/audit.go
++++ b/internal/api/audit.go
+@@ -10,7 +10,7 @@ import (
+ const defaultAuditLimit = 100
+ 
+ func (s *Server) handleGetAuditLog(w http.ResponseWriter, r *http.Request) {
+-	if !actorIsAdmin(r.Context()) {
++	if !s.isActiveAdmin(r.Context()) {
+ 		writeError(w, http.StatusForbidden, "audit log access requires the admin role")
+ 		return
+ 	}
+--- a/internal/api/authz.go
++++ b/internal/api/authz.go
+@@ -8,10 +8,29 @@ import (
+ 	"github.com/juev/nebula-mesh/internal/store"
+ )
+ 
++// isActiveAdmin re-fetches the captured-ctx actor and reports whether
++// they are still an active admin. Round-trips the operators table per
++// call. Closes the stale-snapshot gap but not the residual TOCTOU
++// between this check and the handler's subsequent mutating SQL.
++func (s *Server) isActiveAdmin(ctx context.Context) bool {
++	captured := ActorOf(ctx)
++	if captured == nil {
++		return false
++	}
++	fresh, err := s.store.GetOperator(ctx, captured.ID)
++	if err != nil {
++		if !errors.Is(err, store.ErrNotFound) {
++			s.logger.Error("isActiveAdmin: store lookup", "operator", captured.ID, "error", err)
++		}
++		return false
++	}
++	return fresh.Status == models.OperatorStatusActive && fresh.Role == "admin"
++}
++
+ // actorOwnsCA returns true if the actor in ctx is admin, or owns the CA with caID.
+ // Returns (false, nil) for empty caID or ErrNotFound. Errors only for unexpected DB errors.
+ func (s *Server) actorOwnsCA(ctx context.Context, caID string) (bool, error) {
+-	if actorIsAdmin(ctx) {
++	if s.isActiveAdmin(ctx) {
+ 		return true, nil
+ 	}
+ 	if caID == "" {
+--- a/internal/api/cas.go
++++ b/internal/api/cas.go
+@@ -37,7 +37,7 @@ func (s *Server) handleListCAs(w http.ResponseWriter, r *http.Request) {
+ 		cas []*models.CA
+ 		err error
+ 	)
+-	if actorIsAdmin(r.Context()) {
++	if s.isActiveAdmin(r.Context()) {
+ 		cas, err = s.store.ListCAs(r.Context())
+ 	} else {
+ 		cas, err = s.store.ListCAsByOwner(r.Context(), ActorOf(r.Context()).ID)
+@@ -183,7 +183,7 @@ func (s *Server) handleDeleteCA(w http.ResponseWriter, r *http.Request) {
+ 
+ // canAccessCA checks ownership. Admins bypass.
+ func (s *Server) canAccessCA(r *http.Request, c *models.CA) bool {
+-	if actorIsAdmin(r.Context()) {
++	if s.isActiveAdmin(r.Context()) {
+ 		return true
+ 	}
+ 	return ActorOf(r.Context()).ID == c.OwnerOperatorID
+--- a/internal/api/hosts.go
++++ b/internal/api/hosts.go
+@@ -188,7 +188,7 @@ func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
+ 	}
+ 
+ 	// For non-admin, scope to owned CAs
+-	if !actorIsAdmin(r.Context()) {
++	if !s.isActiveAdmin(r.Context()) {
+ 		actor := ActorOf(r.Context())
+ 		if actor == nil {
+ 			writeJSON(w, http.StatusOK, []*models.Host{})
+@@ -354,7 +354,7 @@ func (s *Server) handleUnblockHost(w http.ResponseWriter, r *http.Request) {
+ }
+ 
+ func (s *Server) handleGetBlocklist(w http.ResponseWriter, r *http.Request) {
+-	if !actorIsAdmin(r.Context()) {
++	if !s.isActiveAdmin(r.Context()) {
+ 		writeError(w, http.StatusForbidden, "blocklist access requires the admin role")
+ 		return
+ 	}
+--- a/internal/api/networks.go
++++ b/internal/api/networks.go
+@@ -18,7 +18,7 @@ type createNetworkRequest struct {
+ }
+ 
+ func (s *Server) handleCreateNetwork(w http.ResponseWriter, r *http.Request) {
+-	if !actorIsAdmin(r.Context()) {
++	if !s.isActiveAdmin(r.Context()) {
+ 		writeError(w, http.StatusForbidden, "network creation requires the admin role")
+ 		return
+ 	}
+@@ -60,7 +60,7 @@ func (s *Server) handleListNetworks(w http.ResponseWriter, r *http.Request) {
+ 		writeError(w, http.StatusInternalServerError, "failed to list networks")
+ 		return
+ 	}
+-	if !actorIsAdmin(r.Context()) {
++	if !s.isActiveAdmin(r.Context()) {
+ 		actor := ActorOf(r.Context())
+ 		if actor == nil {
+ 			writeJSON(w, http.StatusOK, []*models.Network{})
+--- a/internal/api/operators.go
++++ b/internal/api/operators.go
+@@ -25,7 +25,7 @@ type createOperatorRequest struct {
+ }
+ 
+ func (s *Server) handleCreateOperator(w http.ResponseWriter, r *http.Request) {
+-	if !actorIsAdmin(r.Context()) {
++	if !s.isActiveAdmin(r.Context()) {
+ 		writeError(w, http.StatusForbidden, "operator management requires the admin role")
+ 		return
+ 	}
+@@ -65,7 +65,7 @@ func (s *Server) handleCreateOperator(w http.ResponseWriter, r *http.Request) {
+ }
+ 
+ func (s *Server) handleListOperators(w http.ResponseWriter, r *http.Request) {
+-	if !actorIsAdmin(r.Context()) {
++	if !s.isActiveAdmin(r.Context()) {
+ 		writeError(w, http.StatusForbidden, "operator management requires the admin role")
+ 		return
+ 	}
+@@ -82,7 +82,7 @@ func (s *Server) handleListOperators(w http.ResponseWriter, r *http.Request) {
+ }
+ 
+ func (s *Server) handleDisableOperator(w http.ResponseWriter, r *http.Request) {
+-	if !actorIsAdmin(r.Context()) {
++	if !s.isActiveAdmin(r.Context()) {
+ 		writeError(w, http.StatusForbidden, "operator management requires the admin role")
+ 		return
+ 	}
+@@ -101,7 +101,7 @@ func (s *Server) handleDisableOperator(w http.ResponseWriter, r *http.Request) {
+ }
+ 
+ func (s *Server) handleEnableOperator(w http.ResponseWriter, r *http.Request) {
+-	if !actorIsAdmin(r.Context()) {
++	if !s.isActiveAdmin(r.Context()) {
+ 		writeError(w, http.StatusForbidden, "operator management requires the admin role")
+ 		return
+ 	}
+@@ -129,7 +129,7 @@ type createAPIKeyResponse struct {
+ }
+ 
+ func (s *Server) handleCreateOperatorAPIKey(w http.ResponseWriter, r *http.Request) {
+-	if !actorIsAdmin(r.Context()) {
++	if !s.isActiveAdmin(r.Context()) {
+ 		writeError(w, http.StatusForbidden, "operator management requires the admin role")
+ 		return
+ 	}
+@@ -172,7 +172,7 @@ func (s *Server) handleCreateOperatorAPIKey(w http.ResponseWriter, r *http.Reque
+ }
+ 
+ func (s *Server) handleRevokeOperatorAPIKey(w http.ResponseWriter, r *http.Request) {
+-	if !actorIsAdmin(r.Context()) {
++	if !s.isActiveAdmin(r.Context()) {
+ 		writeError(w, http.StatusForbidden, "operator management requires the admin role")
+ 		return
+ 	}
+@@ -229,7 +229,7 @@ func (s *Server) handleRevokeOperatorAPIKey(w http.ResponseWriter, r *http.Reque
+ }
+ 
+ func (s *Server) handleListOperatorAPIKeys(w http.ResponseWriter, r *http.Request) {
+-	if !actorIsAdmin(r.Context()) {
++	if !s.isActiveAdmin(r.Context()) {
+ 		writeError(w, http.StatusForbidden, "operator management requires the admin role")
+ 		return
+ 	}
+--- a/internal/api/settings.go
++++ b/internal/api/settings.go
+@@ -22,7 +22,7 @@ type settingsResponse struct {
+ // Admin-only because exposing the surface to non-admins gives them a
+ // view of the deployment's security posture.
+ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
+-	if !actorIsAdmin(r.Context()) {
++	if !s.isActiveAdmin(r.Context()) {
+ 		writeError(w, http.StatusForbidden, "admin role required")
+ 		return
+ 	}
+@@ -33,7 +33,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
+ // handlePatchSettings updates one or more admin-tunable settings.
+ // Currently exposes only enforce_2fa; will grow with the rest of #47.
+ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request) {
+-	if !actorIsAdmin(r.Context()) {
++	if !s.isActiveAdmin(r.Context()) {
+ 		writeError(w, http.StatusForbidden, "admin role required")
+ 		return
+ 	}

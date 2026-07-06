@@ -1,0 +1,269 @@
+diff --git a/test/test_downloader_external.py b/test/test_downloader_external.py
+index 62f7d45..cf9d713 100644
+--- a/test/test_downloader_external.py
++++ b/test/test_downloader_external.py
+@@ -18,6 +18,7 @@
+     HttpieFD,
+     WgetFD,
+ )
++from yt_dlp.utils import shell_quote
+ 
+ TEST_COOKIE = {
+     'version': 0,
+@@ -76,9 +77,11 @@ def test_make_cmd(self):
+         with FakeYDL() as ydl:
+             downloader = WgetFD(ydl, {})
+             self.assertNotIn('--load-cookies', downloader._make_cmd('test', TEST_INFO))
+-            # Test cookiejar tempfile arg is added
++            # Test cookiejar config is added
+             ydl.cookiejar.set_cookie(http.cookiejar.Cookie(**TEST_COOKIE))
+-            self.assertIn('--load-cookies', downloader._make_cmd('test', TEST_INFO))
++            cmd = downloader._make_cmd('test', TEST_INFO)
++            self.assertTrue(any(arg.startswith('--config=') for arg in cmd))
++            self.assertNotIn('test=ytdlp', cmd)
+ 
+ 
+ class TestCurlFD(unittest.TestCase):
+@@ -86,10 +89,30 @@ def test_make_cmd(self):
+         with FakeYDL() as ydl:
+             downloader = CurlFD(ydl, {})
+             self.assertNotIn('--cookie', downloader._make_cmd('test', TEST_INFO))
+-            # Test cookie header is added
++            # Test cookie config is added
+             ydl.cookiejar.set_cookie(http.cookiejar.Cookie(**TEST_COOKIE))
+-            self.assertIn('--cookie', downloader._make_cmd('test', TEST_INFO))
+-            self.assertIn('test=ytdlp', downloader._make_cmd('test', TEST_INFO))
++            cmd = downloader._make_cmd('test', TEST_INFO)
++            self.assertIn('--config', cmd)
++            self.assertNotIn('--cookie', cmd)
++            self.assertNotIn('test=ytdlp', cmd)
++
++    def test_debug_cmd_redacts_cookie_and_headers(self):
++        with FakeYDL() as ydl:
++            ydl.cookiejar.set_cookie(http.cookiejar.Cookie(**TEST_COOKIE))
++            downloader = CurlFD(ydl, {})
++            cmd = downloader._make_cmd('test', {
++                **TEST_INFO,
++                'http_headers': {
++                    'Authorization': 'Bearer secret',
++                    'X-Test': 'not-secret',
++                },
++            })
++
++            debug_cmd = shell_quote(downloader._debug_cmd_args(cmd))
++            self.assertIn('--config', debug_cmd)
++            self.assertIn('<redacted>', debug_cmd)
++            self.assertNotIn('test=ytdlp', debug_cmd)
++            self.assertNotIn('Bearer secret', debug_cmd)
+ 
+ 
+ class TestAria2cFD(unittest.TestCase):
+@@ -102,7 +125,8 @@ def test_make_cmd(self):
+             # Test cookiejar tempfile arg is added
+             ydl.cookiejar.set_cookie(http.cookiejar.Cookie(**TEST_COOKIE))
+             cmd = downloader._make_cmd('test', TEST_INFO)
+-            self.assertIn(f'--load-cookies={downloader._cookies_tempfile}', cmd)
++            self.assertTrue(any(arg.startswith('--conf-path=') for arg in cmd))
++            self.assertNotIn(f'--load-cookies={downloader._cookies_tempfile}', cmd)
+ 
+ 
+ @unittest.skipUnless(FFmpegFD.available(), 'ffmpeg not found')
+diff --git a/yt_dlp/downloader/common.py b/yt_dlp/downloader/common.py
+index 6f15607..8333191 100644
+--- a/yt_dlp/downloader/common.py
++++ b/yt_dlp/downloader/common.py
+@@ -506,7 +506,46 @@ def _debug_cmd(self, args, exe=None):
+         if exe is None:
+             exe = os.path.basename(args[0])
+ 
+-        self.write_debug(f'{exe} command line: {shell_quote(args)}')
++        self.write_debug(f'{exe} command line: {shell_quote(self._debug_cmd_args(args))}')
++
++    @staticmethod
++    def _debug_cmd_args(args):
++        args = list(args)
++        sensitive_options = {
++            '-H', '-headers', '-cookies',
++            '--header', '--cookie', '--load-cookies', '--config', '--conf-path',
++        }
++        sensitive_option_prefixes = tuple(f'{option}=' for option in sensitive_options if option.startswith('--'))
++        sensitive_header_names = (
++            'authorization', 'cookie', 'proxy-authorization',
++            'x-api-key', 'x-goog-api-key', 'x-youtube-identity-token',
++        )
++
++        def scrub_header(arg):
++            name, delim, _ = arg.partition(':')
++            return f'{name}{delim} <redacted>' if delim and name.lower() in sensitive_header_names else arg
++
++        redacted_args = []
++        redact_next = False
++        for arg in args:
++            if redact_next:
++                redacted_args.append('<redacted>')
++                redact_next = False
++                continue
++
++            if arg in sensitive_options:
++                redacted_args.append(arg)
++                redact_next = True
++                continue
++
++            if arg.startswith(sensitive_option_prefixes):
++                option, _, _ = arg.partition('=')
++                redacted_args.append(f'{option}=<redacted>')
++                continue
++
++            redacted_args.append(scrub_header(arg))
++
++        return redacted_args
+ 
+     def _get_impersonate_target(self, info_dict):
+         impersonate = info_dict.get('impersonate')
+diff --git a/yt_dlp/downloader/external.py b/yt_dlp/downloader/external.py
+index 79c1048..6312231 100644
+--- a/yt_dlp/downloader/external.py
++++ b/yt_dlp/downloader/external.py
+@@ -43,6 +43,7 @@ def real_download(self, filename, info_dict):
+         self.report_destination(filename)
+         tmpfilename = self.temp_name(filename)
+         self._cookies_tempfile = None
++        self._tmpfiles = []
+ 
+         try:
+             started = time.time()
+@@ -56,8 +57,8 @@ def real_download(self, filename, info_dict):
+             retval = 0
+             self.to_screen(f'[{self.get_basename()}] Interrupted by user')
+         finally:
+-            if self._cookies_tempfile:
+-                self.try_remove(self._cookies_tempfile)
++            for tmpfile in self._tmpfiles:
++                self.try_remove(tmpfile)
+ 
+         if retval == 0:
+             status = {
+@@ -129,16 +130,35 @@ def _configuration_args(self, keys=None, *args, **kwargs):
+             self.get_basename(), self.params.get('external_downloader_args'), self.EXE_NAME,
+             keys, *args, **kwargs)
+ 
++    def _write_tmpfile(self, contents, *, suffix):
++        tmp = tempfile.NamedTemporaryFile('w', encoding='utf-8', suffix=suffix, delete=False)
++        try:
++            tmp.write(contents)
++        finally:
++            tmp.close()
++        self._tmpfiles = [*getattr(self, '_tmpfiles', []), tmp.name]
++        return tmp.name
++
+     def _write_cookies(self):
+         if not self.ydl.cookiejar.filename:
+             tmp_cookies = tempfile.NamedTemporaryFile(suffix='.cookies', delete=False)
+             tmp_cookies.close()
+             self._cookies_tempfile = tmp_cookies.name
+-            self.to_screen(f'[download] Writing temporary cookies file to "{self._cookies_tempfile}"')
++            self._tmpfiles = [*getattr(self, '_tmpfiles', []), tmp_cookies.name]
++            self.to_screen('[download] Writing temporary cookies file')
+         # real_download resets _cookies_tempfile; if it's None then save() will write to cookiejar.filename
+         self.ydl.cookiejar.save(self._cookies_tempfile)
+         return self.ydl.cookiejar.filename or self._cookies_tempfile
+ 
++    @staticmethod
++    def _config_value(value):
++        return str(value).replace('\r', ' ').replace('\n', ' ')
++
++    @classmethod
++    def _curl_config_arg(cls, option, value):
++        value = cls._config_value(value).replace('\\', '\\\\').replace('"', '\\"')
++        return f'{option} = "{value}"'
++
+     def _call_downloader(self, tmpfilename, info_dict):
+         """ Either overwrite this or implement _make_cmd """
+         cmd = [encodeArgument(a) for a in self._make_cmd(tmpfilename, info_dict)]
+@@ -198,12 +218,15 @@ class CurlFD(ExternalFD):
+ 
+     def _make_cmd(self, tmpfilename, info_dict):
+         cmd = [self.exe, '--location', '-o', tmpfilename, '--compressed']
++        config = []
+         cookie_header = self.ydl.cookiejar.get_cookie_header(info_dict['url'])
+         if cookie_header:
+-            cmd += ['--cookie', cookie_header]
++            config.append(self._curl_config_arg('cookie', cookie_header))
+         if info_dict.get('http_headers') is not None:
+             for key, val in info_dict['http_headers'].items():
+-                cmd += ['--header', f'{key}: {val}']
++                config.append(self._curl_config_arg('header', f'{key}: {val}'))
++        if config:
++            cmd += ['--config', self._write_tmpfile('\n'.join(config), suffix='.curl.conf')]
+ 
+         cmd += self._bool_option('--continue-at', 'continuedl', '-', '0')
+         cmd += self._valueless_option('--silent', 'noprogress')
+@@ -244,11 +267,15 @@ class WgetFD(ExternalFD):
+ 
+     def _make_cmd(self, tmpfilename, info_dict):
+         cmd = [self.exe, '-O', tmpfilename, '-nv', '--compression=auto']
++        config = []
+         if self.ydl.cookiejar.get_cookie_header(info_dict['url']):
+-            cmd += ['--load-cookies', self._write_cookies()]
++            config.append(f'load_cookies = {self._config_value(self._write_cookies())}')
+         if info_dict.get('http_headers') is not None:
+             for key, val in info_dict['http_headers'].items():
+-                cmd += ['--header', f'{key}: {val}']
++                config.append(f'header = {self._config_value(f"{key}: {val}")}')
++        if config:
++            config_filename = self._write_tmpfile('\n'.join(config), suffix='.wgetrc')
++            cmd += [f'--config={config_filename}']
+         cmd += self._option('--limit-rate', 'ratelimit')
+         retry = self._option('--tries', 'retries')
+         if len(retry) == 2:
+@@ -293,19 +320,26 @@ def _call_downloader(self, tmpfilename, info_dict):
+         return super()._call_downloader(tmpfilename, info_dict)
+ 
+     def _make_cmd(self, tmpfilename, info_dict):
+-        cmd = [self.exe, '-c', '--no-conf',
+-               '--console-log-level=warn', '--summary-interval=0', '--download-result=hide',
+-               '--http-accept-gzip=true', '--file-allocation=none', '-x16', '-j16', '-s16']
++        config = []
++        if self.ydl.cookiejar.get_cookie_header(info_dict['url']):
++            config.append(f'load-cookies={self._config_value(self._write_cookies())}')
++        if info_dict.get('http_headers') is not None:
++            for key, val in info_dict['http_headers'].items():
++                config.append(f'header={self._config_value(f"{key}: {val}")}')
++
++        cmd = [self.exe, '-c']
++        if config:
++            config_filename = self._write_tmpfile('\n'.join(config), suffix='.aria2.conf')
++            cmd += [f'--conf-path={config_filename}']
++        else:
++            cmd += ['--no-conf']
++        cmd += ['--console-log-level=warn', '--summary-interval=0', '--download-result=hide',
++                '--http-accept-gzip=true', '--file-allocation=none', '-x16', '-j16', '-s16']
+         if 'fragments' in info_dict:
+             cmd += ['--allow-overwrite=true', '--allow-piece-length-change=true']
+         else:
+             cmd += ['--min-split-size', '1M']
+ 
+-        if self.ydl.cookiejar.get_cookie_header(info_dict['url']):
+-            cmd += [f'--load-cookies={self._write_cookies()}']
+-        if info_dict.get('http_headers') is not None:
+-            for key, val in info_dict['http_headers'].items():
+-                cmd += ['--header', f'{key}: {val}']
+         cmd += self._option('--max-overall-download-limit', 'ratelimit')
+         cmd += self._option('--interface', 'source_address')
+         cmd += self._option('--all-proxy', 'proxy')
+diff --git a/yt_dlp/utils/_utils.py b/yt_dlp/utils/_utils.py
+index b4b19f0..45d12a7 100644
+--- a/yt_dlp/utils/_utils.py
++++ b/yt_dlp/utils/_utils.py
+@@ -909,9 +909,9 @@ def communicate_or_kill(self, *args, **kwargs):
+             self.kill(timeout=None)
+             raise
+ 
+-    def kill(self, *, timeout=0):
++    def kill(self, *, timeout=None):
+         super().kill()
+-        if timeout != 0:
++        if timeout is not None:
+             self.wait(timeout=timeout)
+ 
+     @classmethod

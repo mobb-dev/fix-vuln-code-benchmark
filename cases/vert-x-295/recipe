@@ -1,0 +1,12 @@
+REPO_URL=https://github.com/eclipse-vertx/vert.x.git
+FIX_COMMIT=c64a707b6de83feeb0317e848345684860f0ab2f
+VULN_FILE=vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextProvider.java
+CWE_ID=CWE-770
+CWE_NAME="Allocation of Resources Without Limits or Throttling"
+LANGUAGE=java
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="vertx-core/src/test/java/io/vertx/tests/net/NetTest.java vertx-core/src/test/java/io/vertx/tests/utils/LruCacheTest.java"
+PREP_CMD="mvn -q -pl vertx-core -am -DskipTests install"
+TEST_CMD="mvn -q -pl vertx-core -Dtest=NetTest,LruCacheTest test"
+# RERUN NOTE: original cases32.json labeled this CWE-295 (cert validation); the real CVE-2026-6860 /
+# maintainer fix (c64a707b) is an unbounded SNI SslContext cache (DoS, CWE-770). Finding relabeled to match the gold.

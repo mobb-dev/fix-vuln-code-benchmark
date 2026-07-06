@@ -1,0 +1,8 @@
+Project: thomaspoignant/scim-patch
+Vulnerability type: Prototype Pollution (CWE-1321)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  src/scimPatch.ts
+    - lines 68-73   in: const AUTHORIZED_OPERATION = ['remove', 'add', 'replace'];
+    - lines 146-167   in: function validatePatchOperation(operation: ScimPatchOperation): void {

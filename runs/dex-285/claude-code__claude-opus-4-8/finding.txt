@@ -1,0 +1,11 @@
+Project: dexidp/dex
+Vulnerability type: Improper Authorization (CWE-285)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  connector/authproxy/authproxy.go
+    - lines 83-102   in: type callback struct {
+
+  connector/oauth/oauth.go
+    - lines 116-124   in: func (c *Config) Open(id string, logger *slog.Logger) (connector.Connector, erro
+    - lines 129-138   in: func (c *oauthConnector) LoginURL(scopes connector.Scopes, callbackURL, state st

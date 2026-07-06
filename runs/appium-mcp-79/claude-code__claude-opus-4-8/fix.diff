@@ -1,0 +1,77 @@
+diff --git a/src/ui/mcp-ui-utils.ts b/src/ui/mcp-ui-utils.ts
+index d591588..db54ca9 100644
+--- a/src/ui/mcp-ui-utils.ts
++++ b/src/ui/mcp-ui-utils.ts
+@@ -7,6 +7,25 @@
+  * Reference: https://mcpui.dev/guide/introduction
+  */
+ 
++/**
++ * Escapes a string for safe interpolation into HTML markup.
++ *
++ * Encodes the characters that are significant in HTML so that
++ * attacker/device-controlled values cannot break out of text or attribute
++ * contexts and inject markup or script (CWE-79).
++ *
++ * @param value - Arbitrary value to escape (coerced to string)
++ * @returns HTML-escaped string
++ */
++function escapeHtml(value: unknown): string {
++  return String(value)
++    .replace(/&/g, '&amp;')
++    .replace(/</g, '&lt;')
++    .replace(/>/g, '&gt;')
++    .replace(/"/g, '&quot;')
++    .replace(/'/g, '&#039;');
++}
++
+ /**
+  * Creates a UIResource object following MCP-UI protocol
+  * @param uri - Unique identifier using ui:// scheme (e.g., 'ui://appium-mcp/device-picker')
+@@ -720,24 +739,24 @@ export function createLocatorGeneratorUI(
+       (element, index) => `
+     <div class="locator-card" data-index="${index}">
+       <div class="locator-header">
+-        <h3>${element.tagName}</h3>
++        <h3>${escapeHtml(element.tagName)}</h3>
+         <div class="badges">
+           ${element.clickable ? '<span class="badge badge-clickable">Clickable</span>' : ''}
+           ${element.enabled ? '<span class="badge badge-enabled">Enabled</span>' : ''}
+           ${element.displayed ? '<span class="badge badge-displayed">Displayed</span>' : ''}
+         </div>
+       </div>
+-      ${element.text ? `<p class="element-text"><strong>Text:</strong> ${element.text}</p>` : ''}
+-      ${element.contentDesc ? `<p class="element-text"><strong>Content Desc:</strong> ${element.contentDesc}</p>` : ''}
+-      ${element.resourceId ? `<p class="element-text"><strong>Resource ID:</strong> <code>${element.resourceId}</code></p>` : ''}
++      ${element.text ? `<p class="element-text"><strong>Text:</strong> ${escapeHtml(element.text)}</p>` : ''}
++      ${element.contentDesc ? `<p class="element-text"><strong>Content Desc:</strong> ${escapeHtml(element.contentDesc)}</p>` : ''}
++      ${element.resourceId ? `<p class="element-text"><strong>Resource ID:</strong> <code>${escapeHtml(element.resourceId)}</code></p>` : ''}
+       <div class="locators-list">
+         ${Object.entries(element.locators)
+           .map(
+             ([strategy, selector]) => `
+           <div class="locator-item">
+-            <span class="strategy">${strategy}</span>
+-            <code class="selector">${selector}</code>
+-            <button class="test-btn" onclick="testLocator('${strategy}', \`${selector.replace(/`/g, '\\`')}\`)">Test</button>
++            <span class="strategy">${escapeHtml(strategy)}</span>
++            <code class="selector">${escapeHtml(selector)}</code>
++            <button class="test-btn" data-strategy="${escapeHtml(strategy)}" data-selector="${escapeHtml(selector)}">Test</button>
+           </div>
+         `
+           )
+@@ -895,6 +914,14 @@ export function createLocatorGeneratorUI(
+         }
+       }, '*');
+     }
++
++    // Wire up Test buttons via data attributes so locator values are never
++    // interpolated into executable markup (prevents XSS).
++    document.querySelectorAll('.test-btn').forEach(function (button) {
++      button.addEventListener('click', function () {
++        testLocator(button.dataset.strategy, button.dataset.selector);
++      });
++    });
+   </script>
+ </body>
+ </html>

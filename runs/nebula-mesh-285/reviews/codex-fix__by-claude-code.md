@@ -1,0 +1,11 @@
+METHODOLOGY: I derived the root cause (API handlers trust the bearer token without verifying CA ownership / admin role) and enumerated every injection point from the maintainer's gold-standard diff, then checked the agent's diff handler-by-handler for an equivalent gate plus any unintended behavioral drift. I paid particular attention to handlers the maintainer gated that fall outside the explicitly-listed line ranges (blocklist, enable-operator, list-api-keys).
+
+EVIDENCE:
+- audit.go, firewall.go (get+update), networks.go (list+get), all operator endpoints, and hosts.go (create, list, get, delete, block, unblock, rotate-cert, mint-token, update) all receive equivalent gates via `requireAdmin` / `loadAuthorizedHost` / `loadAuthorizedNetwork` — matching the gold standard. mobile_bundle.go is gated via `loadAuthorizedHost`.
+- handleCreateHost now binds `caID := network.CAID` with `defaultCAID` fallback (hosts.go), closing the cross-tenant cert-issuance path, same as gold.
+- GAP: the gold standard added `if !actorIsAdmin(r.Context())` to `handleGetBlocklist`, but the agent's hosts.go diff jumps from `handleUnblockHost` straight to `handleRotateCert` — `handleGetBlocklist` is never touched, so any authenticated non-admin can still read the global cross-tenant blocklist.
+- DEVIATION: `handleCreateNetwork` — gold makes it admin-only; the agent instead permits non-admin creation scoped to an owned active CA and adds a `ca_id` field. This is secure but a deliberate behavioral change from the reference.
+
+REASONING: The agent's fix is broad and mostly equivalent to the gold standard, correctly closing host/network/firewall/operator/audit authorization holes and the host-CA inheritance bug, with tests. However, it misses one injection point in the same vulnerability class: `handleGetBlocklist` retains no admin gate, leaving a cross-tenant information-disclosure authorization flaw the maintainer explicitly fixed. The network-creation handler also diverges behaviorally from the reference (permissive-but-scoped vs. admin-only); while not itself insecure, combined with the missed blocklist gate the remediation is not fully complete.
+
+VERDICT: PARTIAL

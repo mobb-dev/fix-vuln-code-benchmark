@@ -1,0 +1,147 @@
+diff --git a/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextManager.java b/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextManager.java
+index 6fcd81d..5a52ba6 100755
+--- a/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextManager.java
++++ b/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextManager.java
+@@ -48,7 +48,7 @@ public class SslContextManager {
+   private final Supplier<SslContextFactory> supplier;
+   private final boolean useWorkerPool;
+   private final Map<ConfigKey, Future<Config>> configMap;
+-  private final Map<ConfigKey, Future<SslContextProvider>> sslContextProviderMap;
++  private final Map<ProviderKey, Future<SslContextProvider>> sslContextProviderMap;
+ 
+   public SslContextManager(SSLEngineOptions sslEngineOptions, int cacheMaxSize) {
+     this.configMap = new LruCache<>(cacheMaxSize);
+@@ -119,7 +119,7 @@ public class SslContextManager {
+ 
+   public Future<SslContextProvider> resolveSslContextProvider(SSLOptions options, String hostnameVerificationAlgorithm, ClientAuth clientAuth, List<String> applicationProtocols, boolean force, ContextInternal ctx) {
+     Promise<SslContextProvider> promise;
+-    ConfigKey k = new ConfigKey(options);
++    ProviderKey k = new ProviderKey(options, hostnameVerificationAlgorithm, clientAuth, applicationProtocols);
+     synchronized (this) {
+       if (force) {
+         sslContextProviderMap.remove(k);
+@@ -256,13 +256,15 @@ public class SslContextManager {
+   private final static class ConfigKey {
+     private final KeyCertOptions keyCertOptions;
+     private final TrustOptions trustOptions;
++    private final List<String> crlPaths;
+     private final List<Buffer> crlValues;
+     public ConfigKey(SSLOptions options) {
+-      this(options.getKeyCertOptions(), trustOptionsOf(options), options.getCrlValues());
++      this(options.getKeyCertOptions(), trustOptionsOf(options), options.getCrlPaths(), options.getCrlValues());
+     }
+-    public ConfigKey(KeyCertOptions keyCertOptions, TrustOptions trustOptions, List<Buffer> crlValues) {
++    public ConfigKey(KeyCertOptions keyCertOptions, TrustOptions trustOptions, List<String> crlPaths, List<Buffer> crlValues) {
+       this.keyCertOptions = keyCertOptions;
+       this.trustOptions = trustOptions;
++      this.crlPaths = crlPaths != null ? new ArrayList<>(crlPaths) : null;
+       this.crlValues = crlValues != null ? new ArrayList<>(crlValues) : null;
+     }
+ 
+@@ -273,7 +275,7 @@ public class SslContextManager {
+       }
+       if (obj instanceof ConfigKey) {
+         ConfigKey that = (ConfigKey) obj;
+-        return Objects.equals(keyCertOptions, that.keyCertOptions) && Objects.equals(trustOptions, that.trustOptions) && Objects.equals(crlValues, that.crlValues);
++        return Objects.equals(keyCertOptions, that.keyCertOptions) && Objects.equals(trustOptions, that.trustOptions) && Objects.equals(crlPaths, that.crlPaths) && Objects.equals(crlValues, that.crlValues);
+       }
+       return false;
+     }
+@@ -282,11 +284,60 @@ public class SslContextManager {
+     public int hashCode() {
+       int hashCode = Objects.hashCode(keyCertOptions);
+       hashCode = 31 * hashCode + Objects.hashCode(trustOptions);
++      hashCode = 31 * hashCode + Objects.hashCode(crlPaths);
+       hashCode = 31 * hashCode + Objects.hashCode(crlValues);
+       return hashCode;
+     }
+   }
+ 
++  private final static class ProviderKey {
++    private final ConfigKey configKey;
++    private final String hostnameVerificationAlgorithm;
++    private final ClientAuth clientAuth;
++    private final List<String> applicationProtocols;
++    private final List<String> enabledCipherSuites;
++    private final List<String> enabledSecureTransportProtocols;
++
++    public ProviderKey(SSLOptions options, String hostnameVerificationAlgorithm, ClientAuth clientAuth, List<String> applicationProtocols) {
++      this.configKey = new ConfigKey(options);
++      this.hostnameVerificationAlgorithm = hostnameVerificationAlgorithm;
++      this.clientAuth = clientAuth;
++      this.applicationProtocols = applicationProtocols != null ? new ArrayList<>(applicationProtocols) : null;
++      Set<String> cipherSuites = options.getEnabledCipherSuites();
++      this.enabledCipherSuites = cipherSuites != null ? new ArrayList<>(cipherSuites) : null;
++      Set<String> secureTransportProtocols = options.getEnabledSecureTransportProtocols();
++      this.enabledSecureTransportProtocols = secureTransportProtocols != null ? new ArrayList<>(secureTransportProtocols) : null;
++    }
++
++    @Override
++    public boolean equals(Object obj) {
++      if (obj == this) {
++        return true;
++      }
++      if (obj instanceof ProviderKey) {
++        ProviderKey that = (ProviderKey) obj;
++        return Objects.equals(configKey, that.configKey) &&
++          Objects.equals(hostnameVerificationAlgorithm, that.hostnameVerificationAlgorithm) &&
++          clientAuth == that.clientAuth &&
++          Objects.equals(applicationProtocols, that.applicationProtocols) &&
++          Objects.equals(enabledCipherSuites, that.enabledCipherSuites) &&
++          Objects.equals(enabledSecureTransportProtocols, that.enabledSecureTransportProtocols);
++      }
++      return false;
++    }
++
++    @Override
++    public int hashCode() {
++      int hashCode = Objects.hashCode(configKey);
++      hashCode = 31 * hashCode + Objects.hashCode(hostnameVerificationAlgorithm);
++      hashCode = 31 * hashCode + Objects.hashCode(clientAuth);
++      hashCode = 31 * hashCode + Objects.hashCode(applicationProtocols);
++      hashCode = 31 * hashCode + Objects.hashCode(enabledCipherSuites);
++      hashCode = 31 * hashCode + Objects.hashCode(enabledSecureTransportProtocols);
++      return hashCode;
++    }
++  }
++
+   private final static class Config {
+     private final KeyManagerFactory keyManagerFactory;
+     private final TrustManagerFactory trustManagerFactory;
+diff --git a/vertx-core/src/test/java/io/vertx/tests/tls/SslContextManagerTest.java b/vertx-core/src/test/java/io/vertx/tests/tls/SslContextManagerTest.java
+index 95c82cd..99ad60e 100755
+--- a/vertx-core/src/test/java/io/vertx/tests/tls/SslContextManagerTest.java
++++ b/vertx-core/src/test/java/io/vertx/tests/tls/SslContextManagerTest.java
+@@ -161,6 +161,32 @@ public class SslContextManagerTest extends VertxTestBase {
+     assertNotSame(f1, f2);
+   }
+ 
++  @Test
++  public void testCacheKeyIncludesProviderOptions() throws Exception {
++    ContextInternal ctx = (ContextInternal) vertx.getOrCreateContext();
++    SslContextManager helper = new SslContextManager(new JdkSSLEngineOptions());
++    SSLOptions options = new SSLOptions().setKeyCertOptions(Cert.SERVER_JKS.get()).setTrustOptions(Trust.SERVER_JKS.get());
++
++    SslContextProvider baseline = awaitFuture(helper.resolveSslContextProvider(options, "", ClientAuth.NONE, null, ctx));
++
++    assertSame(baseline, awaitFuture(helper.resolveSslContextProvider(options, "", ClientAuth.NONE, null, ctx)));
++    assertNotSame(baseline, awaitFuture(helper.resolveSslContextProvider(options, "HTTPS", ClientAuth.NONE, null, ctx)));
++    assertNotSame(baseline, awaitFuture(helper.resolveSslContextProvider(options, "", ClientAuth.REQUIRED, null, ctx)));
++    assertNotSame(baseline, awaitFuture(helper.resolveSslContextProvider(options, "", ClientAuth.NONE, Collections.singletonList("h2"), ctx)));
++
++    SSLOptions cipherOptions = new SSLOptions(options);
++    cipherOptions.addEnabledCipherSuite(createEngine(baseline).getEnabledCipherSuites()[0]);
++    assertNotSame(baseline, awaitFuture(helper.resolveSslContextProvider(cipherOptions, "", ClientAuth.NONE, null, ctx)));
++
++    SSLOptions protocolOptions = new SSLOptions(options);
++    protocolOptions.setEnabledSecureTransportProtocols(new LinkedHashSet<>(Collections.singletonList("TLSv1.3")));
++    assertNotSame(baseline, awaitFuture(helper.resolveSslContextProvider(protocolOptions, "", ClientAuth.NONE, null, ctx)));
++
++    SSLOptions crlOptions = new SSLOptions(options);
++    crlOptions.addCrlPath("tls/root-ca/crl.pem");
++    assertNotSame(baseline, awaitFuture(helper.resolveSslContextProvider(crlOptions, "", ClientAuth.NONE, null, ctx)));
++  }
++
+   @Test
+   public void testDefaultVersions() {
+     testTLSVersions(new SSLOptions(), engine -> {

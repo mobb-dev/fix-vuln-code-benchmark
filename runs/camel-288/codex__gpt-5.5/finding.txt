@@ -1,0 +1,17 @@
+Project: apache/camel
+Vulnerability type: Authentication Bypass Using an Alternate Path or Channel (CWE-288)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/BasicAuthenticationConfigurer.java
+    - lines 26-32
+    - lines 35-46   in: public void configureAuthentication(
+    - lines 64-75   in: public void configureAuthentication(
+
+  components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/JWTAuthenticationConfigurer.java
+    - lines 28-48
+    - lines 72-83   in: public void configureAuthentication(
+
+  components/camel-platform-http-main/src/main/java/org/apache/camel/component/platform/http/main/authentication/MainAuthenticationConfigurer.java
+    - lines 19-24
+    - lines 30-33   in: public interface MainAuthenticationConfigurer {

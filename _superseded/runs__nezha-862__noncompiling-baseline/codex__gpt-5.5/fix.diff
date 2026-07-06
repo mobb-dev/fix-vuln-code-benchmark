@@ -1,0 +1,197 @@
+diff --git a/service/singleton/crontask.go b/service/singleton/crontask.go
+index ce73c08..af037c4 100644
+--- a/service/singleton/crontask.go
++++ b/service/singleton/crontask.go
+@@ -111,6 +111,10 @@ func (c *CronClass) sortList() {
+ }
+ 
+ func (c *CronClass) SendTriggerTasks(taskIDs []uint64, triggerServer uint64, triggerOwner uint64) {
++	if !triggerOwnerCanUseServer(triggerOwner, triggerServer) {
++		return
++	}
++
+ 	c.listMu.RLock()
+ 	var cronLists []*model.Cron
+ 	for _, taskID := range taskIDs {
+@@ -130,6 +134,14 @@ func cronCanBeTriggeredByOwner(cr *model.Cron, triggerOwner uint64) bool {
+ 	return cr.UserID == triggerOwner || userIsAdmin(triggerOwner)
+ }
+ 
++func triggerOwnerCanUseServer(triggerOwner uint64, serverID uint64) bool {
++	server, ok := ServerShared.Get(serverID)
++	if !ok || server == nil {
++		return false
++	}
++	return server.UserID == triggerOwner || userIsAdmin(triggerOwner)
++}
++
+ func ManualTrigger(cr *model.Cron) {
+ 	CronTrigger(cr)()
+ }
+diff --git a/service/singleton/security_regression_test.go b/service/singleton/security_regression_test.go
+index cd3c3fc..6ba0b5e 100644
+--- a/service/singleton/security_regression_test.go
++++ b/service/singleton/security_regression_test.go
+@@ -113,6 +113,32 @@ func TestSendTriggerTasksSkipsCronOwnedByAnotherUser(t *testing.T) {
+ 	assertNoTask(t, attackerStream)
+ }
+ 
++func TestSendTriggerTasksRejectsForeignTriggerServer(t *testing.T) {
++	foreignStream := newCapturedTaskStream()
++	replaceServerSharedForSecurityTest(t,
++		&model.Server{Common: model.Common{ID: 7, UserID: 300}, Name: "foreign-server", TaskStream: foreignStream},
++	)
++	replaceUserInfoMapForSecurityTest(t, map[uint64]model.UserInfo{
++		200: {Role: model.RoleMember},
++		300: {Role: model.RoleMember},
++	})
++
++	memberCron := &model.Cron{
++		Common:  model.Common{ID: 42, UserID: 200},
++		Command: "member-task",
++		Cover:   model.CronCoverAlertTrigger,
++	}
++	cronClass := &CronClass{
++		class: class[uint64, *model.Cron]{
++			list: map[uint64]*model.Cron{memberCron.ID: memberCron},
++		},
++	}
++
++	cronClass.SendTriggerTasks([]uint64{memberCron.ID}, 7, 200)
++
++	assertNoTask(t, foreignStream)
++}
++
+ func assertTaskCommand(t *testing.T, stream *capturedTaskStream, expectedCommand string) {
+ 	t.Helper()
+ 
+@@ -377,3 +403,73 @@ func TestClassCheckPermission(t *testing.T) {
+ 		t.Fatal("expected admin to access any resource")
+ 	}
+ }
++
++func TestServiceReportRejectsForeignOwnerServer(t *testing.T) {
++	replaceUserInfoMapForSecurityTest(t, map[uint64]model.UserInfo{
++		100: {Role: model.RoleMember},
++		200: {Role: model.RoleMember},
++	})
++
++	service := &model.Service{
++		Common:      model.Common{ID: 1, UserID: 100},
++		Cover:       model.ServiceCoverAll,
++		SkipServers: map[uint64]bool{},
++	}
++	server := &model.Server{Common: model.Common{ID: 7, UserID: 200}}
++
++	if serviceCanBeReportedByServer(service, server) {
++		t.Fatal("expected foreign owner server report to be rejected")
++	}
++}
++
++func TestServiceReportAllowsAdminOwnedServiceForAnyServer(t *testing.T) {
++	replaceUserInfoMapForSecurityTest(t, map[uint64]model.UserInfo{
++		1:   {Role: model.RoleAdmin},
++		200: {Role: model.RoleMember},
++	})
++
++	service := &model.Service{
++		Common:      model.Common{ID: 1, UserID: 1},
++		Cover:       model.ServiceCoverAll,
++		SkipServers: map[uint64]bool{},
++	}
++	server := &model.Server{Common: model.Common{ID: 7, UserID: 200}}
++
++	if !serviceCanBeReportedByServer(service, server) {
++		t.Fatal("expected admin-owned service report to be accepted")
++	}
++}
++
++func TestServiceReportRejectsSkippedServer(t *testing.T) {
++	replaceUserInfoMapForSecurityTest(t, map[uint64]model.UserInfo{
++		200: {Role: model.RoleMember},
++	})
++
++	service := &model.Service{
++		Common:      model.Common{ID: 1, UserID: 200},
++		Cover:       model.ServiceCoverAll,
++		SkipServers: map[uint64]bool{7: true},
++	}
++	server := &model.Server{Common: model.Common{ID: 7, UserID: 200}}
++
++	if serviceCanBeReportedByServer(service, server) {
++		t.Fatal("expected skipped server report to be rejected")
++	}
++}
++
++func TestServiceReportAllowsExplicitCoveredServer(t *testing.T) {
++	replaceUserInfoMapForSecurityTest(t, map[uint64]model.UserInfo{
++		200: {Role: model.RoleMember},
++	})
++
++	service := &model.Service{
++		Common:      model.Common{ID: 1, UserID: 200},
++		Cover:       model.ServiceCoverIgnoreAll,
++		SkipServers: map[uint64]bool{7: true},
++	}
++	server := &model.Server{Common: model.Common{ID: 7, UserID: 200}}
++
++	if !serviceCanBeReportedByServer(service, server) {
++		t.Fatal("expected explicitly covered server report to be accepted")
++	}
++}
+diff --git a/service/singleton/servicesentinel.go b/service/singleton/servicesentinel.go
+index 205f1d4..1b26712 100644
+--- a/service/singleton/servicesentinel.go
++++ b/service/singleton/servicesentinel.go
+@@ -472,6 +472,38 @@ func (ss *ServiceSentinel) CheckPermission(c *gin.Context, idList iter.Seq[uint6
+ 	return true
+ }
+ 
++func serviceCanBeReportedByServer(service *model.Service, server *model.Server) bool {
++	if service == nil || server == nil {
++		return false
++	}
++
++	switch service.Cover {
++	case model.ServiceCoverAll:
++		if service.SkipServers[server.ID] {
++			return false
++		}
++	case model.ServiceCoverIgnoreAll:
++		if !service.SkipServers[server.ID] {
++			return false
++		}
++	default:
++		return false
++	}
++
++	return serviceOwnerCanUseServer(service.UserID, server)
++}
++
++func serviceOwnerCanUseServer(ownerID uint64, server *model.Server) bool {
++	UserLock.RLock()
++	userInfo, ok := UserInfoMap[ownerID]
++	UserLock.RUnlock()
++	if !ok {
++		return ownerID == server.UserID
++	}
++
++	return ownerID == server.UserID || userInfo.Role.IsAdmin()
++}
++
+ // worker 服务监控的实际工作流程
+ func (ss *ServiceSentinel) worker() {
+ 	// 从服务状态汇报管道获取汇报的服务数据
+@@ -481,6 +513,12 @@ func (ss *ServiceSentinel) worker() {
+ 			log.Printf("NEZHA>> Incorrect service monitor report %+v", r)
+ 			continue
+ 		}
++
++		reporterServer, ok := ServerShared.Get(r.Reporter)
++		if !ok || !serviceCanBeReportedByServer(css, reporterServer) {
++			log.Printf("NEZHA>> Unauthorized service monitor report %+v", r)
++			continue
++		}
+ 		css = nil
+ 
+ 		mh := r.Data

@@ -1,0 +1,114 @@
+diff --git a/test/test_postprocessors.py b/test/test_postprocessors.py
+index d58a97f..4fdc5dc 100644
+--- a/test/test_postprocessors.py
++++ b/test/test_postprocessors.py
+@@ -91,6 +91,17 @@ def test_parse_cmd(self):
+         self.assertEqual(pp.parse_cmd('echo {}', info), cmd)
+         self.assertEqual(pp.parse_cmd('echo %(filepath)q', info), cmd)
+ 
++    def test_parse_cmd_shell_quote_fields(self):
++        pp = ExecPP(YoutubeDL(), '')
++        info = {'filepath': 'file name', 'title': 'a; touch injected'}
++
++        self.assertEqual(
++            pp.parse_cmd('echo %(title)s', info),
++            f'echo {shell_quote(info["title"], shell=True)}')
++        self.assertEqual(
++            pp.parse_cmd('echo %(title)q', info),
++            f'echo {shell_quote(info["title"], shell=True)}')
++
+ 
+ class TestModifyChaptersPP(unittest.TestCase):
+     def setUp(self):
+diff --git a/yt_dlp/YoutubeDL.py b/yt_dlp/YoutubeDL.py
+index 7db6303..aa6e717 100644
+--- a/yt_dlp/YoutubeDL.py
++++ b/yt_dlp/YoutubeDL.py
+@@ -1254,9 +1254,10 @@ def _copy_infodict(info_dict):
+         info_dict.pop('__pending_error', None)
+         return info_dict
+ 
+-    def prepare_outtmpl(self, outtmpl, info_dict, sanitize=False):
++    def prepare_outtmpl(self, outtmpl, info_dict, sanitize=False, shell_quote_fields=False):
+         """ Make the outtmpl and info_dict suitable for substitution: ydl.escape_outtmpl(outtmpl) % info_dict
+         @param sanitize    Whether to sanitize the output as a filename
++        @param shell_quote_fields    Whether to shell-quote substituted fields
+         """
+ 
+         info_dict.setdefault('epoch', int(time.time()))  # keep epoch consistent once set
+@@ -1442,32 +1443,42 @@ def create_key(outer_mobj):
+                     indent=4 if '#' in flags else None, ensure_ascii='+' not in flags), str_fmt
+             elif fmt[-1] == 'h':  # html
+                 value, fmt = escapeHTML(str(value)), str_fmt
+-            elif fmt[-1] == 'q':  # quoted
+-                value = map(str, variadic(value) if '#' in flags else [value])
+-                value, fmt = shell_quote(value, shell=True), str_fmt
+-            elif fmt[-1] == 'B':  # bytes
++            fmt_type = fmt[-1]
++            if fmt_type == 'q':  # quoted
++                value = (
++                    f'%{str_fmt}' % str(item)
++                    for item in (variadic(value) if '#' in flags else [value]))
++                value, fmt = shell_quote(value, shell=True), 's'
++                fmt_type = None
++            elif fmt_type == 'B':  # bytes
+                 value = f'%{str_fmt}'.encode() % str(value).encode()
+                 value, fmt = value.decode('utf-8', 'ignore'), 's'
+-            elif fmt[-1] == 'U':  # unicode normalized
++                fmt_type = fmt[-1]
++            elif fmt_type == 'U':  # unicode normalized
+                 value, fmt = unicodedata.normalize(
+                     # "+" = compatibility equivalence, "#" = NFD
+                     'NF{}{}'.format('K' if '+' in flags else '', 'D' if '#' in flags else 'C'),
+                     value), str_fmt
+-            elif fmt[-1] == 'D':  # decimal suffix
++                fmt_type = fmt[-1]
++            elif fmt_type == 'D':  # decimal suffix
+                 num_fmt, fmt = fmt[:-1].replace('#', ''), 's'
+                 value = format_decimal_suffix(value, f'%{num_fmt}f%s' if num_fmt else '%d%s',
+                                               factor=1024 if '#' in flags else 1000)
+-            elif fmt[-1] == 'S':  # filename sanitization
++                fmt_type = fmt[-1]
++            elif fmt_type == 'S':  # filename sanitization
+                 value, fmt = filename_sanitizer(last_field, value, restricted='#' in flags), str_fmt
+-            elif fmt[-1] == 'c':
++                fmt_type = fmt[-1]
++            elif fmt_type == 'c':
+                 if value:
+                     value = str(value)[0]
+                 else:
+                     fmt = str_fmt
+-            elif fmt[-1] not in 'rsa':  # numeric
++                fmt_type = fmt[-1]
++            elif fmt_type not in 'rsa':  # numeric
+                 value = float_or_none(value)
+                 if value is None:
+                     value, fmt = default, 's'
++                    fmt_type = fmt[-1]
+ 
+             if sanitize:
+                 # If value is an object, sanitize might convert it to a string
+@@ -1479,6 +1490,10 @@ def create_key(outer_mobj):
+                 if fmt[-1] in 'csra':
+                     value = sanitize(last_field, value)
+ 
++            if shell_quote_fields and fmt_type and fmt_type in 'csra':
++                value = f'%{fmt}' % value
++                value, fmt = shell_quote(value, shell=True), 's'
++
+             key = '{}\0{}'.format(key.replace('%', '%\0'), outer_mobj.group('format'))
+             TMPL_DICT[key] = value
+             return '{prefix}%({key}){fmt}'.format(key=key, fmt=fmt, prefix=outer_mobj.group('prefix'))
+diff --git a/yt_dlp/postprocessor/exec.py b/yt_dlp/postprocessor/exec.py
+index 243487d..30df8b8 100644
+--- a/yt_dlp/postprocessor/exec.py
++++ b/yt_dlp/postprocessor/exec.py
+@@ -9,7 +9,7 @@ def __init__(self, downloader, exec_cmd):
+         self.exec_cmd = variadic(exec_cmd)
+ 
+     def parse_cmd(self, cmd, info):
+-        tmpl, tmpl_dict = self._downloader.prepare_outtmpl(cmd, info)
++        tmpl, tmpl_dict = self._downloader.prepare_outtmpl(cmd, info, shell_quote_fields=True)
+         if tmpl_dict:  # if there are no replacements, tmpl_dict = {}
+             return self._downloader.escape_outtmpl(tmpl) % tmpl_dict
+ 

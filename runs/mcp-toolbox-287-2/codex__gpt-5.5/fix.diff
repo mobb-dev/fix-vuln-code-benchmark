@@ -1,0 +1,256 @@
+diff --git a/internal/auth/generic/generic.go b/internal/auth/generic/generic.go
+index 8a68a6d..970c794 100644
+--- a/internal/auth/generic/generic.go
++++ b/internal/auth/generic/generic.go
+@@ -21,6 +21,7 @@ import (
+ 	"fmt"
+ 	"io"
+ 	"log"
++	"net"
+ 	"net/http"
+ 	"net/url"
+ 	"strings"
+@@ -83,6 +84,15 @@ func (cfg Config) Initialize() (auth.AuthService, error) {
+ 	if cfg.IntrospectionEndpoint != "" {
+ 		introspectionURL = cfg.IntrospectionEndpoint
+ 	}
++	if introspectionURL != "" {
++		parsedIntrospection, err := url.Parse(introspectionURL)
++		if err != nil {
++			return nil, fmt.Errorf("invalid introspection endpoint detected")
++		}
++		if err := validateAuthEndpointURL(parsedIntrospection, "introspection endpoint"); err != nil {
++			return nil, err
++		}
++	}
+ 
+ 	// Create the keyfunc to fetch and cache the JWKS in the background
+ 	kf, err := keyfunc.NewDefault([]string{jwksURL})
+@@ -121,8 +131,8 @@ func discoverOIDCConfig(client *http.Client, AuthorizationServer string) (jwksUR
+ 	if err != nil {
+ 		return "", "", "", fmt.Errorf("invalid auth URL")
+ 	}
+-	if u.Scheme != "https" {
+-		log.Printf("WARNING: HTTP instead of HTTPS is being used for AuthorizationServer: %s", AuthorizationServer)
++	if err := validateAuthEndpointURL(u, "AuthorizationServer"); err != nil {
++		return "", "", "", err
+ 	}
+ 
+ 	oidcConfigURL, err := url.JoinPath(AuthorizationServer, ".well-known/openid-configuration")
+@@ -155,22 +165,57 @@ func discoverOIDCConfig(client *http.Client, AuthorizationServer string) (jwksUR
+ 		return "", "", "", err
+ 	}
+ 
++	if config.Issuer == "" {
++		return "", "", "", fmt.Errorf("issuer not found in config")
++	}
++
+ 	if config.JwksUri == "" {
+ 		return "", "", "", fmt.Errorf("jwks_uri not found in config")
+ 	}
+ 
+-	// Sanitize the resulting JWKS URI before returning it
+ 	parsedJWKS, err := url.Parse(config.JwksUri)
+ 	if err != nil {
+ 		return "", "", "", fmt.Errorf("invalid jwks_uri detected")
+ 	}
+-	if parsedJWKS.Scheme != "https" {
+-		log.Printf("WARNING: HTTP instead of HTTPS is being used for JWKS URI: %s", config.JwksUri)
++	if err := validateAuthEndpointURL(parsedJWKS, "jwks_uri"); err != nil {
++		return "", "", "", err
++	}
++
++	if config.IntrospectionEndpoint != "" {
++		parsedIntrospection, err := url.Parse(config.IntrospectionEndpoint)
++		if err != nil {
++			return "", "", "", fmt.Errorf("invalid introspection_endpoint detected")
++		}
++		if err := validateAuthEndpointURL(parsedIntrospection, "introspection_endpoint"); err != nil {
++			return "", "", "", err
++		}
+ 	}
+ 
+ 	return config.JwksUri, config.IntrospectionEndpoint, config.Issuer, nil
+ }
+ 
++func validateAuthEndpointURL(u *url.URL, name string) error {
++	if u.Scheme == "" || u.Host == "" {
++		return fmt.Errorf("%s must be an absolute URL", name)
++	}
++	if u.Scheme == "https" {
++		return nil
++	}
++	if u.Scheme == "http" && isLoopbackHost(u.Hostname()) {
++		log.Printf("WARNING: HTTP instead of HTTPS is being used for %s on loopback host: %s", name, u.String())
++		return nil
++	}
++	return fmt.Errorf("%s must use https", name)
++}
++
++func isLoopbackHost(host string) bool {
++	if host == "localhost" {
++		return true
++	}
++	ip := net.ParseIP(host)
++	return ip != nil && ip.IsLoopback()
++}
++
+ var _ auth.MCPAuthService = AuthService{}
+ 
+ // struct used to store auth service info
+@@ -252,6 +297,17 @@ func (a AuthService) GetClaimsFromHeader(ctx context.Context, h http.Header) (ma
+ 		return nil, fmt.Errorf("audience validation failed: expected %s, got %v", a.Audience, aud)
+ 	}
+ 
++	iss, err := claims.GetIssuer()
++	if err != nil {
++		return nil, fmt.Errorf("could not parse issuer from token: %w", err)
++	}
++	if a.issuer != "" && iss == "" {
++		return nil, fmt.Errorf("missing issuer claim: expected %s", a.issuer)
++	}
++	if a.issuer != "" && iss != a.issuer {
++		return nil, fmt.Errorf("issuer validation failed: expected %s, got %s", a.issuer, iss)
++	}
++
+ 	return claims, nil
+ }
+ 
+@@ -471,11 +527,13 @@ func (a AuthService) validateClaims(ctx context.Context, iss string, aud []strin
+ 	}
+ 
+ 	// Validate issuer
+-	if a.issuer != "" && iss != "" {
+-		if iss != a.issuer {
+-			logger.WarnContext(ctx, "issuer validation failed: expected %s, got %s", a.issuer, iss)
+-			return &MCPAuthError{Code: http.StatusUnauthorized, Message: "issuer validation failed", ScopesRequired: a.ScopesRequired}
+-		}
++	if a.issuer != "" && iss == "" {
++		logger.WarnContext(ctx, "missing issuer claim: expected %s", a.issuer)
++		return &MCPAuthError{Code: http.StatusUnauthorized, Message: "missing issuer claim", ScopesRequired: a.ScopesRequired}
++	}
++	if a.issuer != "" && iss != a.issuer {
++		logger.WarnContext(ctx, "issuer validation failed: expected %s, got %s", a.issuer, iss)
++		return &MCPAuthError{Code: http.StatusUnauthorized, Message: "issuer validation failed", ScopesRequired: a.ScopesRequired}
+ 	}
+ 
+ 	// Validate audience
+diff --git a/internal/auth/generic/generic_test.go b/internal/auth/generic/generic_test.go
+index 92de218..bc33fa5 100644
+--- a/internal/auth/generic/generic_test.go
++++ b/internal/auth/generic/generic_test.go
+@@ -22,6 +22,7 @@ import (
+ 	"encoding/json"
+ 	"net/http"
+ 	"net/http/httptest"
++	"net/url"
+ 	"strings"
+ 	"testing"
+ 	"time"
+@@ -88,6 +89,53 @@ func generateValidToken(t *testing.T, key *rsa.PrivateKey, keyID string, claims
+ 	return signedString
+ }
+ 
++func TestValidateAuthEndpointURL(t *testing.T) {
++	tests := []struct {
++		name      string
++		rawURL    string
++		wantError bool
++	}{
++		{
++			name:      "https endpoint",
++			rawURL:    "https://auth.example.com",
++			wantError: false,
++		},
++		{
++			name:      "http loopback endpoint",
++			rawURL:    "http://127.0.0.1:8080",
++			wantError: false,
++		},
++		{
++			name:      "http localhost endpoint",
++			rawURL:    "http://localhost:8080",
++			wantError: false,
++		},
++		{
++			name:      "http non-loopback endpoint",
++			rawURL:    "http://auth.example.com",
++			wantError: true,
++		},
++		{
++			name:      "relative endpoint",
++			rawURL:    "/auth",
++			wantError: true,
++		},
++	}
++
++	for _, tc := range tests {
++		t.Run(tc.name, func(t *testing.T) {
++			u, err := url.Parse(tc.rawURL)
++			if err != nil {
++				t.Fatalf("failed to parse test URL: %v", err)
++			}
++			err = validateAuthEndpointURL(u, "test")
++			if (err != nil) != tc.wantError {
++				t.Fatalf("validateAuthEndpointURL() error = %v, wantError %v", err, tc.wantError)
++			}
++		})
++	}
++}
++
+ func TestInitialize_Validation(t *testing.T) {
+ 	key := generateRSAPrivateKey(t)
+ 	mockOIDC := setupJWKSMockServer(t, key, "my-key-id")
+@@ -271,6 +319,22 @@ func TestGetClaimsFromHeader(t *testing.T) {
+ 			wantError:   true,
+ 			errContains: "audience validation failed",
+ 		},
++		{
++			name: "wrong issuer",
++			setupHeader: func() http.Header {
++				token := generateValidToken(t, privateKey, keyID, jwt.MapClaims{
++					"iss":   "https://wrong-issuer.com",
++					"aud":   "my-audience",
++					"scope": "read:files",
++					"exp":   time.Now().Add(time.Hour).Unix(),
++				})
++				header := http.Header{}
++				header.Set("test-generic-auth_token", token)
++				return header
++			},
++			wantError:   true,
++			errContains: "issuer validation failed",
++		},
+ 		{
+ 			name: "expired token",
+ 			setupHeader: func() http.Header {
+@@ -664,6 +728,29 @@ func TestValidateJwtToken(t *testing.T) {
+ 	}
+ }
+ 
++func TestValidateClaims_IssuerRequiredWhenDiscovered(t *testing.T) {
++	logger, err := log.NewLogger("standard", log.Debug, &bytes.Buffer{}, &bytes.Buffer{})
++	if err != nil {
++		t.Fatalf("failed to create logger: %v", err)
++	}
++	ctx := util.WithLogger(context.Background(), logger)
++
++	genericAuth := &AuthService{
++		Config: Config{
++			Audience: "my-audience",
++		},
++		issuer: "https://example.com",
++	}
++
++	err = genericAuth.validateClaims(ctx, "", []string{"my-audience"}, "")
++	if err == nil {
++		t.Fatalf("expected missing issuer to fail validation")
++	}
++	if !strings.Contains(err.Error(), "missing issuer claim") {
++		t.Fatalf("expected missing issuer error, got: %v", err)
++	}
++}
++
+ func TestValidateOpaqueToken(t *testing.T) {
+ 	tests := []struct {
+ 		name           string

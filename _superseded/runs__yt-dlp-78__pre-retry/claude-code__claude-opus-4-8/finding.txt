@@ -1,0 +1,25 @@
+Project: yt-dlp/yt-dlp
+Vulnerability type: OS Command Injection (CWE-78)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  yt_dlp/YoutubeDL.py
+    - lines 112-117
+    - lines 826-834   in: def check_deprecated(param, option, suggestion):
+    - lines 1254-1260   in: def _copy_infodict(info_dict):
+    - lines 1305-1310   in: def prepare_outtmpl(self, outtmpl, info_dict, sanitize=False):
+    - lines 1429-1434   in: def create_key(outer_mobj):
+
+  yt_dlp/__init__.py
+    - lines 44-49
+    - lines 1077-1083   in: def main(argv=None):
+
+  yt_dlp/options.py
+    - lines 568-576   in: def _preset_alias_callback(option, opt_str, value, parser):
+    - lines 1769-1775   in: def _preset_alias_callback(option, opt_str, value, parser):
+
+  yt_dlp/postprocessor/exec.py
+    - lines 5-12
+
+  yt_dlp/utils/_utils.py
+    - lines 1182-1187   in: class XAttrUnavailableError(YoutubeDLError):

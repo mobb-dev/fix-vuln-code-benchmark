@@ -1,0 +1,11 @@
+REPO_URL=https://github.com/devbridge/jQuery-Autocomplete.git
+FIX_COMMIT=63ff096ff5b77a90aac7fb5dad7c86e538a59ce0
+VULN_FILE=src/format.ts
+CWE_ID=CWE-79
+CWE_NAME="Cross-site Scripting (XSS)"
+LANGUAGE=node
+# reference / nice-to-have (the maintainer's regression test + how to build/run it)
+# Used by verify.sh (execution verification): maintainer test, env prep, test command.
+TEST_FILES="test/autocomplete.test.js"
+PREP_CMD="npm install --no-audit --no-fund"
+TEST_CMD="npx vitest run"

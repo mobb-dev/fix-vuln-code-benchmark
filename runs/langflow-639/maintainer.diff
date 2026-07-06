@@ -1,0 +1,107 @@
+--- a/src/backend/base/langflow/api/v1/endpoints.py
++++ b/src/backend/base/langflow/api/v1/endpoints.py
+@@ -412,6 +412,33 @@ async def check_flow_user_permission(
+         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to run this flow")
+ 
+ 
++async def get_flow_for_api_key_user(
++    flow_id_or_name: str,
++    api_key_user: Annotated[UserRead, Depends(api_key_security)],
++) -> FlowRead:
++    """Auth-aware wrapper around ``get_flow_by_id_or_endpoint_name`` for API-key routes.
++
++    Using the raw helper as a FastAPI ``Depends`` exposed ``user_id`` as a
++    plain query parameter that no real caller sets, so flow lookups on the
++    ``/run*`` routes bypassed user scoping entirely and relied on
++    ``check_flow_user_permission`` later in the handler for a 403.  That gave
++    attackers a 403-vs-404 existence oracle on flow UUIDs.  This wrapper
++    pulls the authenticated user from ``api_key_security`` and passes it to
++    the helper, so cross-user access fails closed with 404 at the helper
++    layer.  ``check_flow_user_permission`` is kept in the handler chain as
++    defense in depth.
++    """
++    return await get_flow_by_id_or_endpoint_name(flow_id_or_name, api_key_user.id)
++
++
++async def get_flow_for_current_user(
++    flow_id_or_name: str,
++    current_user: CurrentActiveUser,
++) -> FlowRead:
++    """Session-auth variant of :func:`get_flow_for_api_key_user`."""
++    return await get_flow_by_id_or_endpoint_name(flow_id_or_name, current_user.id)
++
++
+ async def _run_flow_internal(
+     *,
+     background_tasks: BackgroundTasks,
+@@ -556,7 +583,7 @@ async def on_disconnect() -> None:
+ async def simplified_run_flow(
+     *,
+     background_tasks: BackgroundTasks,
+-    flow: Annotated[FlowRead, Depends(get_flow_by_id_or_endpoint_name)],
++    flow: Annotated[FlowRead, Depends(get_flow_for_api_key_user)],
+     input_request: SimplifiedAPIRequest | None = None,
+     stream: bool = False,
+     api_key_user: Annotated[UserRead, Depends(api_key_security)],
+@@ -616,7 +643,7 @@ async def simplified_run_flow(
+ async def simplified_run_flow_session(
+     *,
+     background_tasks: BackgroundTasks,
+-    flow: Annotated[FlowRead, Depends(get_flow_by_id_or_endpoint_name)],
++    flow: Annotated[FlowRead, Depends(get_flow_for_current_user)],
+     input_request: SimplifiedAPIRequest | None = None,
+     stream: bool = False,
+     api_key_user: CurrentActiveUser,
+@@ -826,7 +853,7 @@ async def webhook_run_flow(
+ async def experimental_run_flow(
+     *,
+     session: DbSession,
+-    flow: Annotated[Flow, Depends(get_flow_by_id_or_endpoint_name)],
++    flow: Annotated[Flow, Depends(get_flow_for_api_key_user)],
+     inputs: list[InputValueRequest] | None = None,
+     outputs: list[str] | None = None,
+     tweaks: Annotated[Tweaks | None, Body(embed=True)] = None,
+--- a/src/backend/base/langflow/helpers/flow.py
++++ b/src/backend/base/langflow/helpers/flow.py
+@@ -398,15 +398,38 @@ def get_arg_names(inputs: list[Vertex]) -> list[dict[str, str]]:
+ 
+ async def get_flow_by_id_or_endpoint_name(flow_id_or_name: str, user_id: str | UUID | None = None) -> FlowRead:
+     async with session_scope() as session:
+-        endpoint_name = None
++        # SECURITY (LE-639): previously the UUID branch below called
++        # ``session.get(Flow, flow_id)`` with no ownership check, so any
++        # authenticated caller could resolve any other user's flow by UUID.
++        # The endpoint_name branch scoped by ``user_id`` only when a truthy
++        # value was passed, so callers using this as a FastAPI ``Depends``
++        # (which resolves ``user_id`` from a query param that no one sets) had
++        # the same hole on both branches.  Normalize ``user_id`` once and
++        # enforce it on both branches -- returning None on cross-user lookup
++        # so the shared 404 below fires and we don't disclose existence of
++        # another user's flow.
++        uuid_user_id: UUID | None = None
++        if user_id is not None:
++            # Malformed user_id -- e.g. ``?user_id=foo`` on a legacy Depends
++            # route -- previously raised a raw ValueError (500 to the client).
++            # Fail closed: convert to 404 so we never disclose a flow to a
++            # caller whose identity we can't resolve.
++            try:
++                uuid_user_id = UUID(user_id) if isinstance(user_id, str) else user_id
++            except (ValueError, AttributeError) as exc:
++                raise HTTPException(
++                    status_code=404,
++                    detail=f"Flow identifier {flow_id_or_name} not found",
++                ) from exc
+         try:
+             flow_id = UUID(flow_id_or_name)
+             flow = await session.get(Flow, flow_id)
++            if flow is not None and uuid_user_id is not None and flow.user_id != uuid_user_id:
++                flow = None
+         except ValueError:
+             endpoint_name = flow_id_or_name
+             stmt = select(Flow).where(Flow.endpoint_name == endpoint_name)
+-            if user_id:
+-                uuid_user_id = UUID(user_id) if isinstance(user_id, str) else user_id
++            if uuid_user_id is not None:
+                 stmt = stmt.where(Flow.user_id == uuid_user_id)
+             flow = (await session.exec(stmt)).first()
+         if flow is None:

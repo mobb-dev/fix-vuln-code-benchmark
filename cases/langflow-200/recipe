@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/langflow-ai/langflow.git
+FIX_COMMIT=99da6d05879758b7757521e88d5aee0aff55d41f
+VULN_FILE=src/backend/base/langflow/api/v1/endpoints.py
+CWE_ID=CWE-200
+CWE_NAME="Information Exposure"
+LANGUAGE=python
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="src/backend/tests/unit/api/v1/test_endpoints.py src/lfx/tests/unit/load/test_upload.py"
+PREP_CMD="uv sync --dev"
+TEST_CMD="uv run pytest src/backend/tests/unit/api/v1/test_endpoints.py -x"

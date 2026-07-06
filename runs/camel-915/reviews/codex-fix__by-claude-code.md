@@ -1,0 +1,10 @@
+METHODOLOGY: I identified the root cause as external CoAP clients injecting internal Camel headers via URI query parameters in `CamelCoapResource.handleRequest`, where each `name=value` query pair is set as a message header unfiltered. I checked whether the agent blocks that injection point and whether it preserves intended behavior, comparing against the maintainer's HeaderFilterStrategy approach (filter names starting with "Camel"/"camel").
+
+EVIDENCE:
+- `CamelCoapResource.java`: query loop now calls `setQueryHeader(...)`, and `isFilteredQueryHeader` rejects names that `startsWith("Camel") || startsWith("camel")` (plus `CONTENT_TYPE`). This is the actual injection point and matches the gold standard's `CAMEL_FILTER_STARTS_WITH` behavior. The added test `testCoAPQueryDoesNotSetInternalHeaders` confirms `CamelCoapMaxAge=10` is dropped while `id=Ducky` passes.
+- Over-reach: the agent removed the `client` option entirely — deleting `case "client"` from `CoAPComponentConfigurer`/`CoAPEndpointConfigurer`, removing `client` from `CoAPEndpointUriFactory` and all four `*.json` metadata files, and stripping `@Metadata(label="producer,advanced")` / `@UriParam(label="producer,advanced")` from the `client` fields. This breaks the documented "shared client for the producers" configuration, unrelated to the vulnerability.
+- Unrelated changes: `setBody(bytes.clone())` and `cexchange.setETag(eTag.clone())` are defensive-copy edits not part of the header-injection remediation.
+
+REASONING: The agent does remove the actual CWE-915 vulnerability at its real injection point — client-controlled query parameters can no longer overwrite internal `Camel*` headers, equivalent in effect to the maintainer's inbound `applyFilterToExternalHeaders` filter. However, it is not a clean fix: it removes the `client` configuration option across generated configurers, the URI factory, and component metadata, disabling a legitimate, unrelated producer feature, and it introduces unrelated `clone()` behavior changes. Removing the vulnerability while also breaking unrelated functionality is an over-reach rather than a minimal, clean remediation.
+
+VERDICT: PARTIAL

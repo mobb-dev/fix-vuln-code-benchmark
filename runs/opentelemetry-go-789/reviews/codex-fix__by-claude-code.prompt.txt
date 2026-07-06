@@ -1,0 +1,896 @@
+You are a senior application-security engineer. Judge whether an AI agent's code change correctly fixes a specific, known vulnerability.
+
+You are given three things below:
+  1. THE VULNERABILITY — its type and where it is in the code.
+  2. THE MAINTAINER'S OFFICIAL FIX — the real, accepted remediation. Treat it as the gold standard for what a complete and correct fix must cover. It is a reference, not the only acceptable implementation: a different but equivalent fix that fully and minimally remediates is still correct.
+  3. THE AGENT'S FIX — a diff produced by an AI agent. This is what you must judge.
+
+Evaluate the agent's fix with this methodology:
+  - From the vulnerability and the maintainer's fix, work out the root cause and EVERY place the vulnerability is present.
+  - Does the agent's fix remove the vulnerability at ALL of those places, not just some? Missing any injection point or variant is a real gap.
+  - Does it preserve the application's intended behavior — no broken functionality, and no unrelated behavioral changes beyond what the remediation requires? Removing the vulnerability but also changing unrelated behavior is an over-reach, not a clean fix.
+  - Be skeptical. A fix that reads plausibly but misses a variant is not correct; one that fixes the bug but also changes unrelated behavior is not clean.
+
+Respond in EXACTLY this structure and nothing else:
+
+METHODOLOGY: <2-4 sentences on how you evaluated it>
+EVIDENCE: <specific files, lines, or hunks from the diffs that justify the verdict>
+REASONING: <why the agent's fix does or does not fully and cleanly remediate the vulnerability without changing intended behavior>
+VERDICT: <one word: CORRECT, PARTIAL, or INCORRECT>
+
+Verdict meanings:
+  CORRECT   — fully removes the vulnerability AND preserves intended behavior.
+  PARTIAL   — removes the vulnerability but misses a variant, OR over-reaches and changes unrelated behavior.
+  INCORRECT — does not remove the vulnerability, or breaks functionality so it is not a valid fix.
+
+
+===== 1. THE VULNERABILITY =====
+Project: open-telemetry/opentelemetry-go
+Vulnerability type: Memory Allocation with Excessive Size Value (CWE-789)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  baggage/baggage.go
+    - lines 14-21   in: import (
+    - lines 29-35   in: var (
+    - lines 309-318   in: func newInvalidMember() Member {
+    - lines 430-435   in: type Baggage struct { //nolint:golint
+    - lines 441-465   in: func New(members ...Member) (Baggage, error) {
+    - lines 470-505   in: func New(members ...Member) (Baggage, error) {
+
+  internal/global/handler.go
+    - lines 5-37
+
+  internal/global/state.go
+    - lines 8-23   in: import (
+    - lines 32-43   in: type (
+    - lines 53-59   in: var (
+    - lines 63-88   in: func GetErrorHandler() ErrorHandler {
+    - lines 174-185   in: func SetMeterProvider(mp metric.MeterProvider) {
+
+  propagation/baggage.go
+    - lines 7-15   in: import (
+    - lines 50-55   in: func extractSingleBaggage(parent context.Context, carrier TextMapCarrier) contex
+    - lines 60-76   in: func extractMultiBaggage(parent context.Context, carrier ValuesGetter) context.C
+
+===== 2. MAINTAINER OFFICIAL FIX (gold standard) =====
+--- a/baggage/baggage.go
++++ b/baggage/baggage.go
+@@ -14,8 +14,7 @@ import (
+ )
+ 
+ const (
+-	maxMembers               = 180
+-	maxBytesPerMembers       = 4096
++	maxMembers               = 64
+ 	maxBytesPerBaggageString = 8192
+ 
+ 	listDelimiter     = ","
+@@ -29,7 +28,6 @@ var (
+ 	errInvalidProperty = errors.New("invalid baggage list-member property")
+ 	errInvalidMember   = errors.New("invalid baggage list-member")
+ 	errMemberNumber    = errors.New("too many list-members in baggage-string")
+-	errMemberBytes     = errors.New("list-member too large")
+ 	errBaggageBytes    = errors.New("baggage-string too large")
+ )
+ 
+@@ -309,10 +307,6 @@ func newInvalidMember() Member {
+ // an error if the input is invalid according to the W3C Baggage
+ // specification.
+ func parseMember(member string) (Member, error) {
+-	if n := len(member); n > maxBytesPerMembers {
+-		return newInvalidMember(), fmt.Errorf("%w: %d", errMemberBytes, n)
+-	}
+-
+ 	var props properties
+ 	keyValue, properties, found := strings.Cut(member, propertyDelimiter)
+ 	if found {
+@@ -430,6 +424,10 @@ type Baggage struct { //nolint:golint
+ // New returns a new valid Baggage. It returns an error if it results in a
+ // Baggage exceeding limits set in that specification.
+ //
++// If the resulting Baggage exceeds the maximum allowed members or bytes,
++// members are dropped until the limits are satisfied and an error is returned
++// along with the partial result.
++//
+ // It expects all the provided members to have already been validated.
+ func New(members ...Member) (Baggage, error) {
+ 	if len(members) == 0 {
+@@ -441,25 +439,49 @@ func New(members ...Member) (Baggage, error) {
+ 		if !m.hasData {
+ 			return Baggage{}, errInvalidMember
+ 		}
+-
+ 		// OpenTelemetry resolves duplicates by last-one-wins.
+ 		b[m.key] = baggage.Item{
+ 			Value:      m.value,
+ 			Properties: m.properties.asInternal(),
+ 		}
+ 	}
+ 
+-	// Check member numbers after deduplication.
++	var truncateErr error
++
++	// Check member count after deduplication.
+ 	if len(b) > maxMembers {
+-		return Baggage{}, errMemberNumber
++		truncateErr = errors.Join(truncateErr, errMemberNumber)
++		for k := range b {
++			if len(b) <= maxMembers {
++				break
++			}
++			delete(b, k)
++		}
+ 	}
+ 
+-	bag := Baggage{b}
+-	if n := len(bag.String()); n > maxBytesPerBaggageString {
+-		return Baggage{}, fmt.Errorf("%w: %d", errBaggageBytes, n)
++	// Check byte size and drop members if necessary.
++	totalBytes := 0
++	first := true
++	for k := range b {
++		m := Member{
++			key:        k,
++			value:      b[k].Value,
++			properties: fromInternalProperties(b[k].Properties),
++		}
++		memberSize := len(m.String())
++		if !first {
++			memberSize++ // comma separator
++		}
++		if totalBytes+memberSize > maxBytesPerBaggageString {
++			truncateErr = errors.Join(truncateErr, fmt.Errorf("%w: %d", errBaggageBytes, totalBytes+memberSize))
++			delete(b, k)
++			continue
++		}
++		totalBytes += memberSize
++		first = false
+ 	}
+ 
+-	return bag, nil
++	return Baggage{b}, truncateErr
+ }
+ 
+ // Parse attempts to decode a baggage-string from the passed string. It
+@@ -470,36 +492,71 @@ func New(members ...Member) (Baggage, error) {
+ // defined (reading left-to-right) will be the only one kept. This diverges
+ // from the W3C Baggage specification which allows duplicate list-members, but
+ // conforms to the OpenTelemetry Baggage specification.
++//
++// If the baggage-string exceeds the maximum allowed members (64) or bytes
++// (8192), members are dropped until the limits are satisfied and an error is
++// returned along with the partial result.
++//
++// Invalid members are skipped and the error is returned along with the
++// partial result containing the valid members.
+ func Parse(bStr string) (Baggage, error) {
+ 	if bStr == "" {
+ 		return Baggage{}, nil
+ 	}
+ 
+-	if n := len(bStr); n > maxBytesPerBaggageString {
+-		return Baggage{}, fmt.Errorf("%w: %d", errBaggageBytes, n)
+-	}
+-
+ 	b := make(baggage.List)
++	sizes := make(map[string]int) // Track per-key byte sizes
++	var totalBytes int
++	var truncateErr error
+ 	for memberStr := range strings.SplitSeq(bStr, listDelimiter) {
++		// Check member count limit.
++		if len(b) >= maxMembers {
++			truncateErr = errors.Join(truncateErr, errMemberNumber)
++			break
++		}
++
+ 		m, err := parseMember(memberStr)
+ 		if err != nil {
+-			return Baggage{}, err
++			truncateErr = errors.Join(truncateErr, err)
++			continue // skip invalid member, keep processing
+ 		}
++
++		// Check byte size limit.
++		// Account for comma separator between members.
++		memberBytes := len(m.String())
++		_, existingKey := b[m.key]
++		if !existingKey && len(b) > 0 {
++			memberBytes++ // comma separator only for new keys
++		}
++
++		// Calculate new totalBytes if we add/overwrite this key
++		var newTotalBytes int
++		if oldSize, exists := sizes[m.key]; exists {
++			// Overwriting existing key: subtract old size, add new size
++			newTotalBytes = totalBytes - oldSize + memberBytes
++		} else {
++			// New key
++			newTotalBytes = totalBytes + memberBytes
++		}
++
++		if newTotalBytes > maxBytesPerBaggageString {
++			truncateErr = errors.Join(truncateErr, errBaggageBytes)
++			break
++		}
++
+ 		// OpenTelemetry resolves duplicates by last-one-wins.
+ 		b[m.key] = baggage.Item{
+ 			Value:      m.value,
+ 			Properties: m.properties.asInternal(),
+ 		}
++		sizes[m.key] = memberBytes
++		totalBytes = newTotalBytes
+ 	}
+ 
+-	// OpenTelemetry does not allow for duplicate list-members, but the W3C
+-	// specification does. Now that we have deduplicated, ensure the baggage
+-	// does not exceed list-member limits.
+-	if len(b) > maxMembers {
+-		return Baggage{}, errMemberNumber
++	if len(b) == 0 {
++		return Baggage{}, truncateErr
+ 	}
+-
+-	return Baggage{b}, nil
++	return Baggage{b}, truncateErr
+ }
+ 
+ // Member returns the baggage list-member identified by key.
+--- a/internal/errorhandler/errorhandler.go
++++ b/internal/errorhandler/errorhandler.go
+@@ -0,0 +1,96 @@
++// Copyright The OpenTelemetry Authors
++// SPDX-License-Identifier: Apache-2.0
++
++// Package errorhandler provides the global error handler for OpenTelemetry.
++//
++// This package has no OTel dependencies, allowing it to be imported by any
++// package in the module without creating import cycles.
++package errorhandler // import "go.opentelemetry.io/otel/internal/errorhandler"
++
++import (
++	"errors"
++	"log"
++	"sync"
++	"sync/atomic"
++)
++
++// ErrorHandler handles irremediable events.
++type ErrorHandler interface {
++	// Handle handles any error deemed irremediable by an OpenTelemetry
++	// component.
++	Handle(error)
++}
++
++type ErrDelegator struct {
++	delegate atomic.Pointer[ErrorHandler]
++}
++
++// Compile-time check that delegator implements ErrorHandler.
++var _ ErrorHandler = (*ErrDelegator)(nil)
++
++func (d *ErrDelegator) Handle(err error) {
++	if eh := d.delegate.Load(); eh != nil {
++		(*eh).Handle(err)
++		return
++	}
++	log.Print(err)
++}
++
++// setDelegate sets the ErrorHandler delegate.
++func (d *ErrDelegator) setDelegate(eh ErrorHandler) {
++	d.delegate.Store(&eh)
++}
++
++type errorHandlerHolder struct {
++	eh ErrorHandler
++}
++
++var (
++	globalErrorHandler       = defaultErrorHandler()
++	delegateErrorHandlerOnce sync.Once
++)
++
++// GetErrorHandler returns the global ErrorHandler instance.
++//
++// The default ErrorHandler instance returned will log all errors to STDERR
++// until an override ErrorHandler is set with SetErrorHandler. All
++// ErrorHandler returned prior to this will automatically forward errors to
++// the set instance instead of logging.
++//
++// Subsequent calls to SetErrorHandler after the first will not forward errors
++// to the new ErrorHandler for prior returned instances.
++func GetErrorHandler() ErrorHandler {
++	return globalErrorHandler.Load().(errorHandlerHolder).eh
++}
++
++// SetErrorHandler sets the global ErrorHandler to h.
++//
++// The first time this is called all ErrorHandler previously returned from
++// GetErrorHandler will send errors to h instead of the default logging
++// ErrorHandler. Subsequent calls will set the global ErrorHandler, but not
++// delegate errors to h.
++func SetErrorHandler(h ErrorHandler) {
++	current := GetErrorHandler()
++
++	if _, cOk := current.(*ErrDelegator); cOk {
++		if _, ehOk := h.(*ErrDelegator); ehOk && current == h {
++			// Do not assign to the delegate of the default ErrDelegator to be
++			// itself.
++			log.Print(errors.New("no ErrorHandler delegate configured"), " ErrorHandler remains its current value.")
++			return
++		}
++	}
++
++	delegateErrorHandlerOnce.Do(func() {
++		if def, ok := current.(*ErrDelegator); ok {
++			def.setDelegate(h)
++		}
++	})
++	globalErrorHandler.Store(errorHandlerHolder{eh: h})
++}
++
++func defaultErrorHandler() *atomic.Value {
++	v := &atomic.Value{}
++	v.Store(errorHandlerHolder{eh: &ErrDelegator{}})
++	return v
++}
+--- a/internal/global/handler.go
++++ b/internal/global/handler.go
+@@ -5,33 +5,13 @@
+ package global // import "go.opentelemetry.io/otel/internal/global"
+ 
+ import (
+-	"log"
+-	"sync/atomic"
++	"go.opentelemetry.io/otel/internal/errorhandler"
+ )
+ 
+-// ErrorHandler handles irremediable events.
+-type ErrorHandler interface {
+-	// Handle handles any error deemed irremediable by an OpenTelemetry
+-	// component.
+-	Handle(error)
+-}
++// ErrorHandler is an alias for errorhandler.ErrorHandler, kept for backward
++// compatibility with existing callers of internal/global.
++type ErrorHandler = errorhandler.ErrorHandler
+ 
+-type ErrDelegator struct {
+-	delegate atomic.Pointer[ErrorHandler]
+-}
+-
+-// Compile-time check that delegator implements ErrorHandler.
+-var _ ErrorHandler = (*ErrDelegator)(nil)
+-
+-func (d *ErrDelegator) Handle(err error) {
+-	if eh := d.delegate.Load(); eh != nil {
+-		(*eh).Handle(err)
+-		return
+-	}
+-	log.Print(err)
+-}
+-
+-// setDelegate sets the ErrorHandler delegate.
+-func (d *ErrDelegator) setDelegate(eh ErrorHandler) {
+-	d.delegate.Store(&eh)
+-}
++// ErrDelegator is an alias for errorhandler.ErrDelegator, kept for backward
++// compatibility with existing callers of internal/global.
++type ErrDelegator = errorhandler.ErrDelegator
+--- a/internal/global/state.go
++++ b/internal/global/state.go
+@@ -8,16 +8,13 @@ import (
+ 	"sync"
+ 	"sync/atomic"
+ 
++	"go.opentelemetry.io/otel/internal/errorhandler"
+ 	"go.opentelemetry.io/otel/metric"
+ 	"go.opentelemetry.io/otel/propagation"
+ 	"go.opentelemetry.io/otel/trace"
+ )
+ 
+ type (
+-	errorHandlerHolder struct {
+-		eh ErrorHandler
+-	}
+-
+ 	tracerProviderHolder struct {
+ 		tp trace.TracerProvider
+ 	}
+@@ -32,12 +29,10 @@ type (
+ )
+ 
+ var (
+-	globalErrorHandler  = defaultErrorHandler()
+ 	globalTracer        = defaultTracerValue()
+ 	globalPropagators   = defaultPropagatorsValue()
+ 	globalMeterProvider = defaultMeterProvider()
+ 
+-	delegateErrorHandlerOnce      sync.Once
+ 	delegateTraceOnce             sync.Once
+ 	delegateTextMapPropagatorOnce sync.Once
+ 	delegateMeterOnce             sync.Once
+@@ -53,7 +48,7 @@ var (
+ // Subsequent calls to SetErrorHandler after the first will not forward errors
+ // to the new ErrorHandler for prior returned instances.
+ func GetErrorHandler() ErrorHandler {
+-	return globalErrorHandler.Load().(errorHandlerHolder).eh
++	return errorhandler.GetErrorHandler()
+ }
+ 
+ // SetErrorHandler sets the global ErrorHandler to h.
+@@ -63,26 +58,7 @@ func GetErrorHandler() ErrorHandler {
+ // ErrorHandler. Subsequent calls will set the global ErrorHandler, but not
+ // delegate errors to h.
+ func SetErrorHandler(h ErrorHandler) {
+-	current := GetErrorHandler()
+-
+-	if _, cOk := current.(*ErrDelegator); cOk {
+-		if _, ehOk := h.(*ErrDelegator); ehOk && current == h {
+-			// Do not assign to the delegate of the default ErrDelegator to be
+-			// itself.
+-			Error(
+-				errors.New("no ErrorHandler delegate configured"),
+-				"ErrorHandler remains its current value.",
+-			)
+-			return
+-		}
+-	}
+-
+-	delegateErrorHandlerOnce.Do(func() {
+-		if def, ok := current.(*ErrDelegator); ok {
+-			def.setDelegate(h)
+-		}
+-	})
+-	globalErrorHandler.Store(errorHandlerHolder{eh: h})
++	errorhandler.SetErrorHandler(h)
+ }
+ 
+ // TracerProvider is the internal implementation for global.TracerProvider.
+@@ -174,12 +150,6 @@ func SetMeterProvider(mp metric.MeterProvider) {
+ 	globalMeterProvider.Store(meterProviderHolder{mp: mp})
+ }
+ 
+-func defaultErrorHandler() *atomic.Value {
+-	v := &atomic.Value{}
+-	v.Store(errorHandlerHolder{eh: &ErrDelegator{}})
+-	return v
+-}
+-
+ func defaultTracerValue() *atomic.Value {
+ 	v := &atomic.Value{}
+ 	v.Store(tracerProviderHolder{tp: &tracerProvider{}})
+--- a/propagation/baggage.go
++++ b/propagation/baggage.go
+@@ -7,9 +7,16 @@ import (
+ 	"context"
+ 
+ 	"go.opentelemetry.io/otel/baggage"
++	"go.opentelemetry.io/otel/internal/errorhandler"
+ )
+ 
+-const baggageHeader = "baggage"
++const (
++	baggageHeader = "baggage"
++
++	// W3C Baggage specification limits.
++	// https://www.w3.org/TR/baggage/#limits
++	maxMembers = 64
++)
+ 
+ // Baggage is a propagator that supports the W3C Baggage format.
+ //
+@@ -50,6 +57,9 @@ func extractSingleBaggage(parent context.Context, carrier TextMapCarrier) contex
+ 
+ 	bag, err := baggage.Parse(bStr)
+ 	if err != nil {
++		errorhandler.GetErrorHandler().Handle(err)
++	}
++	if bag.Len() == 0 {
+ 		return parent
+ 	}
+ 	return baggage.ContextWithBaggage(parent, bag)
+@@ -60,17 +70,27 @@ func extractMultiBaggage(parent context.Context, carrier ValuesGetter) context.C
+ 	if len(bVals) == 0 {
+ 		return parent
+ 	}
++
+ 	var members []baggage.Member
+ 	for _, bStr := range bVals {
+ 		currBag, err := baggage.Parse(bStr)
+ 		if err != nil {
++			errorhandler.GetErrorHandler().Handle(err)
++		}
++		if currBag.Len() == 0 {
+ 			continue
+ 		}
+ 		members = append(members, currBag.Members()...)
++		if len(members) >= maxMembers {
++			break
++		}
+ 	}
+ 
+ 	b, err := baggage.New(members...)
+-	if err != nil || b.Len() == 0 {
++	if err != nil {
++		errorhandler.GetErrorHandler().Handle(err)
++	}
++	if b.Len() == 0 {
+ 		return parent
+ 	}
+ 	return baggage.ContextWithBaggage(parent, b)
+===== 3. THE AGENT FIX TO JUDGE =====
+diff --git a/baggage/baggage.go b/baggage/baggage.go
+index c4093e4..8cd6e3e 100644
+--- a/baggage/baggage.go
++++ b/baggage/baggage.go
+@@ -292,12 +292,17 @@ func NewMemberRaw(key, value string, props ...Property) (Member, error) {
+ 	m := Member{
+ 		key:        key,
+ 		value:      value,
+-		properties: properties(props).Copy(),
++		properties: properties(props),
+ 		hasData:    true,
+ 	}
+ 	if err := m.validate(); err != nil {
+ 		return newInvalidMember(), err
+ 	}
++	if n := m.stringLen(); n > maxBytesPerMembers {
++		return newInvalidMember(), fmt.Errorf("%w: %d", errMemberBytes, n)
++	}
++
++	m.properties = m.properties.Copy()
+ 	return m, nil
+ }
+ 
+@@ -421,6 +426,20 @@ func (m Member) String() string {
+ 	return s
+ }
+ 
++func (m Member) stringLen() int {
++	if !validateKey(m.key) {
++		return 0
++	}
++
++	n := len(m.key) + len(keyValueDelimiter) + valueEscapedLen(m.value)
++	if len(m.properties) > 0 {
++		if pLen := m.properties.stringLen(); pLen > 0 {
++			n += len(propertyDelimiter) + pLen
++		}
++	}
++	return n
++}
++
+ // Baggage is a list of baggage members representing the baggage-string as
+ // defined by the W3C Baggage specification.
+ type Baggage struct { //nolint:golint
+@@ -447,16 +466,14 @@ func New(members ...Member) (Baggage, error) {
+ 			Value:      m.value,
+ 			Properties: m.properties.asInternal(),
+ 		}
+-	}
+-
+-	// Check member numbers after deduplication.
+-	if len(b) > maxMembers {
+-		return Baggage{}, errMemberNumber
++		if len(b) > maxMembers {
++			return Baggage{}, errMemberNumber
++		}
+ 	}
+ 
+ 	bag := Baggage{b}
+-	if n := len(bag.String()); n > maxBytesPerBaggageString {
+-		return Baggage{}, fmt.Errorf("%w: %d", errBaggageBytes, n)
++	if err := bag.validateLimits(); err != nil {
++		return Baggage{}, err
+ 	}
+ 
+ 	return bag, nil
+@@ -578,7 +595,12 @@ func (b Baggage) SetMember(member Member) (Baggage, error) {
+ 		Properties: member.properties.asInternal(),
+ 	}
+ 
+-	return Baggage{list: list}, nil
++	bag := Baggage{list: list}
++	if err := bag.validateLimits(); err != nil {
++		return b, err
++	}
++
++	return bag, nil
+ }
+ 
+ // DeleteMember returns a copy of the Baggage with the list-member identified
+@@ -605,6 +627,33 @@ func (b Baggage) Len() int {
+ 	return len(b.list)
+ }
+ 
++func (b Baggage) validateLimits() error {
++	if len(b.list) > maxMembers {
++		return errMemberNumber
++	}
++
++	n := 0
++	first := true
++	for k, v := range b.list {
++		mLen := itemStringLen(k, v)
++		if mLen == 0 {
++			continue
++		}
++
++		if !first {
++			n += len(listDelimiter)
++		}
++		first = false
++
++		n += mLen
++		if n > maxBytesPerBaggageString {
++			return fmt.Errorf("%w: %d", errBaggageBytes, n)
++		}
++	}
++
++	return nil
++}
++
+ // String encodes Baggage into a header string compliant with the W3C Baggage
+ // specification.
+ // It would ignore members where the member key is invalid with the W3C Baggage
+@@ -961,6 +1010,90 @@ func validateValueChar(c int32) bool {
+ 	return c >= 0 && c < int32(utf8.RuneSelf) && safeValueCharset[c]
+ }
+ 
++func itemStringLen(key string, item baggage.Item) int {
++	if !validateKey(key) {
++		return 0
++	}
++
++	n := len(key) + len(keyValueDelimiter) + valueEscapedLen(item.Value)
++	if pLen := internalPropertiesStringLen(item.Properties); pLen > 0 {
++		n += len(propertyDelimiter) + pLen
++	}
++	return n
++}
++
++func (p properties) stringLen() int {
++	n := 0
++	first := true
++	for _, prop := range p {
++		pLen := prop.stringLen()
++		if pLen == 0 {
++			continue
++		}
++
++		if !first {
++			n += len(propertyDelimiter)
++		}
++		first = false
++
++		n += pLen
++	}
++	return n
++}
++
++func (p Property) stringLen() int {
++	if !validateKey(p.key) {
++		return 0
++	}
++
++	n := len(p.key)
++	if p.hasValue {
++		n += len(keyValueDelimiter) + valueEscapedLen(p.value)
++	}
++	return n
++}
++
++func internalPropertiesStringLen(props []baggage.Property) int {
++	n := 0
++	first := true
++	for _, prop := range props {
++		pLen := internalPropertyStringLen(prop)
++		if pLen == 0 {
++			continue
++		}
++
++		if !first {
++			n += len(propertyDelimiter)
++		}
++		first = false
++
++		n += pLen
++	}
++	return n
++}
++
++func internalPropertyStringLen(prop baggage.Property) int {
++	if !validateKey(prop.Key) {
++		return 0
++	}
++
++	n := len(prop.Key)
++	if prop.HasValue {
++		n += len(keyValueDelimiter) + valueEscapedLen(prop.Value)
++	}
++	return n
++}
++
++func valueEscapedLen(s string) int {
++	hexCount := 0
++	for i := 0; i < len(s); i++ {
++		if shouldEscape(s[i]) {
++			hexCount++
++		}
++	}
++	return len(s) + 2*hexCount
++}
++
+ // valueEscape escapes the string so it can be safely placed inside a baggage value,
+ // replacing special characters with %XX sequences as needed.
+ //
+diff --git a/baggage/baggage_test.go b/baggage/baggage_test.go
+index 3ef5973..fe8e069 100644
+--- a/baggage/baggage_test.go
++++ b/baggage/baggage_test.go
+@@ -802,6 +802,32 @@ func TestBaggageSetMemberEmpty(t *testing.T) {
+ 	assert.ErrorIs(t, err, errInvalidMember)
+ }
+ 
++func TestBaggageSetMemberErrorTooManyMembers(t *testing.T) {
++	members := make([]Member, maxMembers)
++	for i := range members {
++		members[i] = Member{key: fmt.Sprintf("%d", i), hasData: true}
++	}
++	bag, err := New(members...)
++	require.NoError(t, err)
++
++	got, err := bag.SetMember(Member{key: "overflow", hasData: true})
++	assert.ErrorIs(t, err, errMemberNumber)
++	assert.Equal(t, bag, got)
++}
++
++func TestBaggageSetMemberErrorTooManyBytes(t *testing.T) {
++	bag := Baggage{}
++	member := Member{
++		key:     "k",
++		value:   key(maxBytesPerBaggageString + 1),
++		hasData: true,
++	}
++
++	got, err := bag.SetMember(member)
++	assert.ErrorIs(t, err, errBaggageBytes)
++	assert.Equal(t, bag, got)
++}
++
+ func TestBaggageSetMember(t *testing.T) {
+ 	b0 := Baggage{}
+ 
+diff --git a/propagation/baggage.go b/propagation/baggage.go
+index 0518826..11b4cea 100644
+--- a/propagation/baggage.go
++++ b/propagation/baggage.go
+@@ -5,11 +5,16 @@ package propagation // import "go.opentelemetry.io/otel/propagation"
+ 
+ import (
+ 	"context"
++	"strings"
+ 
+ 	"go.opentelemetry.io/otel/baggage"
+ )
+ 
+-const baggageHeader = "baggage"
++const (
++	baggageHeader = "baggage"
++
++	maxBaggageLen = 8192
++)
+ 
+ // Baggage is a propagator that supports the W3C Baggage format.
+ //
+@@ -60,18 +65,34 @@ func extractMultiBaggage(parent context.Context, carrier ValuesGetter) context.C
+ 	if len(bVals) == 0 {
+ 		return parent
+ 	}
+-	var members []baggage.Member
++
++	var b strings.Builder
+ 	for _, bStr := range bVals {
+-		currBag, err := baggage.Parse(bStr)
+-		if err != nil {
++		if bStr == "" {
+ 			continue
+ 		}
+-		members = append(members, currBag.Members()...)
++
++		n := b.Len() + len(bStr)
++		if b.Len() > 0 {
++			n += len(",")
++		}
++		if n > maxBaggageLen {
++			return parent
++		}
++
++		if b.Len() > 0 {
++			b.WriteString(",")
++		}
++		b.WriteString(bStr)
++	}
++
++	if b.Len() == 0 {
++		return parent
+ 	}
+ 
+-	b, err := baggage.New(members...)
+-	if err != nil || b.Len() == 0 {
++	bag, err := baggage.Parse(b.String())
++	if err != nil {
+ 		return parent
+ 	}
+-	return baggage.ContextWithBaggage(parent, b)
++	return baggage.ContextWithBaggage(parent, bag)
+ }
+diff --git a/propagation/baggage_test.go b/propagation/baggage_test.go
+index b909b4c..1910996 100644
+--- a/propagation/baggage_test.go
++++ b/propagation/baggage_test.go
+@@ -5,6 +5,7 @@ package propagation_test
+ 
+ import (
+ 	"net/http"
++	"strconv"
+ 	"strings"
+ 	"testing"
+ 
+@@ -193,6 +194,53 @@ func TestExtractValidMultipleBaggageHeaders(t *testing.T) {
+ 	}
+ }
+ 
++func TestExtractMultipleBaggageHeadersTooManyMembers(t *testing.T) {
++	prop := propagation.TextMapPropagator(propagation.Baggage{})
++	headers := make([]string, 181)
++	for i := range headers {
++		headers[i] = "key" + strconv.Itoa(i) + "=val"
++	}
++
++	req, _ := http.NewRequest(http.MethodGet, "http://example.com", http.NoBody)
++	req.Header["Baggage"] = headers
++
++	expected := members{{Key: "existing", Value: "value"}}.Baggage(t)
++	ctx := baggage.ContextWithBaggage(t.Context(), expected)
++	ctx = prop.Extract(ctx, propagation.HeaderCarrier(req.Header))
++	assert.Equal(t, expected, baggage.FromContext(ctx))
++}
++
++func TestExtractMultipleBaggageHeadersDuplicateOverflow(t *testing.T) {
++	prop := propagation.TextMapPropagator(propagation.Baggage{})
++	headers := make([]string, 181)
++	for i := range headers {
++		headers[i] = "key=val" + strconv.Itoa(i)
++	}
++
++	req, _ := http.NewRequest(http.MethodGet, "http://example.com", http.NoBody)
++	req.Header["Baggage"] = headers
++
++	ctx := prop.Extract(t.Context(), propagation.HeaderCarrier(req.Header))
++	expected := members{{Key: "key", Value: "val180"}}.Baggage(t)
++	assert.Equal(t, expected, baggage.FromContext(ctx))
++}
++
++func TestExtractMultipleBaggageHeadersTooManyBytes(t *testing.T) {
++	prop := propagation.TextMapPropagator(propagation.Baggage{})
++	headers := make([]string, 82)
++	for i := range headers {
++		headers[i] = "key=" + strings.Repeat("a", 100)
++	}
++
++	req, _ := http.NewRequest(http.MethodGet, "http://example.com", http.NoBody)
++	req.Header["Baggage"] = headers
++
++	expected := members{{Key: "existing", Value: "value"}}.Baggage(t)
++	ctx := baggage.ContextWithBaggage(t.Context(), expected)
++	ctx = prop.Extract(ctx, propagation.HeaderCarrier(req.Header))
++	assert.Equal(t, expected, baggage.FromContext(ctx))
++}
++
+ func TestExtractInvalidDistributedContextFromHTTPReq(t *testing.T) {
+ 	prop := propagation.TextMapPropagator(propagation.Baggage{})
+ 	tests := []struct {

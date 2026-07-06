@@ -1,0 +1,378 @@
+diff --git a/src/middleware/ip-restriction/index.test.ts b/src/middleware/ip-restriction/index.test.ts
+index 6f54095..3c1ef43 100644
+--- a/src/middleware/ip-restriction/index.test.ts
++++ b/src/middleware/ip-restriction/index.test.ts
+@@ -60,6 +60,25 @@ describe('ipRestriction middleware', () => {
+       expect(await res.text()).toBe('error')
+     }
+   })
++
++  it('Should block invalid remote addresses', async () => {
++    const app = new Hono<{
++      Bindings: {
++        ip: string
++      }
++    }>()
++    app.use(
++      '/basic',
++      ipRestriction((c) => c.env.ip, {
++        allowList: ['::1'],
++      })
++    )
++    app.get('/basic', (c) => c.text('Hello World!'))
++
++    expect((await app.request('/basic', {}, { ip: 'example.com:443' })).status).toBe(403)
++    expect((await app.request('/basic', {}, { ip: '1234:::5678' })).status).toBe(403)
++    expect((await app.request('/basic', {}, { ip: '::1' })).status).toBe(200)
++  })
+ })
+ 
+ describe('isMatchForRule', () => {
+@@ -115,6 +134,16 @@ describe('isMatchForRule', () => {
+       await isMatch({ addr: '::ffff:192.168.1.1', type: 'IPv6' }, '::ffff:0:0/95')
+     ).toBeTruthy()
+   })
++  it('Invalid CIDR Notation', () => {
++    expect(() => ipRestriction(() => '127.0.0.1', { allowList: ['127.0.0.1/'] })).toThrow(
++      TypeError
++    )
++    expect(() => ipRestriction(() => '127.0.0.1', { allowList: ['127.0.0.1/33'] })).toThrow(
++      TypeError
++    )
++    expect(() => ipRestriction(() => '::1', { allowList: ['::1/129'] })).toThrow(TypeError)
++    expect(() => ipRestriction(() => '::1', { allowList: ['::1/foo'] })).toThrow(TypeError)
++  })
+   it('Static Rules', async () => {
+     expect(await isMatch({ addr: '192.168.2.1', type: 'IPv4' }, '192.168.2.1')).toBeTruthy()
+     expect(await isMatch({ addr: '1234::5678', type: 'IPv6' }, '1234::5678')).toBeTruthy()
+diff --git a/src/middleware/ip-restriction/index.ts b/src/middleware/ip-restriction/index.ts
+index 9ebf306..8433d96 100644
+--- a/src/middleware/ip-restriction/index.ts
++++ b/src/middleware/ip-restriction/index.ts
+@@ -35,7 +35,30 @@ type GetIPAddr = GetConnInfo | ((c: Context) => string)
+ type IPRestrictionRuleFunction = (addr: { addr: string; type: AddressType }) => boolean
+ export type IPRestrictionRule = string | ((addr: { addr: string; type: AddressType }) => boolean)
+ 
+-const IS_CIDR_NOTATION_REGEX = /\/[0-9]{0,3}$/
++const parseCIDRRule = (rule: string): [string, number] | undefined => {
++  const separatorIndex = rule.indexOf('/')
++  if (separatorIndex === -1) {
++    return
++  }
++  if (separatorIndex !== rule.lastIndexOf('/')) {
++    throw new TypeError(`Invalid rule: ${rule}`)
++  }
++
++  const addr = rule.slice(0, separatorIndex)
++  const prefix = rule.slice(separatorIndex + 1)
++  if (prefix.length === 0 || prefix.length > 3) {
++    throw new TypeError(`Invalid rule: ${rule}`)
++  }
++  for (let i = 0; i < prefix.length; i++) {
++    const code = prefix.charCodeAt(i)
++    if (code < 48 || code > 57) {
++      throw new TypeError(`Invalid rule: ${rule}`)
++    }
++  }
++
++  return [addr, Number(prefix)]
++}
++
+ const buildMatcher = (
+   rules: IPRestrictionRule[]
+ ): ((addr: { addr: string; type: AddressType; isIPv4: boolean }) => boolean) => {
+@@ -49,19 +72,25 @@ const buildMatcher = (
+     } else if (typeof rule === 'function') {
+       functionRules.push(rule)
+     } else {
+-      if (IS_CIDR_NOTATION_REGEX.test(rule)) {
+-        const separatedRule = rule.split('/')
+-
+-        const addrStr = separatedRule[0]
++      if (rule.includes('/')) {
++        const cidrRule = parseCIDRRule(rule)
++        if (cidrRule === undefined) {
++          throw new TypeError(`Invalid rule: ${rule}`)
++        }
++        const [addrStr, parsedPrefix] = cidrRule
+         const type = distinctRemoteAddr(addrStr)
+         if (type === undefined) {
+           throw new TypeError(`Invalid rule: ${rule}`)
+         }
+ 
+         let isIPv4 = type === 'IPv4'
+-        let prefix = parseInt(separatedRule[1])
++        let prefix = parsedPrefix
++        const maxPrefix = isIPv4 ? 32 : 128
++        if (prefix > maxPrefix) {
++          throw new TypeError(`Invalid rule: ${rule}`)
++        }
+ 
+-        if (isIPv4 ? prefix === 32 : prefix === 128) {
++        if (prefix === maxPrefix) {
+           // this rule is a static rule
+           rule = addrStr
+         } else {
+@@ -216,8 +245,11 @@ export const ipRestriction = (
+     if (!addr) {
+       throw blockError(c)
+     }
+-    const type =
+-      (typeof connInfo !== 'string' && connInfo.remote.addressType) || distinctRemoteAddr(addr)
++    const inferredType = distinctRemoteAddr(addr)
++    const type = (typeof connInfo !== 'string' && connInfo.remote.addressType) || inferredType
++    if (type === undefined || inferredType !== type) {
++      throw blockError(c)
++    }
+ 
+     const remoteData = { addr, type, isIPv4: type === 'IPv4' }
+ 
+diff --git a/src/utils/ipaddr.test.ts b/src/utils/ipaddr.test.ts
+index 9636be5..914ea2c 100644
+--- a/src/utils/ipaddr.test.ts
++++ b/src/utils/ipaddr.test.ts
+@@ -16,6 +16,12 @@ describe('expandIPv6', () => {
+     expect(expandIPv6('2001:0:0:db8::1')).toBe('2001:0000:0000:0db8:0000:0000:0000:0001')
+     expect(expandIPv6('::ffff:127.0.0.1')).toBe('0000:0000:0000:0000:0000:ffff:7f00:0001')
+   })
++
++  it('Should reject invalid IPv6 addresses', () => {
++    expect(() => expandIPv6('1234:::5678')).toThrow(TypeError)
++    expect(() => expandIPv6('1:2:3:4:5:6:7:8:9')).toThrow(TypeError)
++    expect(() => expandIPv6('::ffff:127.0.0.256')).toThrow(TypeError)
++  })
+ })
+ describe('distinctRemoteAddr', () => {
+   it('Should result be valid', () => {
+@@ -29,6 +35,13 @@ describe('distinctRemoteAddr', () => {
+     expect(distinctRemoteAddr('example.com')).toBeUndefined()
+   })
+ 
++  it('Should reject invalid IPv6 addresses', () => {
++    expect(distinctRemoteAddr('1234:::5678')).toBeUndefined()
++    expect(distinctRemoteAddr('1:2:3:4:5:6:7:8:9')).toBeUndefined()
++    expect(distinctRemoteAddr('::ffff:127.0.0.256')).toBeUndefined()
++    expect(distinctRemoteAddr('example.com:443')).toBeUndefined()
++  })
++
+   it('Should reject invalid IPv4 addresses with octets > 255', () => {
+     expect(distinctRemoteAddr('1.2.3.256')).toBeUndefined()
+     expect(distinctRemoteAddr('1.2.3.999')).toBeUndefined()
+@@ -51,6 +64,12 @@ describe('convertIPv4ToBinary', () => {
+ 
+     expect(convertIPv4ToBinary('0.0.1.0')).toBe(1n << 8n)
+   })
++
++  it('Should reject invalid IPv4 addresses', () => {
++    expect(() => convertIPv4ToBinary('1.2.3.256')).toThrow(TypeError)
++    expect(() => convertIPv4ToBinary('01.2.3.4')).toThrow(TypeError)
++    expect(() => convertIPv4ToBinary('1.2.3')).toThrow(TypeError)
++  })
+ })
+ 
+ describe('convertIPv4ToString', () => {
+@@ -71,9 +90,14 @@ describe('convertIPv6ToBinary', () => {
+     expect(convertIPv6ToBinary('::1')).toBe(1n)
+ 
+     expect(convertIPv6ToBinary('::f')).toBe(15n)
+-    expect(convertIPv6ToBinary('1234:::5678')).toBe(24196103360772296748952112894165669496n)
+     expect(convertIPv6ToBinary('::ffff:127.0.0.1')).toBe(281472812449793n)
+   })
++
++  it('Should reject invalid IPv6 addresses', () => {
++    expect(() => convertIPv6ToBinary('1234:::5678')).toThrow(TypeError)
++    expect(() => convertIPv6ToBinary('gggg::1')).toThrow(TypeError)
++    expect(() => convertIPv6ToBinary('::ffff:999.0.0.1')).toThrow(TypeError)
++  })
+ })
+ 
+ describe('convertIPv6ToString', () => {
+@@ -82,7 +106,6 @@ describe('convertIPv6ToString', () => {
+     input                                        | expected
+     ${'::1'}                                     | ${'::1'}
+     ${'1::'}                                     | ${'1::'}
+-    ${'1234:::5678'}                             | ${'1234::5678'}
+     ${'2001:2::'}                                | ${'2001:2::'}
+     ${'2001::db8:0:0:0:0:1'}                     | ${'2001:0:db8::1'}
+     ${'1234:5678:9abc:def0:1234:5678:9abc:def0'} | ${'1234:5678:9abc:def0:1234:5678:9abc:def0'}
+diff --git a/src/utils/ipaddr.ts b/src/utils/ipaddr.ts
+index 97b2bf2..5a7801a 100644
+--- a/src/utils/ipaddr.ts
++++ b/src/utils/ipaddr.ts
+@@ -5,47 +5,122 @@
+ 
+ import type { AddressType } from '../helper/conninfo'
+ 
++const parseIPv4ToParts = (ipv4: string): number[] | undefined => {
++  const parts = ipv4.split('.')
++  if (parts.length !== 4) {
++    return
++  }
++
++  const parsed: number[] = []
++  for (const part of parts) {
++    if (part.length === 0 || (part.length > 1 && part[0] === '0')) {
++      return
++    }
++
++    let value = 0
++    for (let i = 0; i < part.length; i++) {
++      const code = part.charCodeAt(i)
++      if (code < 48 || code > 57) {
++        return
++      }
++      value = value * 10 + code - 48
++    }
++
++    if (value > 255) {
++      return
++    }
++    parsed.push(value)
++  }
++
++  return parsed
++}
++
++const isIPv6Segment = (segment: string): boolean => {
++  if (segment.length === 0 || segment.length > 4) {
++    return false
++  }
++  for (let i = 0; i < segment.length; i++) {
++    const code = segment.charCodeAt(i)
++    if (
++      !(
++        (code >= 48 && code <= 57) ||
++        (code >= 65 && code <= 70) ||
++        (code >= 97 && code <= 102)
++      )
++    ) {
++      return false
++    }
++  }
++  return true
++}
++
++const parseIPv6ToParts = (ipv6: string): number[] | undefined => {
++  let addr = ipv6
++  const ipv4Start = ipv6.lastIndexOf(':')
++  const hasIPv4Part = ipv6.includes('.')
++  const ipv4Parts =
++    hasIPv4Part && ipv4Start !== -1 ? parseIPv4ToParts(ipv6.slice(ipv4Start + 1)) : undefined
++  if (hasIPv4Part && ipv4Parts === undefined) {
++    return
++  }
++  if (ipv4Parts) {
++    addr = `${ipv6.slice(0, ipv4Start)}:${((ipv4Parts[0] << 8) | ipv4Parts[1]).toString(
++      16
++    )}:${((ipv4Parts[2] << 8) | ipv4Parts[3]).toString(16)}`
++  }
++
++  const compressed = addr.split('::')
++  if (compressed.length > 2) {
++    return
++  }
++
++  const left = compressed[0] ? compressed[0].split(':') : []
++  const right = compressed.length === 2 && compressed[1] ? compressed[1].split(':') : []
++  if (left.some((part) => !isIPv6Segment(part)) || right.some((part) => !isIPv6Segment(part))) {
++    return
++  }
++
++  if (compressed.length === 1) {
++    if (left.length !== 8) {
++      return
++    }
++    return left.map((part) => parseInt(part, 16))
++  }
++
++  const zeroCount = 8 - left.length - right.length
++  if (zeroCount <= 0) {
++    return
++  }
++
++  return [
++    ...left.map((part) => parseInt(part, 16)),
++    ...new Array(zeroCount).fill(0),
++    ...right.map((part) => parseInt(part, 16)),
++  ]
++}
++
+ /**
+  * Expand IPv6 Address
+  * @param ipV6 Shorten IPv6 Address
+  * @return expanded IPv6 Address
+  */
+ export const expandIPv6 = (ipV6: string): string => {
+-  const sections = ipV6.split(':')
+-  if (IPV4_REGEX.test(sections.at(-1) as string)) {
+-    sections.splice(
+-      -1,
+-      1,
+-      ...convertIPv6BinaryToString(convertIPv4ToBinary(sections.at(-1) as string)) // => ::7f00:0001
+-        .substring(2) // => 7f00:0001
+-        .split(':') // => ['7f00', '0001']
+-    )
+-  }
+-  for (let i = 0; i < sections.length; i++) {
+-    const node = sections[i]
+-    if (node !== '') {
+-      sections[i] = node.padStart(4, '0')
+-    } else {
+-      sections[i + 1] === '' && sections.splice(i + 1, 1)
+-      sections[i] = new Array(8 - sections.length + 1).fill('0000').join(':')
+-    }
++  const parts = parseIPv6ToParts(ipV6)
++  if (parts === undefined) {
++    throw new TypeError(`Invalid IPv6 address: ${ipV6}`)
+   }
+-  return sections.join(':')
++  return parts.map((part) => part.toString(16).padStart(4, '0')).join(':')
+ }
+ 
+-const IPV4_OCTET_PART = '(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])'
+-const IPV4_REGEX = new RegExp(`^(?:${IPV4_OCTET_PART}\\.){3}${IPV4_OCTET_PART}$`)
+-
+ /**
+  * Distinct Remote Addr
+  * @param remoteAddr Remote Addr
+  */
+ export const distinctRemoteAddr = (remoteAddr: string): AddressType => {
+-  if (IPV4_REGEX.test(remoteAddr)) {
++  if (parseIPv4ToParts(remoteAddr)) {
+     return 'IPv4'
+   }
+-  if (remoteAddr.includes(':')) {
+-    // Domain can't include `:`
++  if (parseIPv6ToParts(remoteAddr)) {
+     return 'IPv6'
+   }
+ }
+@@ -56,7 +131,10 @@ export const distinctRemoteAddr = (remoteAddr: string): AddressType => {
+  * @returns BigInt
+  */
+ export const convertIPv4ToBinary = (ipv4: string): bigint => {
+-  const parts = ipv4.split('.')
++  const parts = parseIPv4ToParts(ipv4)
++  if (parts === undefined) {
++    throw new TypeError(`Invalid IPv4 address: ${ipv4}`)
++  }
+   let result = 0n
+   for (let i = 0; i < 4; i++) {
+     result <<= 8n
+@@ -71,11 +149,14 @@ export const convertIPv4ToBinary = (ipv4: string): bigint => {
+  * @returns BigInt
+  */
+ export const convertIPv6ToBinary = (ipv6: string): bigint => {
+-  const sections = expandIPv6(ipv6).split(':')
++  const parts = parseIPv6ToParts(ipv6)
++  if (parts === undefined) {
++    throw new TypeError(`Invalid IPv6 address: ${ipv6}`)
++  }
+   let result = 0n
+   for (let i = 0; i < 8; i++) {
+     result <<= 16n
+-    result += BigInt(parseInt(sections[i], 16))
++    result += BigInt(parts[i])
+   }
+   return result
+ }

@@ -1,0 +1,137 @@
+diff --git a/httpclient5/src/main/java/org/apache/hc/client5/http/impl/auth/ScramScheme.java b/httpclient5/src/main/java/org/apache/hc/client5/http/impl/auth/ScramScheme.java
+index 1c1224d..ddaf37f 100644
+--- a/httpclient5/src/main/java/org/apache/hc/client5/http/impl/auth/ScramScheme.java
++++ b/httpclient5/src/main/java/org/apache/hc/client5/http/impl/auth/ScramScheme.java
+@@ -207,7 +207,17 @@ public void processChallenge(
+ 
+         if (authChallenge == null) {
+             if (!challenged) {
+-                // Final response with no Authentication-Info: nothing to do
++                // Final response with no Authentication-Info.
++                if (this.state == State.CLIENT_FINAL_SENT) {
++                    // We have sent the client-final message and MUST verify the server's
++                    // signature ('v') before considering authentication successful. Its
++                    // absence means mutual authentication cannot be completed, so the
++                    // response must be rejected (RFC 7804 / RFC 5802).
++                    this.state = State.FAILED;
++                    throw new AuthenticationException(
++                            "SCRAM server signature missing: no Authentication-Info in final response");
++                }
++                // Not awaiting server verification: nothing to do
+                 return;
+             }
+             throw new MalformedChallengeException("Null SCRAM challenge");
+@@ -289,6 +299,13 @@ public void processChallenge(
+         // For Authentication-Info, RFC 7804 does NOT mandate a scheme token; do NOT enforce scheme name here.
+         final String data = params.get("data");
+         if (data == null) {
++            if (this.state == State.CLIENT_FINAL_SENT) {
++                // Awaiting server verification: a final response without data cannot carry
++                // the server signature, so mutual authentication fails.
++                this.state = State.FAILED;
++                throw new AuthenticationException(
++                        "SCRAM server signature missing: no data in final response");
++            }
+             return;
+         }
+         final String decoded = b64ToString(data);
+@@ -303,6 +320,14 @@ public void processChallenge(
+         }
+         final String vB64 = attrs.get("v");
+         if (vB64 == null) {
++            if (this.state == State.CLIENT_FINAL_SENT) {
++                // The server signature ('v') is mandatory once the client-final message has
++                // been sent. Without it the server cannot be authenticated, so fail closed
++                // rather than silently accepting the response.
++                this.state = State.FAILED;
++                throw new AuthenticationException(
++                        "SCRAM server signature ('v') missing from final response");
++            }
+             return;
+         }
+ 
+diff --git a/httpclient5/src/test/java/org/apache/hc/client5/http/impl/auth/TestScramScheme.java b/httpclient5/src/test/java/org/apache/hc/client5/http/impl/auth/TestScramScheme.java
+index ae383e5..fdaade7 100644
+--- a/httpclient5/src/test/java/org/apache/hc/client5/http/impl/auth/TestScramScheme.java
++++ b/httpclient5/src/test/java/org/apache/hc/client5/http/impl/auth/TestScramScheme.java
+@@ -335,6 +335,80 @@ void strictScram_authInfo_mismatchV_fails() throws Exception {
+         assertTrue(ex.getMessage().toLowerCase(Locale.ROOT).contains("signature"));
+     }
+ 
++    @Test
++    void strictScram_authInfo_missingV_fails() throws Exception {
++        // Mutual authentication must NOT succeed if the server omits its signature ('v')
++        // from the final response after the client-final message has been sent (CWE-304).
++        final ScramScheme scheme = new ScramScheme();
++        final BasicCredentialsProvider creds = new BasicCredentialsProvider();
++        creds.setCredentials(new AuthScope(HOST, REALM, scheme.getName()),
++                new UsernamePasswordCredentials(USER, PASS.toCharArray()));
++        final HttpClientContext ctx = HttpClientContext.create();
++
++        scheme.processChallenge(HOST, true,
++                new AuthChallenge(ChallengeType.TARGET, scheme.getName(),
++                        new BasicNameValuePair("realm", REALM)),
++                ctx);
++        assertTrue(scheme.isResponseReady(HOST, creds, ctx));
++
++        final String authz1 = scheme.generateAuthResponse(HOST, null, ctx);
++        final String clientFirstBare = deb64s(splitHeader(authz1).get("data")).substring("n,,".length());
++        final String clientNonce = parseCsvAttrs(clientFirstBare).get("r");
++
++        final String serverFirst = "r=" + clientNonce + "Z,s=" + b64("salt".getBytes(StandardCharsets.UTF_8)) + ",i=4096";
++        scheme.processChallenge(HOST, true,
++                new AuthChallenge(ChallengeType.TARGET, scheme.getName(),
++                        new BasicNameValuePair("data", b64(serverFirst.getBytes(StandardCharsets.UTF_8)))),
++                ctx);
++
++        // client-final
++        scheme.generateAuthResponse(HOST, null, ctx);
++
++        // Final response carries data but no server signature 'v' -> must fail, not succeed.
++        final AuthenticationException ex = assertThrows(AuthenticationException.class, () ->
++                scheme.processChallenge(HOST, false,
++                        new AuthChallenge(ChallengeType.TARGET, scheme.getName(),
++                                new BasicNameValuePair("data", b64("foo=bar".getBytes(StandardCharsets.UTF_8)))),
++                        ctx));
++        assertTrue(ex.getMessage().toLowerCase(Locale.ROOT).contains("signature"));
++        assertTrue(scheme.isChallengeComplete());
++    }
++
++    @Test
++    void strictScram_finalResponse_noAuthInfo_fails() throws Exception {
++        // A final response with no Authentication-Info at all (null challenge) must not be
++        // accepted as a successful mutual authentication once client-final has been sent.
++        final ScramScheme scheme = new ScramScheme();
++        final BasicCredentialsProvider creds = new BasicCredentialsProvider();
++        creds.setCredentials(new AuthScope(HOST, REALM, scheme.getName()),
++                new UsernamePasswordCredentials(USER, PASS.toCharArray()));
++        final HttpClientContext ctx = HttpClientContext.create();
++
++        scheme.processChallenge(HOST, true,
++                new AuthChallenge(ChallengeType.TARGET, scheme.getName(),
++                        new BasicNameValuePair("realm", REALM)),
++                ctx);
++        assertTrue(scheme.isResponseReady(HOST, creds, ctx));
++
++        final String authz1 = scheme.generateAuthResponse(HOST, null, ctx);
++        final String clientFirstBare = deb64s(splitHeader(authz1).get("data")).substring("n,,".length());
++        final String clientNonce = parseCsvAttrs(clientFirstBare).get("r");
++
++        final String serverFirst = "r=" + clientNonce + "Z,s=" + b64("salt".getBytes(StandardCharsets.UTF_8)) + ",i=4096";
++        scheme.processChallenge(HOST, true,
++                new AuthChallenge(ChallengeType.TARGET, scheme.getName(),
++                        new BasicNameValuePair("data", b64(serverFirst.getBytes(StandardCharsets.UTF_8)))),
++                ctx);
++
++        // client-final
++        scheme.generateAuthResponse(HOST, null, ctx);
++
++        // No Authentication-Info challenge on the final response -> must fail closed.
++        assertThrows(AuthenticationException.class, () ->
++                scheme.processChallenge(HOST, false, null, ctx));
++        assertTrue(scheme.isChallengeComplete());
++    }
++
+     @Test
+     void strictScram_authInfo_errorE_fails() throws Exception {
+         final ScramScheme scheme = new ScramScheme();

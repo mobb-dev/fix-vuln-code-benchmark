@@ -1,0 +1,21 @@
+diff --git a/src/pdm/installers/installers.py b/src/pdm/installers/installers.py
+index c6a9806..3b3d805 100644
+--- a/src/pdm/installers/installers.py
++++ b/src/pdm/installers/installers.py
+@@ -135,7 +135,15 @@ class InstallDestination(SchemeDictionaryDestination):
+         from installer.records import Hash
+         from installer.utils import copyfileobj_with_hashing
+ 
+-        target_path = os.path.join(self.scheme_dict[scheme], path)
++        target_dir = self.scheme_dict[scheme]
++        target_path = os.path.join(target_dir, path)
++        # Guard against path traversal from a malicious wheel: a file entry such as
++        # ``../../evil`` or an absolute path would otherwise escape the destination
++        # directory and write to an arbitrary location on the filesystem.
++        normalized_dir = os.path.normpath(target_dir)
++        normalized_target = os.path.normpath(target_path)
++        if normalized_target != normalized_dir and not normalized_target.startswith(normalized_dir + os.sep):
++            raise InvalidWheelSource(f"Wheel contains an unsafe path that escapes the target directory: {path!r}")
+         if os.path.exists(target_path):
+             os.unlink(target_path)
+ 

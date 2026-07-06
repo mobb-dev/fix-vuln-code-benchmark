@@ -1,0 +1,11 @@
+METHODOLOGY: I derived the root cause (zeep follows attacker-controlled external references — DTD/entities resolved by lxml's `ImportResolver`, and `xsd:import`/`wsdl:import`/`add_document_by_url` resolved by zeep's own `load_external`/`load_external_async` → `transport.load(url)`) from the maintainer's fix, which guards BOTH paths. I then checked whether the agent's diff closes every one of the listed vulnerable locations and whether it preserves intended behavior.
+
+EVIDENCE:
+- Agent guards `ImportResolver.resolve` (loader.py) by raising `ExternalReferenceForbidden` when `forbid_external`, and adds DTD/entity `system_url` checks plus `no_network=settings.forbid_external` in `parse_xml`.
+- Agent does NOT modify `load_external` (vuln lines 78-103) or `load_external_async` (106-111): no `_initial` flag, no `urlparse(...).scheme in ("http","https")` check before `transport.load(url)`.
+- Agent does NOT modify `wsdl.py` (`_get_xml_document`/`load`) or `xsd/schema.py` (`add_document_by_url`) — listed vulnerable locations — so transitive `wsdl:import`/`xsd:import` targets are still fetched.
+- Agent leaves `settings.py` untouched (`forbid_external` stays `default=True`), whereas the maintainer set it to `False` and introduced the `_initial` entry-point exemption.
+
+REASONING: The agent closes one real variant — SSRF via external DTD/entity references resolved through lxml's `ImportResolver` — but misses the primary application-level vector: `xsd:import`/`wsdl:import`/`add_document_by_url` flow through `load_external`(`_async`), which fetch the attacker-supplied URL via `transport.load()` without any new guard. The lxml `ImportResolver`/`no_network` controls do not intercept these zeep-level import fetches, so an attacker-controlled import location still triggers an outbound request. Additionally, by not adopting the `_initial` design and leaving the default at `True`, the agent's behavior diverges from the maintainer's opt-in model (it blocks external entities by default), though the import path it left unguarded means even that gating is incomplete. Because explicitly enumerated injection points (`load_external`/`load_external_async`) remain exploitable, the remediation is incomplete.
+
+VERDICT: PARTIAL

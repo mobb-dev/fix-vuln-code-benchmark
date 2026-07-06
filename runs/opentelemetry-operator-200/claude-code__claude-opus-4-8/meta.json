@@ -1,0 +1,13 @@
+{
+  "agent": "claude-code",
+  "model": "claude-opus-4-8",
+  "tool_calls": 80,
+  "turns": 81,
+  "cost_usd": 4.709376000000001,
+  "usage": null,
+  "used_web": false,
+  "egress_attempts": [
+    "timeout 20 git log -1 --format='%ci' 2>/dev/null; echo \"trying network...\"; timeout 25 curl -s \"https://raw.githubusercontent.com/open-telemetry/opentelemetry-operator/main/cmd/otel-allocator/internal",
+    "curl -s \"https://raw.githubusercontent.com/open-telemetry/opentelemetry-operator/main/cmd/otel-allocator/internal/watcher/promOperator.go\" | grep -n \"MetadataInformerFactory\\|CollectorNamespace\\|Secre"
+  ]
+}

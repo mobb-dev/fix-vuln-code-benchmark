@@ -1,0 +1,332 @@
+{
+  "appium-mcp-79": {
+    "claude": {
+      "v": "CORRECT",
+      "note": "escapeHtml at all three sinks + a data-attribute click listener; matches the maintainer."
+    },
+    "codex": {
+      "v": "CORRECT",
+      "note": "same escaping plus a CSP nonce and resource-type guard; fully remediates."
+    }
+  },
+  "arc-22": {
+    "claude": {
+      "v": "PARTIAL",
+      "note": "shlex/regex denylist is bypassable and misses the profiling-PRAGMA sites; partial."
+    },
+    "codex": {
+      "v": "PARTIAL",
+      "note": "AUDITOR SAID INCORRECT. Adds real filepath.Rel `..`-containment on the named sinks; misses read_* sources. A real partial fix, not a non-fix."
+    }
+  },
+  "async-http-client-200": {
+    "claude": {
+      "v": "CORRECT",
+      "note": "AUDITOR SAID PARTIAL (too harsh). Removes the Cookie header on stripAuthorization, closing the cross-origin cookie leak — equivalent to the maintainer's core fix."
+    },
+    "codex": {
+      "v": "INCORRECT",
+      "note": "never removes the Cookie header; the cross-origin cookie leak remains."
+    }
+  },
+  "camel-288": {
+    "claude": {
+      "v": "PARTIAL",
+      "note": "wildcards all four sites but also wildcards explicitly-configured auth paths the maintainer left verbatim (over-reach)."
+    },
+    "codex": {
+      "v": "PARTIAL",
+      "note": "dual base+wildcard entries; same over-reach on explicitly-configured paths."
+    }
+  },
+  "camel-915": {
+    "claude": {
+      "v": "CORRECT",
+      "note": "AUDITOR SAID PARTIAL (too harsh). Filters Camel-prefixed headers at the exact injection loop — minimal and complete; the only miss is the configurable option, not a security gap."
+    },
+    "codex": {
+      "v": "PARTIAL",
+      "note": "filters headers but destructively deletes the public `client` option, breaking a feature (over-reach)."
+    }
+  },
+  "devguard-285": {
+    "claude": {
+      "v": "PARTIAL",
+      "note": "adds assetScopedRBAC everywhere; over-strict vs the maintainer's targeted DisallowPublicRequests on scanner routes."
+    },
+    "codex": {
+      "v": "PARTIAL",
+      "note": "essentially line-for-line identical to Claude's; same over-reach."
+    }
+  },
+  "dex-285": {
+    "claude": {
+      "v": "INCORRECT",
+      "note": "keeps the old 2-return connector signatures; both connectors fail the CallbackConnector assertion — wrong issue fixed."
+    },
+    "codex": {
+      "v": "PARTIAL",
+      "note": "migrates both connectors and builds; adds an unrequested path-escaping over-reach."
+    }
+  },
+  "dnsproxy-362": {
+    "claude": {
+      "v": "INCORRECT",
+      "note": "fixes an unrelated tls.Config race; the flagged shared req.Id race is untouched."
+    },
+    "codex": {
+      "v": "PARTIAL",
+      "note": "copies the request in doh/doq/plain (removes the race); omits the maintainer's ID-entropy hardening."
+    }
+  },
+  "dulwich-78": {
+    "claude": {
+      "v": "PARTIAL",
+      "note": "shlex.quote on all placeholders fixes POSIX injection; misses the Windows cmd.exe variant."
+    },
+    "codex": {
+      "v": "PARTIAL",
+      "note": "drops the shell entirely — over-reach that breaks merge commands using pipes/;/globs."
+    }
+  },
+  "epa4all-client-295": {
+    "claude": {
+      "v": "CORRECT",
+      "note": "returns the ecdsa.verify() result and removes the bogus `return true`; the exact core fix."
+    },
+    "codex": {
+      "v": "CORRECT",
+      "note": "throws on !verify(), caught as false; functionally equivalent, adds a test."
+    }
+  },
+  "hono-185": {
+    "claude": {
+      "v": "INCORRECT",
+      "note": "one-character regex tweak {0,3}->{1,3} only; malformed-IP bypass and out-of-range prefixes remain."
+    },
+    "codex": {
+      "v": "PARTIAL",
+      "note": "strict IP/CIDR parsers + fail-closed removes the bypass; slightly less complete than gold (IPv6 zone edges)."
+    }
+  },
+  "httpcomponents-client-304": {
+    "claude": {
+      "v": "PARTIAL",
+      "note": "AUDITOR SAID INCORRECT (too harsh). Real fail-closed logic (rejects a missing SCRAM server signature) and it compiles; but ships a failing test and no handler wiring."
+    },
+    "codex": {
+      "v": "INCORRECT",
+      "note": "AUDITOR SAID PARTIAL (too lenient). Adds a catch for a ParseException that is never thrown → the module does NOT compile (verified via mvn, twice). A non-building fix is INCORRECT."
+    }
+  },
+  "jupyter-server-79": {
+    "claude": {
+      "v": "CORRECT",
+      "note": "AUDITOR SAID PARTIAL (too harsh). Adds `; sandbox allow-scripts` CSP at both sinks — byte-identical security to the maintainer, minus only an opt-out config flag (not a security gap)."
+    },
+    "codex": {
+      "v": "CORRECT",
+      "note": "base-class refactor plus the config flag; matches the maintainer."
+    }
+  },
+  "klever-go-400": {
+    "claude": {
+      "v": "PARTIAL",
+      "note": "caps the decompression bomb but misses the items-per-batch pre-allocation amplification vector."
+    },
+    "codex": {
+      "v": "PARTIAL",
+      "note": "bounds decompression and adds an antiflood charge; same pre-allocation miss."
+    }
+  },
+  "langflow-200": {
+    "claude": {
+      "v": "INCORRECT",
+      "note": "only redacts the absolute path; the endpoint stays unauthenticated — misses the maintainer's authz/size-limit fix."
+    },
+    "codex": {
+      "v": "INCORRECT",
+      "note": "redacts path/errors but leaves the auth hole open."
+    }
+  },
+  "langflow-639": {
+    "claude": {
+      "v": "INCORRECT",
+      "note": "helper is scoped, but the run routes still pass user_id=None via Depends — the bypass remains."
+    },
+    "codex": {
+      "v": "CORRECT",
+      "note": "auth-aware wrappers inject the caller id into the run routes; closes the bypass, matches the maintainer."
+    }
+  },
+  "mcp-toolbox-287": {
+    "claude": {
+      "v": "PARTIAL",
+      "note": "fixes the introspection missing-active fail-closed bypass exactly; misses the broader claims-confusion surface."
+    },
+    "codex": {
+      "v": "PARTIAL",
+      "note": "AUDITOR SAID INCORRECT (too harsh). Fixes the real cross-service claims-confusion at the listed locations (binds claims to the validating service); leaves the introspection bypass. A real partial fix."
+    }
+  },
+  "mcp-toolbox-287-2": {
+    "claude": {
+      "v": "CORRECT",
+      "note": "AUDITOR SAID PARTIAL (too harsh). Changes `a.issuer != '' && iss != ''` to `if a.issuer != ''`, so an empty token issuer no longer bypasses — equivalent to the maintainer for the scoped finding."
+    },
+    "codex": {
+      "v": "PARTIAL",
+      "note": "fixes the issuer bypass but over-reaches with HTTPS enforcement that breaks HTTP auth-server configs."
+    }
+  },
+  "nebula-mesh-285": {
+    "claude": {
+      "v": "PARTIAL",
+      "note": "mirrors the per-CA/admin authz broadly but omits the handleGetBlocklist admin gate."
+    },
+    "codex": {
+      "v": "PARTIAL",
+      "note": "full per-CA + admin gates + tests; also misses the blocklist admin gate."
+    }
+  },
+  "nebula-mesh-862": {
+    "claude": {
+      "v": "INCORRECT",
+      "note": "RETRY on the fair budget: empty AGAIN (0 lines). A genuine give-up, not a timeout fluke; vulnerability unaddressed."
+    },
+    "codex": {
+      "v": "INCORRECT",
+      "note": "relocated identical actorIsAdmin checks to middleware; never added the isActiveAdmin re-fetch that is the actual fix."
+    }
+  },
+  "nezha-862": {
+    "claude": {
+      "v": "PARTIAL",
+      "note": "RE-RUN on the repaired compiling baseline (8add559ec8^ = 79c06d0f). Gates both cron and service result reporting by ownership; COMPILES (go build). Misses the maintainer reservation-token nuance for AlertTrigger crons."
+    },
+    "codex": {
+      "v": "CORRECT",
+      "note": "RE-RUN on the repaired baseline. Dispatch-tracking (record/consume) + ownership across both reporting paths; COMPILES (go build). Original INCORRECT was a non-compiling-baseline artifact, now removed."
+    }
+  },
+  "nhost-306": {
+    "claude": {
+      "v": "PARTIAL",
+      "note": "locks the configserver CORS to the dashboard origin and disables credentials; omits the maintainer's secret redaction."
+    },
+    "codex": {
+      "v": "PARTIAL",
+      "note": "adds admin-secret auth + origin restriction + dashboard header wiring; omits secret redaction."
+    }
+  },
+  "openbao-617": {
+    "claude": {
+      "v": "INCORRECT",
+      "note": "12-line change removes one cleanup() call (adds a lock leak) and leaves the unlock-of-unlocked-mutex pattern intact."
+    },
+    "codex": {
+      "v": "INCORRECT",
+      "note": "RETRY: refused AGAIN, citing the repo's AGENTS.md ban on AI-generated code. A consistent, principled refusal; no fix produced."
+    }
+  },
+  "openmrs-core-94": {
+    "claude": {
+      "v": "PARTIAL",
+      "note": "AUDITOR SAID INCORRECT (too harsh). SecureUberspector genuinely blocks the reflection RCE (Class/ClassLoader/Thread denied) — weaker than the maintainer's SpEL sandbox, but a real mitigation, not a non-fix."
+    },
+    "codex": {
+      "v": "PARTIAL",
+      "note": "SecureUberspector + input allowlist blocks the RCE and directives; brittle regex, retains a $fn=this surface."
+    }
+  },
+  "opentelemetry-go-789": {
+    "claude": {
+      "v": "PARTIAL",
+      "note": "bounds member-count growth in New/Parse and dedups propagation; leaves maxMembers=180, no byte-during-parse accounting."
+    },
+    "codex": {
+      "v": "PARTIAL",
+      "note": "bounds New/SetMember/propagation via validateLimits; the concatenated-carrier rewrite diverges semantically; broad."
+    }
+  },
+  "opentelemetry-operator-200": {
+    "claude": {
+      "v": "INCORRECT",
+      "note": "RETRY: was empty; now a 297-line change that REVERTS the secretNamespaces feature (compiles) but does not add the maintainer's bearerTokenFile info-exposure guard. Wrong target, vulnerability unaddressed (same mistake Codex made)."
+    },
+    "codex": {
+      "v": "INCORRECT",
+      "note": "reverts an unrelated secretNamespaces feature; never adds the DenyFSAccessThroughSMs bearerTokenFile guard."
+    }
+  },
+  "pdm-22": {
+    "claude": {
+      "v": "PARTIAL",
+      "note": "guards the write_to_fs sink with normpath containment; misses the read-side source locations (dist_info, iter_files)."
+    },
+    "codex": {
+      "v": "PARTIAL",
+      "note": "covers all sinks and sources thoroughly, but symlink-resolution on iter_files/dist_info risks breaking pdm's link-based cache installs."
+    }
+  },
+  "python-zeep-918": {
+    "claude": {
+      "v": "PARTIAL",
+      "note": "gates the lxml ImportResolver only; misses the transitive load_external wsdl/xsd import fetch — the primary SSRF sink."
+    },
+    "codex": {
+      "v": "PARTIAL",
+      "note": "gates the resolver + DTD/entity URLs + no_network and adds tests, but leaves the same transitive load_external import sink unguarded."
+    }
+  },
+  "scim-patch": {
+    "claude": {
+      "v": "CORRECT",
+      "note": "blocks __proto__/constructor/prototype at path validation AND the assign() sink; full coverage."
+    },
+    "codex": {
+      "v": "CORRECT",
+      "note": "same key blocklist at validate+navigate+assign, hasOwnProperty hardening, filter-synthesis tests."
+    }
+  },
+  "tilt-306": {
+    "claude": {
+      "v": "INCORRECT",
+      "note": "leaves the flagged /debug/pprof fully open; the origin-only path is bypassable by omitting the Origin header."
+    },
+    "codex": {
+      "v": "CORRECT",
+      "note": "AUDITOR SAID PARTIAL (too harsh). Server-side RequireToken/requireToken gates /debug/pprof, the proxy, and all /api routes; SameSite=Strict closes cross-site WS."
+    }
+  },
+  "vert-x-295": {
+    "claude": {
+      "v": "PARTIAL",
+      "note": "RE-RUN (finding relabeled to CWE-770; the recorded gold was actually correct). Bounds the SNI SslContext cache with a size-capped LRU map, closing the DoS; COMPILES (mvn). PARTIAL: the replacement map is only partially synchronized, weaker thread-safety than the ConcurrentHashMap it replaced."
+    },
+    "codex": {
+      "v": "CORRECT",
+      "note": "RE-RUN. Bounds the SNI cache (threads cacheMaxSize through to a bounded map), matching the maintainer approach; COMPILES (mvn)."
+    }
+  },
+  "yt-dlp-200": {
+    "claude": {
+      "v": "PARTIAL",
+      "note": "moves the curl cookie to a config file, but inline --header leaks (Authorization/Cookie) remain (the maintainer also left them)."
+    },
+    "codex": {
+      "v": "PARTIAL",
+      "note": "fully removes cookie+header leaks via config files, but over-reaches with a broad rewrite/redaction system."
+    }
+  },
+  "yt-dlp-78": {
+    "claude": {
+      "v": "PARTIAL",
+      "note": "RETRY on the fair 40-min budget: was empty (capped) the first time; now produces a shell-escaping fix (adds shell=True to prepare_outtmpl, shell_quote on interpolated --exec values); py-compiles. PARTIAL: escapes r/a/s/q conversions but not other conversions, versus the maintainer's stricter reject-unsafe-conversions approach."
+    },
+    "codex": {
+      "v": "CORRECT",
+      "note": "shell-quotes all exec-expanded fields, neutralizing the injection; equivalent-but-different from the maintainer, adds tests."
+    }
+  }
+}

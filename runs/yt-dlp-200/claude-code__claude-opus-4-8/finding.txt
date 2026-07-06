@@ -1,0 +1,17 @@
+Project: yt-dlp/yt-dlp
+Vulnerability type: Information Exposure (CWE-200)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  yt_dlp/downloader/external.py
+    - lines 1-5
+    - lines 16-21
+    - lines 26-31
+    - lines 136-142   in: def _write_cookies(self):
+    - lines 195-206   in: def _call_process(self, cmd, info_dict):
+    - lines 222-227   in: def _make_cmd(self, tmpfilename, info_dict):
+    - lines 244-251   in: class WgetFD(ExternalFD):
+    - lines 301-308   in: def _make_cmd(self, tmpfilename, info_dict):
+
+  yt_dlp/utils/_utils.py
+    - lines 915-924   in: def kill(self, *, timeout=0):

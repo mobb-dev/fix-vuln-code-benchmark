@@ -1,0 +1,33 @@
+Project: l3montree-dev/devguard
+Vulnerability type: Improper Authorization (CWE-285)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  middlewares/access_control_middlewares.go
+    - lines 95-100   in: func NeededScope(NeededScopes []string) shared.MiddlewareFunc {
+
+  router/artifact_router.go
+    - lines 30-37   in: func NewArtifactRouter(
+    - lines 41-48   in: func NewArtifactRouter(
+
+  router/asset_router.go
+    - lines 67-72   in: func NewAssetRouter(
+
+  router/asset_version_router.go
+    - lines 67-75   in: func NewAssetVersionRouter(
+
+  router/dependency_vuln_router.go
+    - lines 29-45   in: func NewDependencyVulnRouter(
+
+  router/external_reference_router.go
+    - lines 18-23   in: package router
+    - lines 28-44   in: type ExternalReferenceRouter struct {
+
+  router/first_party_vuln_router.go
+    - lines 35-42   in: func NewFirstPartyVulnRouter(
+
+  router/license_risk_router.go
+    - lines 32-41   in: func NewLicenseRiskRouter(
+
+  router/vex_rule_router.go
+    - lines 37-46   in: func NewVEXRuleRouter(

@@ -1,0 +1,248 @@
+diff --git a/src/tests/ui-mcp-utils.test.ts b/src/tests/ui-mcp-utils.test.ts
+new file mode 100644
+index 0000000..d37f69d
+--- /dev/null
++++ b/src/tests/ui-mcp-utils.test.ts
+@@ -0,0 +1,93 @@
++import { describe, expect, test } from '@jest/globals';
++
++import {
++  addUIResourceToResponse,
++  createLocatorGeneratorUI,
++  createUIResource,
++} from '../ui/mcp-ui-utils.js';
++
++describe('mcp ui utilities', () => {
++  test('createLocatorGeneratorUI escapes locator metadata and selectors', () => {
++    const html = createLocatorGeneratorUI([
++      {
++        tagName: 'button"><script>alert(1)</script>',
++        text: '<img src=x onerror=alert(2)>',
++        contentDesc: '</p><script>alert(3)</script>',
++        resourceId: 'app:id/" onclick="alert(4)',
++        locators: {
++          'accessibility id': '`);alert(5);//',
++          xpath: `//*[@text="</code><script>alert(6)</script>"]`,
++        },
++        clickable: true,
++        enabled: true,
++        displayed: true,
++      },
++    ]);
++
++    expect(html).toContain(
++      'button&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;'
++    );
++    expect(html).toContain('&lt;img src=x onerror=alert(2)&gt;');
++    expect(html).toContain('&lt;/p&gt;&lt;script&gt;alert(3)&lt;/script&gt;');
++    expect(html).toContain('app:id/&quot; onclick=&quot;alert(4)');
++    expect(html).toContain(
++      '//*[@text=&quot;&lt;/code&gt;&lt;script&gt;alert(6)&lt;/script&gt;&quot;]'
++    );
++    expect(html).not.toContain('<script>alert(1)</script>');
++    expect(html).not.toContain('<img src=x onerror=alert(2)>');
++    expect(html).not.toContain('</p><script>alert(3)</script>');
++    expect(html).not.toContain('</code><script>alert(6)</script>');
++    expect(html).not.toContain('onclick="testLocator');
++  });
++
++  test('createLocatorGeneratorUI uses nonce-protected script instead of inline handlers', () => {
++    const html = createLocatorGeneratorUI([
++      {
++        tagName: 'Button',
++        text: 'Save',
++        contentDesc: '',
++        resourceId: 'app:id/save',
++        locators: {
++          id: 'app:id/save',
++        },
++        clickable: true,
++        enabled: true,
++        displayed: true,
++      },
++    ]);
++
++    expect(html).toMatch(
++      /Content-Security-Policy" content="[^"]*script-src 'nonce-[^']+'/
++    );
++    expect(html).toMatch(/<script nonce="[^"]+">/);
++    expect(html).toContain('data-strategy="id"');
++    expect(html).toContain('data-selector="app:id/save"');
++    expect(html).toContain("button.dataset.strategy || ''");
++    expect(html).not.toContain('onclick=');
++  });
++
++  test('addUIResourceToResponse preserves text response content and appends UI resource', () => {
++    const response = { content: [{ type: 'text', text: 'ok' }] };
++    const uiResource = createUIResource('ui://appium-mcp/test', '<p>ok</p>');
++
++    expect(addUIResourceToResponse(response, uiResource)).toEqual({
++      content: [{ type: 'text', text: 'ok' }, uiResource],
++    });
++  });
++
++  test('addUIResourceToResponse rejects malformed UI resources', () => {
++    const response = { content: [{ type: 'text', text: 'ok' }] };
++
++    expect(addUIResourceToResponse(response, null as never)).toBe(response);
++    expect(
++      addUIResourceToResponse(response, {
++        type: 'resource',
++        resource: {
++          uri: 'ui://appium-mcp/test',
++          mimeType: 'application/json',
++          text: '<script>alert(1)</script>',
++        },
++      } as never)
++    ).toBe(response);
++  });
++});
+diff --git a/src/ui/mcp-ui-utils.ts b/src/ui/mcp-ui-utils.ts
+index d591588..f1a32df 100644
+--- a/src/ui/mcp-ui-utils.ts
++++ b/src/ui/mcp-ui-utils.ts
+@@ -6,6 +6,20 @@
+  *
+  * Reference: https://mcpui.dev/guide/introduction
+  */
++import { randomBytes } from 'node:crypto';
++
++function escapeHtml(value: string): string {
++  return value
++    .replace(/&/g, '&amp;')
++    .replace(/</g, '&lt;')
++    .replace(/>/g, '&gt;')
++    .replace(/"/g, '&quot;')
++    .replace(/'/g, '&#039;');
++}
++
++function createCspNonce(): string {
++  return randomBytes(16).toString('base64');
++}
+ 
+ /**
+  * Creates a UIResource object following MCP-UI protocol
+@@ -34,6 +48,17 @@ export function createUIResource(
+   };
+ }
+ 
++function isHtmlUIResource(
++  uiResource: ReturnType<typeof createUIResource>
++): boolean {
++  return (
++    uiResource?.type === 'resource' &&
++    uiResource.resource?.mimeType === 'text/html' &&
++    typeof uiResource.resource.uri === 'string' &&
++    typeof uiResource.resource.text === 'string'
++  );
++}
++
+ /**
+  * Creates a device picker UI component
+  * @param devices - Array of device objects with name, udid, state, etc.
+@@ -715,37 +740,46 @@ export function createLocatorGeneratorUI(
+     displayed: boolean;
+   }>
+ ): string {
++  const scriptNonce = createCspNonce();
+   const locatorCards = locators
+-    .map(
+-      (element, index) => `
++    .map((element, index) => {
++      const tagName = escapeHtml(element.tagName);
++      const text = escapeHtml(element.text);
++      const contentDesc = escapeHtml(element.contentDesc);
++      const resourceId = escapeHtml(element.resourceId);
++
++      return `
+     <div class="locator-card" data-index="${index}">
+       <div class="locator-header">
+-        <h3>${element.tagName}</h3>
++        <h3>${tagName}</h3>
+         <div class="badges">
+           ${element.clickable ? '<span class="badge badge-clickable">Clickable</span>' : ''}
+           ${element.enabled ? '<span class="badge badge-enabled">Enabled</span>' : ''}
+           ${element.displayed ? '<span class="badge badge-displayed">Displayed</span>' : ''}
+         </div>
+       </div>
+-      ${element.text ? `<p class="element-text"><strong>Text:</strong> ${element.text}</p>` : ''}
+-      ${element.contentDesc ? `<p class="element-text"><strong>Content Desc:</strong> ${element.contentDesc}</p>` : ''}
+-      ${element.resourceId ? `<p class="element-text"><strong>Resource ID:</strong> <code>${element.resourceId}</code></p>` : ''}
++      ${element.text ? `<p class="element-text"><strong>Text:</strong> ${text}</p>` : ''}
++      ${element.contentDesc ? `<p class="element-text"><strong>Content Desc:</strong> ${contentDesc}</p>` : ''}
++      ${element.resourceId ? `<p class="element-text"><strong>Resource ID:</strong> <code>${resourceId}</code></p>` : ''}
+       <div class="locators-list">
+         ${Object.entries(element.locators)
+-          .map(
+-            ([strategy, selector]) => `
++          .map(([strategy, selector]) => {
++            const escapedStrategy = escapeHtml(strategy);
++            const escapedSelector = escapeHtml(selector);
++
++            return `
+           <div class="locator-item">
+-            <span class="strategy">${strategy}</span>
+-            <code class="selector">${selector}</code>
+-            <button class="test-btn" onclick="testLocator('${strategy}', \`${selector.replace(/`/g, '\\`')}\`)">Test</button>
++            <span class="strategy">${escapedStrategy}</span>
++            <code class="selector">${escapedSelector}</code>
++            <button class="test-btn" type="button" data-strategy="${escapedStrategy}" data-selector="${escapedSelector}">Test</button>
+           </div>
+-        `
+-          )
++        `;
++          })
+           .join('')}
+       </div>
+     </div>
+-  `
+-    )
++  `;
++    })
+     .join('');
+ 
+   return `
+@@ -754,6 +788,7 @@ export function createLocatorGeneratorUI(
+ <head>
+   <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
++  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${scriptNonce}'; base-uri 'none'; form-action 'none'">
+   <title>Locator Generator</title>
+   <style>
+     * {
+@@ -882,7 +917,7 @@ export function createLocatorGeneratorUI(
+       ${locators.length > 0 ? locatorCards : '<p>No locators found</p>'}
+     </div>
+   </div>
+-  <script>
++  <script nonce="${scriptNonce}">
+     function testLocator(strategy, selector) {
+       window.parent.postMessage({
+         type: 'tool',
+@@ -895,6 +930,15 @@ export function createLocatorGeneratorUI(
+         }
+       }, '*');
+     }
++
++    document.querySelector('.locators-grid').addEventListener('click', (event) => {
++      const button = event.target instanceof HTMLElement ? event.target.closest('.test-btn') : null;
++      if (!(button instanceof HTMLButtonElement)) {
++        return;
++      }
++
++      testLocator(button.dataset.strategy || '', button.dataset.selector || '');
++    });
+   </script>
+ </body>
+ </html>
+@@ -1629,6 +1673,10 @@ export function addUIResourceToResponse(
+     return response;
+   }
+ 
++  if (!isHtmlUIResource(uiResource)) {
++    return response;
++  }
++
+   return {
+     content: [...response.content, uiResource],
+   };

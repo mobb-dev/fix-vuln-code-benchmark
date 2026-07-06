@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/open-telemetry/opentelemetry-go.git
+FIX_COMMIT=aa1894e09e3fe66860c7885cb40f98901b35277f
+VULN_FILE=baggage/baggage.go
+CWE_ID=CWE-789
+CWE_NAME="CWE-789"
+LANGUAGE=go
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="baggage/baggage_test.go internal/errorhandler/errorhandler_test.go internal/global/handler_test.go internal/global/state_test.go"
+PREP_CMD="go mod download"
+TEST_CMD="go test ./baggage/... ./internal/errorhandler/... ./internal/global/..."

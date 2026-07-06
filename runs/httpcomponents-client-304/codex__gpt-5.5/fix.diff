@@ -1,0 +1,284 @@
+diff --git a/httpclient5/src/main/java/org/apache/hc/client5/http/impl/auth/AuthenticationHandler.java b/httpclient5/src/main/java/org/apache/hc/client5/http/impl/auth/AuthenticationHandler.java
+index acf51da..698936d 100644
+--- a/httpclient5/src/main/java/org/apache/hc/client5/http/impl/auth/AuthenticationHandler.java
++++ b/httpclient5/src/main/java/org/apache/hc/client5/http/impl/auth/AuthenticationHandler.java
+@@ -55,6 +55,7 @@
+ import org.apache.hc.core5.http.ParseException;
+ import org.apache.hc.core5.http.message.BasicHeader;
+ import org.apache.hc.core5.http.message.MessageSupport;
++import org.apache.hc.core5.http.message.ParserCursor;
+ import org.apache.hc.core5.http.protocol.HttpContext;
+ import org.apache.hc.core5.util.Asserts;
+ import org.slf4j.Logger;
+@@ -71,6 +72,8 @@
+ public class AuthenticationHandler {
+ 
+     private static final Logger LOG = LoggerFactory.getLogger(AuthenticationHandler.class);
++    private static final String AUTHENTICATION_INFO = "Authentication-Info";
++    private static final String PROXY_AUTHENTICATION_INFO = "Proxy-Authentication-Info";
+ 
+     private final AuthChallengeParser parser;
+ 
+@@ -190,6 +193,30 @@ public Map<String, AuthChallenge> extractChallengeMap(
+         return challengeMap;
+     }
+ 
++    private AuthChallenge extractAuthenticationInfo(
++            final ChallengeType challengeType,
++            final HttpResponse response,
++            final AuthScheme authScheme,
++            final HttpClientContext context) {
++        final Header header = response.getFirstHeader(
++                challengeType == ChallengeType.PROXY ? PROXY_AUTHENTICATION_INFO : AUTHENTICATION_INFO);
++        if (header == null) {
++            return null;
++        }
++        try {
++            return parser.parse(
++                    challengeType,
++                    authScheme.getName(),
++                    header.getValue(),
++                    new ParserCursor(0, header.getValue().length()));
++        } catch (final ParseException ex) {
++            if (LOG.isWarnEnabled()) {
++                LOG.warn("{} Malformed authentication info", context.getExchangeId());
++            }
++            return null;
++        }
++    }
++
+     /**
+      * Handles the response from the opposite endpoint and updates the {@link AuthExchange}
+      * state based on the challenge presented in the response message using the given
+@@ -217,7 +244,7 @@ public boolean handleResponse(
+             final AuthExchange authExchange,
+             final HttpContext context) throws AuthenticationException, MalformedChallengeException {
+ 
+-    final HttpClientContext clientContext = HttpClientContext.cast(context);
++        final HttpClientContext clientContext = HttpClientContext.cast(context);
+         final String exchangeId = clientContext.getExchangeId();
+         final boolean challenged = checkChallenged(challengeType, response, clientContext);
+         final boolean isChallengeExpected = isChallengeExpected(authExchange);
+@@ -257,8 +284,9 @@ public boolean handleResponse(
+                 // AuthScheme is only set if we have already sent an auth response, either
+                 // because we have received a challenge for it, or preemptively.
+                 if (authScheme != null) {
+-                    final String schemeName = authScheme.getName();
+-                    final AuthChallenge challenge = challengeMap.get(schemeName.toLowerCase(Locale.ROOT));
++                    final AuthChallenge challenge = challenged
++                            ? challengeMap.get(authScheme.getName().toLowerCase(Locale.ROOT))
++                            : extractAuthenticationInfo(challengeType, response, authScheme, clientContext);
+                     if (challenge != null || isChallengeExpected) {
+                         if (LOG.isDebugEnabled()) {
+                             LOG.debug("{} Processing authentication challenge {}", exchangeId, challenge);
+@@ -275,6 +303,12 @@ public boolean handleResponse(
+                                 throw ex;
+                             }
+                         }
++                        if (!challenged) {
++                            // There are no more challanges sent after the 200 message,
++                            // and if we get here, then the mutual auth phase has succeeded.
++                            authExchange.setState(AuthExchange.State.SUCCESS);
++                            return false;
++                        }
+                         if (authScheme.isChallengeComplete()) {
+                             if (LOG.isDebugEnabled()) {
+                                 LOG.debug("{} Authentication failed", exchangeId);
+@@ -283,14 +317,7 @@ public boolean handleResponse(
+                             authExchange.setState(AuthExchange.State.FAILURE);
+                             return false;
+                         }
+-                        if (!challenged) {
+-                            // There are no more challanges sent after the 200 message,
+-                            // and if we get here, then the mutual auth phase has succeeded.
+-                            authExchange.setState(AuthExchange.State.SUCCESS);
+-                            return false;
+-                        } else {
+-                            authExchange.setState(AuthExchange.State.HANDSHAKE);
+-                        }
++                        authExchange.setState(AuthExchange.State.HANDSHAKE);
+                         return true;
+                     }
+                     authExchange.reset();
+diff --git a/httpclient5/src/main/java/org/apache/hc/client5/http/impl/auth/ScramScheme.java b/httpclient5/src/main/java/org/apache/hc/client5/http/impl/auth/ScramScheme.java
+index 1c1224d..2ad112b 100644
+--- a/httpclient5/src/main/java/org/apache/hc/client5/http/impl/auth/ScramScheme.java
++++ b/httpclient5/src/main/java/org/apache/hc/client5/http/impl/auth/ScramScheme.java
+@@ -207,7 +207,11 @@ public void processChallenge(
+ 
+         if (authChallenge == null) {
+             if (!challenged) {
+-                // Final response with no Authentication-Info: nothing to do
++                if (this.state == State.CLIENT_FINAL_SENT || this.expectedV != null) {
++                    this.state = State.FAILED;
++                    zeroAndClearExpectedV();
++                    throw new AuthenticationException("SCRAM server final message missing");
++                }
+                 return;
+             }
+             throw new MalformedChallengeException("Null SCRAM challenge");
+@@ -224,6 +228,10 @@ public void processChallenge(
+ 
+             final String data = params.get("data");
+             if (data == null) {
++                if (this.state != State.INIT) {
++                    this.state = State.FAILED;
++                    throw new AuthenticationException("SCRAM state out of sequence: " + this.state);
++                }
+                 // initial announce (no data)
+                 this.realm = params.get("realm");
+                 this.state = State.ANNOUNCED;
+@@ -233,6 +241,10 @@ public void processChallenge(
+             }
+ 
+             // server-first (data present)
++            if (this.state != State.CLIENT_FIRST_SENT) {
++                this.state = State.FAILED;
++                throw new AuthenticationException("SCRAM state out of sequence: " + this.state);
++            }
+             final String decoded = b64ToString(data);
+             this.serverFirstRaw = decoded;
+             final Map<String, String> attrs = parseAttrs(decoded);
+@@ -289,8 +301,17 @@ public void processChallenge(
+         // For Authentication-Info, RFC 7804 does NOT mandate a scheme token; do NOT enforce scheme name here.
+         final String data = params.get("data");
+         if (data == null) {
++            if (this.state == State.CLIENT_FINAL_SENT || this.expectedV != null) {
++                this.state = State.FAILED;
++                zeroAndClearExpectedV();
++                throw new AuthenticationException("SCRAM server final message missing");
++            }
+             return;
+         }
++        if (this.state != State.CLIENT_FINAL_SENT) {
++            this.state = State.FAILED;
++            throw new AuthenticationException("SCRAM state out of sequence: " + this.state);
++        }
+         final String decoded = b64ToString(data);
+         final Map<String, String> attrs = parseAttrs(decoded);
+         final String err = attrs.get("e");
+@@ -303,7 +324,9 @@ public void processChallenge(
+         }
+         final String vB64 = attrs.get("v");
+         if (vB64 == null) {
+-            return;
++            this.state = State.FAILED;
++            zeroAndClearExpectedV();
++            throw new AuthenticationException("SCRAM server final signature missing");
+         }
+ 
+         // compare 'v' in constant time; treat bad base64 for v as a signature mismatch (tests expect "signature")
+diff --git a/httpclient5/src/test/java/org/apache/hc/client5/http/impl/auth/TestAuthenticationHandler.java b/httpclient5/src/test/java/org/apache/hc/client5/http/impl/auth/TestAuthenticationHandler.java
+index 272342b..a3ca360 100644
+--- a/httpclient5/src/test/java/org/apache/hc/client5/http/impl/auth/TestAuthenticationHandler.java
++++ b/httpclient5/src/test/java/org/apache/hc/client5/http/impl/auth/TestAuthenticationHandler.java
+@@ -215,6 +215,35 @@ void testAuthenticationNoChallenges() throws AuthenticationException, MalformedC
+                 host, ChallengeType.TARGET, response, authStrategy, this.authExchange, this.context));
+     }
+ 
++    @Test
++    void testAuthenticationInfoProcessedForChallengeExpectedScheme() throws Exception {
++        final HttpHost host = new HttpHost("somehost", 80);
++        final HttpResponse response = new BasicHttpResponse(HttpStatus.SC_OK, "OK");
++        response.addHeader(new BasicHeader("Authentication-Info", "data=\"abc\""));
++        final AuthScheme authScheme = Mockito.mock(AuthScheme.class);
++        Mockito.when(authScheme.getName()).thenReturn(StandardAuthScheme.SCRAM_SHA_256);
++        Mockito.when(authScheme.isChallengeExpected()).thenReturn(Boolean.TRUE);
++        Mockito.when(authScheme.isChallengeComplete()).thenReturn(Boolean.TRUE);
++        this.authExchange.setState(AuthExchange.State.HANDSHAKE);
++        this.authExchange.select(authScheme);
++
++        final DefaultAuthenticationStrategy authStrategy = new DefaultAuthenticationStrategy();
++
++        Assertions.assertFalse(this.httpAuthenticator.handleResponse(
++                host, ChallengeType.TARGET, response, authStrategy, this.authExchange, this.context));
++        Mockito.verify(authScheme).processChallenge(
++                Mockito.eq(host),
++                Mockito.eq(false),
++                Mockito.argThat(challenge -> challenge != null
++                        && StandardAuthScheme.SCRAM_SHA_256.equals(challenge.getSchemeName())
++                        && challenge.getParams() != null
++                        && challenge.getParams().size() == 1
++                        && "data".equals(challenge.getParams().get(0).getName())
++                        && "abc".equals(challenge.getParams().get(0).getValue())),
++                Mockito.eq(this.context));
++        Assertions.assertEquals(AuthExchange.State.SUCCESS, this.authExchange.getState());
++    }
++
+     @Test
+     void testAuthenticationNoSupportedChallenges() throws AuthenticationException, MalformedChallengeException {
+         final HttpHost host = new HttpHost("somehost", 80);
+diff --git a/httpclient5/src/test/java/org/apache/hc/client5/http/impl/auth/TestScramScheme.java b/httpclient5/src/test/java/org/apache/hc/client5/http/impl/auth/TestScramScheme.java
+index ae383e5..801a5cd 100644
+--- a/httpclient5/src/test/java/org/apache/hc/client5/http/impl/auth/TestScramScheme.java
++++ b/httpclient5/src/test/java/org/apache/hc/client5/http/impl/auth/TestScramScheme.java
+@@ -370,6 +370,69 @@ void strictScram_authInfo_errorE_fails() throws Exception {
+         assertTrue(ex.getMessage().contains("server error"));
+     }
+ 
++    @Test
++    void strictScram_missingAuthInfoAfterClientFinal_fails() throws Exception {
++        final ScramScheme scheme = new ScramScheme();
++        final BasicCredentialsProvider creds = new BasicCredentialsProvider();
++        creds.setCredentials(new AuthScope(HOST, REALM, scheme.getName()),
++                new UsernamePasswordCredentials(USER, PASS.toCharArray()));
++        final HttpClientContext ctx = HttpClientContext.create();
++
++        scheme.processChallenge(HOST, true,
++                new AuthChallenge(ChallengeType.TARGET, scheme.getName(),
++                        new BasicNameValuePair("realm", REALM)),
++                ctx);
++        assertTrue(scheme.isResponseReady(HOST, creds, ctx));
++
++        final String authz1 = scheme.generateAuthResponse(HOST, null, ctx);
++        final String clientFirstBare = deb64s(splitHeader(authz1).get("data")).substring("n,,".length());
++        final String clientNonce = parseCsvAttrs(clientFirstBare).get("r");
++
++        final String serverFirst = "r=" + clientNonce + "Z,s=" + b64("salt".getBytes(StandardCharsets.UTF_8)) + ",i=4096";
++        scheme.processChallenge(HOST, true,
++                new AuthChallenge(ChallengeType.TARGET, scheme.getName(),
++                        new BasicNameValuePair("data", b64(serverFirst.getBytes(StandardCharsets.UTF_8)))),
++                ctx);
++        scheme.generateAuthResponse(HOST, null, ctx);
++
++        final AuthenticationException ex = assertThrows(AuthenticationException.class, () ->
++                scheme.processChallenge(HOST, false, null, ctx));
++        assertTrue(ex.getMessage().toLowerCase(Locale.ROOT).contains("final"));
++    }
++
++    @Test
++    void strictScram_authInfoWithoutSignatureAfterClientFinal_fails() throws Exception {
++        final ScramScheme scheme = new ScramScheme();
++        final BasicCredentialsProvider creds = new BasicCredentialsProvider();
++        creds.setCredentials(new AuthScope(HOST, REALM, scheme.getName()),
++                new UsernamePasswordCredentials(USER, PASS.toCharArray()));
++        final HttpClientContext ctx = HttpClientContext.create();
++
++        scheme.processChallenge(HOST, true,
++                new AuthChallenge(ChallengeType.TARGET, scheme.getName(),
++                        new BasicNameValuePair("realm", REALM)),
++                ctx);
++        assertTrue(scheme.isResponseReady(HOST, creds, ctx));
++
++        final String authz1 = scheme.generateAuthResponse(HOST, null, ctx);
++        final String clientFirstBare = deb64s(splitHeader(authz1).get("data")).substring("n,,".length());
++        final String clientNonce = parseCsvAttrs(clientFirstBare).get("r");
++
++        final String serverFirst = "r=" + clientNonce + "Z,s=" + b64("salt".getBytes(StandardCharsets.UTF_8)) + ",i=4096";
++        scheme.processChallenge(HOST, true,
++                new AuthChallenge(ChallengeType.TARGET, scheme.getName(),
++                        new BasicNameValuePair("data", b64(serverFirst.getBytes(StandardCharsets.UTF_8)))),
++                ctx);
++        scheme.generateAuthResponse(HOST, null, ctx);
++
++        final AuthenticationException ex = assertThrows(AuthenticationException.class, () ->
++                scheme.processChallenge(HOST, false,
++                        new AuthChallenge(ChallengeType.TARGET, scheme.getName(),
++                                new BasicNameValuePair("data", b64("x=ignored".getBytes(StandardCharsets.UTF_8)))),
++                        ctx));
++        assertTrue(ex.getMessage().toLowerCase(Locale.ROOT).contains("signature"));
++    }
++
+     @Test
+     void strictScram_badBase64In401Data_isMalformed() {
+         final ScramScheme scheme = new ScramScheme();

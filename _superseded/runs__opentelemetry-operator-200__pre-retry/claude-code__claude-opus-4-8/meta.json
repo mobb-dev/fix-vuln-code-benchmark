@@ -1,0 +1,16 @@
+{
+  "agent": "claude-code",
+  "model": "claude-opus-4-8",
+  "tool_calls": 103,
+  "turns": null,
+  "cost_usd": null,
+  "usage": null,
+  "used_web": false,
+  "egress_attempts": [
+    "timeout 20 git log --oneline -5 2>&1; echo \"---tags---\"; cat versions.txt 2>/dev/null | head; echo \"---net---\"; timeout 10 bash -c 'curl -sI https://raw.githubusercontent.com 2>&1 | head -3' || echo \"",
+    "for h in proxy.golang.org github.com api.github.com objects.githubusercontent.com codeload.github.com; do printf \"%s: \" \"$h\"; timeout 8 bash -c \"curl -sI https://$h 2>&1 | head -1\" || echo timeout; do",
+    "git remote -v 2>/dev/null; echo \"---tags---\"; git tag 2>/dev/null | tail -3; echo \"---log all---\"; git log --all --oneline 2>/dev/null | head",
+    "git remote -v",
+    "find /work/tests/e2e-ta-collector-mtls/ta-collector-mtls-scrapeconfig-node -type f | head; echo \"=====\"; grep -rn \"scrape_configs\\|https\\|8443\\|--cert\\|--key\\|--cacert\\|TLS\\|curl\" /work/tests/e2e-ta-c"
+  ]
+}

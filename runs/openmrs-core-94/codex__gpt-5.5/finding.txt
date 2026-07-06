@@ -1,0 +1,10 @@
+Project: openmrs/openmrs-core
+Vulnerability type: Code Injection (CWE-94)
+
+Where the vulnerability is (file -> vulnerable line ranges, with enclosing function):
+
+  api/src/main/java/org/openmrs/util/ConceptReferenceRangeUtility.java
+    - lines 9-29
+    - lines 35-40
+    - lines 43-49
+    - lines 96-482   in: public boolean evaluateCriteria(String criteria, ConceptReferenceRangeContext co

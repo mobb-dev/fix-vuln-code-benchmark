@@ -1,0 +1,10 @@
+REPO_URL=https://github.com/nhost/nhost.git
+FIX_COMMIT=e407511627d2c2c1137a70e9ca1ca31095d23479
+VULN_FILE=cli/clienv/appid.go
+CWE_ID=CWE-306
+CWE_NAME="Missing Authentication"
+LANGUAGE=go
+# Used by verify.sh (execution verification): the maintainer's regression test, env prep, and test command.
+TEST_FILES="cli/cmd/configserver/configserver_test.go cli/cmd/configserver/local_test.go internal/lib/oapi/middleware/cors_test.go"
+PREP_CMD="go mod download"
+TEST_CMD="go test ./cli/cmd/configserver/... ./internal/lib/oapi/middleware/..."

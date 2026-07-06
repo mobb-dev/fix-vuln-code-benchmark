@@ -1,0 +1,112 @@
+diff --git a/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextManager.java b/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextManager.java
+index 6fcd81d..cec84d6 100755
+--- a/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextManager.java
++++ b/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextManager.java
+@@ -47,6 +47,7 @@ public class SslContextManager {
+ 
+   private final Supplier<SslContextFactory> supplier;
+   private final boolean useWorkerPool;
++  private final int sniContextMapMaxSize;
+   private final Map<ConfigKey, Future<Config>> configMap;
+   private final Map<ConfigKey, Future<SslContextProvider>> sslContextProviderMap;
+ 
+@@ -55,6 +56,7 @@ public class SslContextManager {
+     this.sslContextProviderMap = new LruCache<>(cacheMaxSize);
+     this.supplier = sslEngineOptions::sslContextFactory;
+     this.useWorkerPool = sslEngineOptions.getUseWorkerThread();
++    this.sniContextMapMaxSize = cacheMaxSize;
+   }
+ 
+   /**
+@@ -170,7 +172,8 @@ public class SslContextManager {
+       config.trustManagerFactory,
+       config.trustManagerMapper,
+       config.crls,
+-      supplier);
++      supplier,
++      sniContextMapMaxSize);
+   }
+ 
+   private static TrustOptions trustOptionsOf(SSLOptions sslOptions) {
+diff --git a/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextProvider.java b/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextProvider.java
+index 3ed5733..d9c49f4 100644
+--- a/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextProvider.java
++++ b/vertx-core/src/main/java/io/vertx/core/internal/tls/SslContextProvider.java
+@@ -23,7 +23,6 @@ import java.security.cert.CRL;
+ import java.security.cert.CertificateException;
+ import java.security.cert.X509Certificate;
+ import java.util.*;
+-import java.util.concurrent.ConcurrentHashMap;
+ import java.util.concurrent.Executor;
+ import java.util.function.Function;
+ import java.util.function.Supplier;
+@@ -53,9 +52,7 @@ public class SslContextProvider {
+   private final Function<String, TrustManager[]> trustManagerMapper;
+ 
+   private final SslContext[] sslContexts = new SslContext[2];
+-  private final Map<String, SslContext>[] sslContextMaps = new Map[]{
+-    new ConcurrentHashMap<>(), new ConcurrentHashMap<>()
+-  };
++  private final Map<String, SslContext>[] sslContextMaps;
+ 
+   public SslContextProvider(boolean useWorkerPool,
+                             ClientAuth clientAuth,
+@@ -68,7 +65,8 @@ public class SslContextProvider {
+                             TrustManagerFactory trustManagerFactory,
+                             Function<String, TrustManager[]> trustManagerMapper,
+                             List<CRL> crls,
+-                            Supplier<SslContextFactory> provider) {
++                            Supplier<SslContextFactory> provider,
++                            int sniContextMapMaxSize) {
+     this.useWorkerPool = useWorkerPool;
+     this.provider = provider;
+     this.clientAuth = clientAuth;
+@@ -81,6 +79,12 @@ public class SslContextProvider {
+     this.keyManagerFactoryMapper = keyManagerFactoryMapper;
+     this.trustManagerMapper = trustManagerMapper;
+     this.crls = crls;
++    // Bound the per-server-name context caches: server names are supplied by the remote peer through the
++    // TLS SNI extension, so an unbounded cache would let a peer exhaust memory by presenting many distinct
++    // names. LRU eviction keeps the caching behaviour while capping the number of retained contexts.
++    this.sslContextMaps = new Map[]{
++      new BoundedSslContextCache(sniContextMapMaxSize), new BoundedSslContextCache(sniContextMapMaxSize)
++    };
+   }
+ 
+   public boolean useWorkerPool() {
+@@ -335,4 +339,35 @@ public class SslContextProvider {
+       engine.setSSLParameters(sslParameters);
+     }
+   }
++
++  /**
++   * A thread-safe, size-bounded cache of {@link SslContext} keyed by SNI server name. The eldest entry is
++   * evicted once the cache exceeds its maximum size, preventing unbounded growth from peer-supplied names.
++   */
++  private static final class BoundedSslContextCache extends LinkedHashMap<String, SslContext> {
++
++    private final int maxSize;
++
++    BoundedSslContextCache(int maxSize) {
++      if (maxSize < 1) {
++        throw new IllegalArgumentException("Invalid SNI context cache size: " + maxSize);
++      }
++      this.maxSize = maxSize;
++    }
++
++    @Override
++    protected boolean removeEldestEntry(Map.Entry<String, SslContext> eldest) {
++      return size() > maxSize;
++    }
++
++    @Override
++    public synchronized int size() {
++      return super.size();
++    }
++
++    @Override
++    public synchronized SslContext computeIfAbsent(String key, Function<? super String, ? extends SslContext> mappingFunction) {
++      return super.computeIfAbsent(key, mappingFunction);
++    }
++  }
+ }
