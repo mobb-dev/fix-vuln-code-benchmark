@@ -16,6 +16,11 @@
    - mount the workspace at `/work`, working dir `/work`; no host access beyond it.
    - Claude: `--user 1000:1000 -e HOME=/tmp`, token via `--env-file .env` (never on disk).
    - Codex: runs as root, `~/.codex/auth.json` mounted read-only at `/seed` and copied in.
+   - The claude-code lane is backend-swappable: `CLAUDE_BACKEND=minimax` points the same CLI at
+     MiniMax's Anthropic-compatible endpoint (`api.minimax.io`, default model `MiniMax-M3`,
+     key `MINIMAX_API_KEY`). The proxy allowlist follows the backend, the Claude token is not
+     passed into MiniMax containers (and vice versa), and output goes to its own
+     `runs/<slug>/claude-code__<model>/` directory.
    - **Web blocked**: Claude `--disallowedTools WebFetch,WebSearch,Bash(curl *|wget *|nc *|gh *|git push *|git remote *|git fetch *)`; Codex `-c tools.web_search=false`. The model-API connection still works.
    - Prompt = `prompt-template.txt` ("read FINDING.txt → remediate; local edits only; don't commit/push/PR").
 3. **Capture the diff — robustly, using the project's own `.gitignore`** (NOT a hardcoded exclude list,

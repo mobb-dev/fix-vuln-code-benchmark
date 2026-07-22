@@ -10,7 +10,7 @@
 Output: runs/<case>/  — both fix bundles, maintainer.diff, reviews/, VERDICTS.txt.
 Usage:  run_fix.py <case-slug>
 
-Overridable via env: CLAUDE_MODEL, CODEX_MODEL, EFFORT.
+Overridable via env: CLAUDE_BACKEND (anthropic | minimax), CLAUDE_MODEL, CODEX_MODEL, EFFORT.
 """
 from __future__ import annotations
 
@@ -26,7 +26,16 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-4-8")
+# The claude-code lane is backend-swappable: the same Claude Code CLI can drive Anthropic's
+# Claude (default) or a MiniMax M-series model through MiniMax's Anthropic-compatible
+# endpoint (https://platform.minimax.io/docs/token-plan/claude-code). Each backend writes
+# to its own runs/<case>/claude-code__<model>/ directory, so results never overwrite.
+CLAUDE_BACKEND = os.environ.get("CLAUDE_BACKEND", "anthropic")
+_CLAUDE_DEFAULT_MODEL = {"anthropic": "claude-opus-4-8", "minimax": "MiniMax-M3"}
+if CLAUDE_BACKEND not in _CLAUDE_DEFAULT_MODEL:
+    sys.exit(f"unknown CLAUDE_BACKEND={CLAUDE_BACKEND!r} (expected: anthropic | minimax)")
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", _CLAUDE_DEFAULT_MODEL[CLAUDE_BACKEND])
+MINIMAX_BASE_URL = os.environ.get("MINIMAX_BASE_URL", "https://api.minimax.io/anthropic")
 CODEX_MODEL = os.environ.get("CODEX_MODEL", "gpt-5.5")
 EFFORT = os.environ.get("EFFORT", "medium")
 
@@ -37,7 +46,9 @@ EFFORT = os.environ.get("EFFORT", "medium")
 # have nowhere to go — a denylist of shell commands can't be evaded because there's no route.
 NET = "vfb-internal"
 PROXY = "vfb-proxy"
-ALLOW_HOSTS = os.environ.get("ALLOW_HOSTS", r"api\.anthropic\.com,chatgpt\.com")
+# The allowlist follows the active backend: exactly the model hosts in use, nothing more.
+_MODEL_HOST = {"anthropic": r"api\.anthropic\.com", "minimax": r"api\.minimax\.io"}
+ALLOW_HOSTS = os.environ.get("ALLOW_HOSTS", rf"{_MODEL_HOST[CLAUDE_BACKEND]},chatgpt\.com")
 SANDBOX = ["--network", NET,
            "-e", f"HTTPS_PROXY=http://{PROXY}:8888", "-e", f"HTTP_PROXY=http://{PROXY}:8888",
            "-e", f"https_proxy=http://{PROXY}:8888", "-e", f"http_proxy=http://{PROXY}:8888"]
@@ -87,6 +98,40 @@ def load_events(path: Path) -> list[dict]:
         except json.JSONDecodeError:
             continue
     return events
+
+
+def env_file_value(key: str) -> str:
+    """Read one KEY=VALUE line from .env (docker --env-file syntax, no quotes)."""
+    envf = ROOT / ".env"
+    if envf.exists():
+        for line in envf.read_text().splitlines():
+            line = line.strip()
+            if line.startswith(f"{key}="):
+                return line.split("=", 1)[1].strip()
+    return ""
+
+
+def claude_lane_env() -> list[str]:
+    """Docker env args for the claude-code lane, per backend.
+
+    anthropic (default): the Claude subscription token via --env-file, as always.
+    minimax: the same CLI pointed at MiniMax's Anthropic-compatible endpoint. Explicit
+    vars INSTEAD of --env-file so the real Anthropic token never enters the container
+    (MiniMax's docs require the conflicting Anthropic vars to be absent). The key's
+    value travels through a bare `-e NAME` — docker reads it from this process's
+    environment — so it stays out of the container's argv and `docker inspect` args.
+    """
+    if CLAUDE_BACKEND == "anthropic":
+        return ["--env-file", str(ROOT / ".env")]
+    key = os.environ.get("MINIMAX_API_KEY") or env_file_value("MINIMAX_API_KEY")
+    if not key:
+        sys.exit("CLAUDE_BACKEND=minimax needs MINIMAX_API_KEY (env var or a .env line)")
+    os.environ["ANTHROPIC_AUTH_TOKEN"] = key
+    env = ["-e", f"ANTHROPIC_BASE_URL={MINIMAX_BASE_URL}", "-e", "ANTHROPIC_AUTH_TOKEN",
+           "-e", f"ANTHROPIC_SMALL_FAST_MODEL={CLAUDE_MODEL}"]
+    if "[1m]" in CLAUDE_MODEL:
+        env += ["-e", "CLAUDE_CODE_AUTO_COMPACT_WINDOW=1000000"]
+    return env
 
 
 def read_recipe(case: str) -> dict:
@@ -162,11 +207,21 @@ AGENT_TIMEOUT = int(os.environ.get("AGENT_TIMEOUT", "2400"))  # 40 min cap per a
 
 def ensure_sandbox() -> None:
     """Create the internal (no-egress) network and start the allowlist proxy if not already up.
-    Idempotent — safe to call before every case. A dead proxy fails runs closed (no leak)."""
+    Idempotent — safe to call before every case. A dead proxy fails runs closed (no leak).
+    If a running proxy's allowlist differs from ALLOW_HOSTS (e.g. CLAUDE_BACKEND switched
+    between runs), it is recreated — a stale allowlist would fail the new backend closed."""
     if subprocess.run(["docker", "network", "inspect", NET], capture_output=True).returncode:
         subprocess.run(["docker", "network", "create", "--internal", NET], check=True, stdout=subprocess.DEVNULL)
     running = subprocess.run(["docker", "inspect", "-f", "{{.State.Running}}", PROXY],
                              capture_output=True, text=True).stdout.strip()
+    if running == "true":
+        env_lines = subprocess.run(
+            ["docker", "inspect", "-f", "{{range .Config.Env}}{{println .}}{{end}}", PROXY],
+            capture_output=True, text=True).stdout.splitlines()
+        current = next((ln.split("=", 1)[1] for ln in env_lines if ln.startswith("ALLOW_HOSTS=")), None)
+        if current != ALLOW_HOSTS:
+            print(f"[sandbox] proxy allowlist changed ({current!r} -> {ALLOW_HOSTS!r}), recreating {PROXY}", flush=True)
+            running = "false"
     if running != "true":
         subprocess.run(["docker", "rm", "-f", PROXY], capture_output=True)
         subprocess.run(["docker", "run", "-d", "--name", PROXY, "--network", NET,
@@ -228,7 +283,7 @@ def fix_one(case: str, image: str, agent: str, model: str, prompt: str) -> dict:
         if agent == "claude-code":
             docker_run(
                 [*mount, *COMMON, *SANDBOX, "--user", "1000:1000", "-e", "HOME=/tmp",
-                 "--env-file", str(ROOT / ".env"), image,
+                 *claude_lane_env(), image,
                  "claude", "-p", prompt, "--model", model, "--dangerously-skip-permissions",
                  "--output-format", "stream-json", "--verbose", "--disallowedTools", CLAUDE_FIX_DENY],
                 rd / "trace.jsonl", rd / "stderr.log",
@@ -295,7 +350,7 @@ def review_one(case: str, image: str, fixer: str, fmodel: str, reviewer: str, rm
     if reviewer == "claude-code":
         docker_run(
             [*SANDBOX, "--user", "1000:1000", "-e", "HOME=/tmp", "--memory", "2g", "--cpus", "2",
-             "--env-file", str(ROOT / ".env"), image,
+             *claude_lane_env(), image,
              "claude", "-p", prompt, "--model", rmodel, "--dangerously-skip-permissions",
              "--output-format", "stream-json", "--verbose", "--disallowedTools", CLAUDE_REVIEW_DENY],
             trace, err, name=f"vfb-rev-{case}-{fixer}-by-{reviewer}", timeout=AGENT_TIMEOUT)

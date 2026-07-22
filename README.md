@@ -97,6 +97,18 @@ python3 scripts/build_report.py       # self-contained HTML report of all runs
 
 `scripts/rereview.py <case...>` re-runs only the cross-review stage over existing fixes.
 
+The claude-code lane is backend-swappable: the same Claude Code CLI can drive MiniMax's
+M-series instead of Claude, through MiniMax's Anthropic-compatible endpoint. Put a
+`MINIMAX_API_KEY` in `.env` and run:
+
+```bash
+CLAUDE_BACKEND=minimax python3 scripts/run_fix.py tilt-306   # model: MiniMax-M3 by default
+```
+
+The egress allowlist follows the backend (`api.minimax.io` replaces `api.anthropic.com`),
+and results land in `runs/<case>/claude-code__MiniMax-M3/`, so backends never overwrite
+each other. `CLAUDE_MODEL` still overrides the model either way.
+
 ## What is in this repo
 
 | Path | What it is |

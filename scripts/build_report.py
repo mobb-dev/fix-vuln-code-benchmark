@@ -20,7 +20,10 @@ OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "vfb-report.html"
 CWE = {"CWE-288": "Authentication Bypass", "CWE-295": "Improper Certificate Validation",
        "CWE-185": "Incorrect Regular Expression"}
 CAP = 500
-CLAUDE_DIR, CODEX_DIR = "claude-code__claude-opus-4-8", "codex__gpt-5.5"
+# Run dirs follow CLAUDE_MODEL/CODEX_MODEL so a swapped backend (e.g. CLAUDE_BACKEND=minimax
+# writing claude-code__MiniMax-M3/) can be reported without touching this script.
+CLAUDE_DIR = f"claude-code__{os.environ.get('CLAUDE_MODEL', 'claude-opus-4-8')}"
+CODEX_DIR = f"codex__{os.environ.get('CODEX_MODEL', 'gpt-5.5')}"
 TOTAL = 33
 _HP = os.path.join(ROOT, "human-review.json")
 HUMAN = json.loads(open(_HP).read()) if os.path.exists(_HP) else {}

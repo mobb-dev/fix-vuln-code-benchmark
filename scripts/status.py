@@ -13,6 +13,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 RUNS = ROOT / "runs"
+sys.path.insert(0, str(ROOT / "scripts"))
+from run_fix import CLAUDE_MODEL, CODEX_MODEL  # noqa: E402  (dirs follow the active backend env)
 
 
 def result_minutes(trace: Path):
@@ -65,12 +67,13 @@ def main():
     cases = sorted(p.name for p in RUNS.iterdir() if p.is_dir()) if RUNS.exists() else []
     if want:
         cases = [c for c in cases if c in want]
+    print(f"lanes: claude-code__{CLAUDE_MODEL} · codex__{CODEX_MODEL}")
     print(f"{'CASE':26} {'CLAUDE':20} {'CODEX':20} {'GOLD':>5}  VERDICTS (Claude-by-Codex / Codex-by-Claude)")
     print("-" * 100)
     clean = killed = web = egress = 0
     for c in cases:
-        cl = agent_stat(RUNS / c / "claude-code__claude-opus-4-8")
-        cx = agent_stat(RUNS / c / "codex__gpt-5.5")
+        cl = agent_stat(RUNS / c / f"claude-code__{CLAUDE_MODEL}")
+        cx = agent_stat(RUNS / c / f"codex__{CODEX_MODEL}")
         gold = diff_lines(RUNS / c / "maintainer.diff")
         vfile = RUNS / c / "VERDICTS.txt"
         verds = " / ".join(re.findall(r"VERDICT: (\w+)", vfile.read_text())) if vfile.exists() else "(running…)"
