@@ -39,6 +39,24 @@ MINIMAX_BASE_URL = os.environ.get("MINIMAX_BASE_URL", "https://api.minimax.io/an
 CODEX_MODEL = os.environ.get("CODEX_MODEL", "gpt-5.5")
 EFFORT = os.environ.get("EFFORT", "medium")
 
+# Which fix lanes stage 1 runs. Classic runs do both; a swapped claude backend defaults to
+# only its own lane, so the published codex fixes are reused as the review counterpart
+# instead of being re-run (and overwritten).
+_DEFAULT_LANES = "claude,codex" if CLAUDE_BACKEND == "anthropic" else "claude"
+FIX_LANES = [l.strip() for l in os.environ.get("FIX_LANES", _DEFAULT_LANES).split(",") if l.strip()]
+
+
+def lane_tag(agent: str, model: str) -> str:
+    """Filename tag for review/verdict artifacts. The classic pairs keep the published
+    names; any other model is qualified so new artifacts can never overwrite them."""
+    classic = {"claude-code": "claude-opus-4-8", "codex": "gpt-5.5"}
+    return agent if classic.get(agent) == model else f"{agent}__{model}"
+
+
+_NONCLASSIC = [m for a, m in (("claude-code", CLAUDE_MODEL), ("codex", CODEX_MODEL))
+               if lane_tag(a, m) != a]
+VERDICTS_NAME = "VERDICTS.txt" if not _NONCLASSIC else f"VERDICTS__{'__'.join(_NONCLASSIC)}.txt"
+
 # ── Sandbox isolation ─────────────────────────────────────────────────────────
 # The agent containers sit on an --internal docker network (no route out, no external DNS)
 # whose ONLY reachable peer is an allowlist CONNECT proxy that permits the model hosts and
@@ -316,6 +334,10 @@ def gen_maintainer(case: str, recipe: dict) -> None:
     """Capture the maintainer's official fix as the gold standard — source files only
     (drop tests/dist/lib). Filtering is done in Python (robust; no jq-escaping pitfalls,
     and `.patch` may be absent for binary/oversized files)."""
+    gold = ROOT / "runs" / case / "maintainer.diff"
+    if gold.exists() and gold.stat().st_size:
+        print(f"[{case}] maintainer.diff exists — reused", flush=True)
+        return
     repo = recipe["REPO_URL"].replace("https://github.com/", "").replace(".git", "")
     r = subprocess.run(["gh", "api", f"/repos/{repo}/commits/{recipe['FIX_COMMIT']}"],
                        capture_output=True, text=True)
@@ -326,14 +348,14 @@ def gen_maintainer(case: str, recipe: dict) -> None:
              for f in files
              if src.search(f["filename"]) and not skip.search(f["filename"]) and f.get("patch")]
     diff = "\n".join(parts)
-    (ROOT / "runs" / case / "maintainer.diff").write_text(diff)
+    gold.write_text(diff)
     n = sum(1 for ln in diff.splitlines() if ln[:1] in "+-" and ln[:3] not in ("+++", "---"))
     print(f"[{case}] maintainer.diff: {n} lines ({len(parts)} source files)", flush=True)
 
 
 # ── Stage 3: cross-review ────────────────────────────────────────────────────
 def review_one(case: str, image: str, fixer: str, fmodel: str, reviewer: str, rmodel: str) -> str:
-    out = ROOT / "runs" / case / "reviews" / f"{fixer}-fix__by-{reviewer}"
+    out = ROOT / "runs" / case / "reviews" / f"{lane_tag(fixer, fmodel)}-fix__by-{lane_tag(reviewer, rmodel)}"
     out.parent.mkdir(parents=True, exist_ok=True)
     prompt = "\n".join([
         (ROOT / "review-prompt-template.txt").read_text(),
@@ -384,26 +406,37 @@ def main() -> None:
     prompt = (ROOT / "prompt-template.txt").read_text()
 
     ensure_sandbox()  # internal network + allowlist proxy must be up before any agent runs
-    print(f"=== [{case}] Stage 1: fixes (Claude + Codex) ===", flush=True)
+    print(f"=== [{case}] Stage 1: fixes ({' + '.join(FIX_LANES)}) ===", flush=True)
+    lane_jobs = {"claude": ("claude-code", CLAUDE_MODEL), "codex": ("codex", CODEX_MODEL)}
     with ThreadPoolExecutor(max_workers=2) as ex:
-        futs = [ex.submit(fix_one, case, image, "claude-code", CLAUDE_MODEL, prompt),
-                ex.submit(fix_one, case, image, "codex", CODEX_MODEL, prompt)]
+        futs = [ex.submit(fix_one, case, image, *lane_jobs[l], prompt)
+                for l in FIX_LANES if l in lane_jobs]
     for f in futs:
         f.result()  # surface any unexpected exception
 
     print(f"=== [{case}] Stage 2: maintainer diff ===", flush=True)
     gen_maintainer(case, recipe)
 
+    # Reviews pair whatever fixes are on disk: a lane that did not run this sweep (e.g.
+    # codex under CLAUDE_BACKEND=minimax) is judged from its existing published fix.
     print(f"=== [{case}] Stage 3: cross-review ===", flush=True)
-    with ThreadPoolExecutor(max_workers=2) as ex:
-        f_claude_by_codex = ex.submit(review_one, case, image, "claude-code", CLAUDE_MODEL, "codex", CODEX_MODEL)
-        f_codex_by_claude = ex.submit(review_one, case, image, "codex", CODEX_MODEL, "claude-code", CLAUDE_MODEL)
-        v_claude_by_codex, v_codex_by_claude = f_claude_by_codex.result(), f_codex_by_claude.result()
 
+    def have_fix(agent: str, model: str) -> bool:
+        return (ROOT / "runs" / case / f"{agent}__{model}" / "fix.diff").exists()
+
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        f_claude_by_codex = (ex.submit(review_one, case, image, "claude-code", CLAUDE_MODEL, "codex", CODEX_MODEL)
+                             if have_fix("claude-code", CLAUDE_MODEL) else None)
+        f_codex_by_claude = (ex.submit(review_one, case, image, "codex", CODEX_MODEL, "claude-code", CLAUDE_MODEL)
+                             if have_fix("codex", CODEX_MODEL) else None)
+        v_claude_by_codex = f_claude_by_codex.result() if f_claude_by_codex else "(no fix on disk)"
+        v_codex_by_claude = f_codex_by_claude.result() if f_codex_by_claude else "(no fix on disk)"
+
+    ctag, xtag = lane_tag("claude-code", CLAUDE_MODEL), lane_tag("codex", CODEX_MODEL)
     verdicts = (f"case: {case}\n"
-                f"Claude fix, reviewed by Codex:  {v_claude_by_codex or '(no verdict)'}\n"
-                f"Codex fix,  reviewed by Claude: {v_codex_by_claude or '(no verdict)'}\n")
-    (ROOT / "runs" / case / "VERDICTS.txt").write_text(verdicts)
+                f"{ctag} fix, reviewed by {xtag}: {v_claude_by_codex or '(no verdict)'}\n"
+                f"{xtag} fix, reviewed by {ctag}: {v_codex_by_claude or '(no verdict)'}\n")
+    (ROOT / "runs" / case / VERDICTS_NAME).write_text(verdicts)
     print(verdicts, flush=True)
     print(f"=== [{case}] done -> {ROOT / 'runs' / case} ===", flush=True)
 

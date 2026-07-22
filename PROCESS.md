@@ -20,7 +20,9 @@
      MiniMax's Anthropic-compatible endpoint (`api.minimax.io`, default model `MiniMax-M3`,
      key `MINIMAX_API_KEY`). The proxy allowlist follows the backend, the Claude token is not
      passed into MiniMax containers (and vice versa), and output goes to its own
-     `runs/<slug>/claude-code__<model>/` directory.
+     `runs/<slug>/claude-code__<model>/` directory. A swapped backend runs only its own fix
+     lane (the published Codex fixes are reused as review counterparts) and writes
+     model-qualified review/verdict filenames, so published artifacts are never overwritten.
    - **Web blocked**: Claude `--disallowedTools WebFetch,WebSearch,Bash(curl *|wget *|nc *|gh *|git push *|git remote *|git fetch *)`; Codex `-c tools.web_search=false`. The model-API connection still works.
    - Prompt = `prompt-template.txt` ("read FINDING.txt → remediate; local edits only; don't commit/push/PR").
 3. **Capture the diff — robustly, using the project's own `.gitignore`** (NOT a hardcoded exclude list,

@@ -14,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 RUNS = ROOT / "runs"
 sys.path.insert(0, str(ROOT / "scripts"))
-from run_fix import CLAUDE_MODEL, CODEX_MODEL  # noqa: E402  (dirs follow the active backend env)
+from run_fix import CLAUDE_MODEL, CODEX_MODEL, VERDICTS_NAME  # noqa: E402  (follow the active backend env)
 
 
 def result_minutes(trace: Path):
@@ -75,7 +75,7 @@ def main():
         cl = agent_stat(RUNS / c / f"claude-code__{CLAUDE_MODEL}")
         cx = agent_stat(RUNS / c / f"codex__{CODEX_MODEL}")
         gold = diff_lines(RUNS / c / "maintainer.diff")
-        vfile = RUNS / c / "VERDICTS.txt"
+        vfile = RUNS / c / VERDICTS_NAME
         verds = " / ".join(re.findall(r"VERDICT: (\w+)", vfile.read_text())) if vfile.exists() else "(running…)"
         print(f"{c:26} {fmt(cl):20} {fmt(cx):20} {gold:>5}  {verds}")
         for s in (cl, cx):

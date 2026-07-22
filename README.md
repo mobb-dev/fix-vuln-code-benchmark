@@ -107,7 +107,11 @@ CLAUDE_BACKEND=minimax python3 scripts/run_fix.py tilt-306   # model: MiniMax-M3
 
 The egress allowlist follows the backend (`api.minimax.io` replaces `api.anthropic.com`),
 and results land in `runs/<case>/claude-code__MiniMax-M3/`, so backends never overwrite
-each other. `CLAUDE_MODEL` still overrides the model either way.
+each other. `CLAUDE_MODEL` still overrides the model either way. In minimax mode the
+pipeline runs only the MiniMax fix (the published Codex fixes are reused as the review
+counterpart, not re-run), and review/verdict files are model-qualified
+(`VERDICTS__MiniMax-M3.txt`, `claude-code__MiniMax-M3-fix__by-codex.md`), so published
+artifacts are never touched. `FIX_LANES=claude,codex` overrides the lane selection.
 
 ## What is in this repo
 
